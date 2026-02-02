@@ -1,0 +1,1994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PR Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #f5f3ed;
+      --bg-surface: #edeae2;
+      --bg-card: #ffffff;
+      --bg-card-hover: #faf9f6;
+      --border-subtle: rgba(74,124,89,0.1);
+      --border-medium: rgba(74,124,89,0.2);
+      --text-primary: #2c3e2d;
+      --text-secondary: #5a6b5c;
+      --text-muted: #8a9588;
+      --accent-green: #4a7c59;
+      --accent-green-dim: rgba(74,124,89,0.1);
+      --accent-amber: #f9a620;
+      --accent-amber-dim: rgba(249,166,32,0.12);
+      --accent-red: #b7472a;
+      --accent-red-dim: rgba(183,71,42,0.08);
+      --accent-gray: #8a9588;
+      --accent-gray-dim: rgba(138,149,136,0.12);
+      --accent-blue: #4a7c59;
+      --accent-purple: #6b8f5e;
+      --font-display: 'Libre Baskerville', Georgia, serif;
+      --font-body: 'Source Sans 3', system-ui, sans-serif;
+      --font-mono: 'SF Mono', 'Fira Code', monospace;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --max-w: 1400px;
+      --px: 3rem;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 256px;
+      pointer-events: none;
+      z-index: 9999;
+    }
+
+    /* ============ SETUP ============ */
+    .setup-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .setup-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 3rem;
+      max-width: 480px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(74,124,89,0.08);
+    }
+
+    .setup-card h1 {
+      font-family: var(--font-display);
+      font-size: 2.4rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+    }
+
+    .setup-card p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .setup-card code {
+      display: inline-block;
+      background: var(--bg-deep);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-sm);
+      padding: 0.35rem 0.75rem;
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      color: var(--accent-blue);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .setup-card code:hover { background: rgba(74,124,89,0.08); }
+    .setup-card code::after { content: ' \01F4CB'; font-size: 0.7rem; }
+
+    .token-input-group {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .token-input-group input {
+      background: var(--bg-deep);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius);
+      padding: 0.8rem 1rem;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .token-input-group input:focus { border-color: var(--accent-blue); }
+    .token-input-group input::placeholder { color: var(--text-muted); }
+
+    .btn-primary {
+      background: var(--accent-green);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      padding: 0.75rem 1.5rem;
+      font-family: var(--font-body);
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-primary:active { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .setup-error {
+      color: var(--accent-red);
+      font-size: 0.82rem;
+      margin-top: 0.5rem;
+      display: none;
+    }
+
+    /* ============ DASHBOARD SHELL ============ */
+    .dashboard { display: none; }
+    .dashboard.active { display: block; }
+
+    .dashboard-header {
+      padding: 2.5rem var(--px) 1rem;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }
+
+    .dashboard-header h1 {
+      font-family: var(--font-display);
+      font-size: 2.8rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .dashboard-header h1 em { font-style: italic; color: var(--text-secondary); }
+
+    .header-actions { display: flex; align-items: center; gap: 1rem; }
+
+    .last-updated { color: var(--text-muted); font-size: 0.78rem; }
+
+    .btn-icon {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      width: 36px; height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .btn-icon:hover { background: var(--bg-card); color: var(--text-primary); border-color: var(--border-medium); }
+    .btn-icon svg { width: 16px; height: 16px; }
+    .btn-icon.spinning svg { animation: spin 0.8s linear infinite; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .btn-text {
+      background: none; border: none;
+      color: var(--text-muted);
+      font-family: var(--font-body); font-size: 0.78rem;
+      cursor: pointer; padding: 0.3rem 0.5rem;
+      border-radius: var(--radius-sm);
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .btn-text:hover { color: var(--accent-red); background: var(--accent-red-dim); }
+
+    /* ============ TABS ============ */
+    .tab-bar {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0.75rem var(--px) 0;
+      display: flex;
+      gap: 0.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .tab {
+      background: none; border: none;
+      font-family: var(--font-body);
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 0.6rem 1.1rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    .tab:hover { color: var(--text-secondary); }
+
+    .tab.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-blue);
+    }
+
+    .tab-count {
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 100px;
+      padding: 0.1rem 0.5rem;
+      min-width: 22px;
+      text-align: center;
+    }
+
+    .tab.active .tab-count {
+      background: rgba(74,124,89,0.1);
+      border-color: rgba(74,124,89,0.2);
+      color: var(--accent-blue);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ============ STATS BAR ============ */
+    .stats-bar {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 1.25rem var(--px) 1rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-chip {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 100px;
+      padding: 0.4rem 1rem;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+
+    .stat-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .stat-chip .dot.green { background: var(--accent-green); }
+    .stat-chip .dot.amber { background: var(--accent-amber); }
+    .stat-chip .dot.gray { background: var(--accent-gray); }
+    .stat-chip .dot.red { background: var(--accent-red); }
+    .stat-chip .dot.purple { background: var(--accent-purple); }
+    .stat-chip strong { color: var(--text-primary); font-weight: 600; }
+
+    /* ============ FILTER BAR ============ */
+    .filter-bar {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 var(--px) 1rem;
+      display: flex; align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      margin-right: 0.25rem;
+    }
+
+    .filter-chip {
+      display: flex; align-items: center; gap: 0.4rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 100px;
+      padding: 0.35rem 0.85rem;
+      font-family: var(--font-body);
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .filter-chip:hover { border-color: var(--border-medium); color: var(--text-primary); }
+
+    .filter-chip.active {
+      background: rgba(74,124,89,0.1);
+      border-color: rgba(74,124,89,0.25);
+      color: var(--accent-blue);
+    }
+
+    .filter-chip .filter-icon {
+      width: 14px; height: 14px;
+      border-radius: 3px;
+      border: 1.5px solid currentColor;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .filter-chip.active .filter-icon {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+    }
+
+    .filter-chip.active .filter-icon::after {
+      content: '';
+      display: block; width: 6px; height: 6px;
+      background: var(--bg-deep); border-radius: 1px;
+      mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 5.5L4 7.5L8 3' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      -webkit-mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 5.5L4 7.5L8 3' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      mask-size: contain; -webkit-mask-size: contain;
+    }
+
+    .filter-chip select {
+      background: transparent; border: none; color: inherit;
+      font-family: var(--font-body); font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; outline: none; padding: 0;
+      -webkit-appearance: none; appearance: none;
+    }
+
+    .filter-chip select option { background: var(--bg-surface); color: var(--text-primary); }
+
+    /* ============ CARD GRID ============ */
+    .card-grid {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 var(--px) 3rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1rem;
+    }
+
+    /* ============ PR CARD (shared) ============ */
+    .pr-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.4rem;
+      border-left: 3px solid var(--accent-amber);
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      cursor: pointer;
+      position: relative;
+      opacity: 0;
+      animation: cardIn 0.35s ease-out forwards;
+    }
+
+    .pr-card { box-shadow: 0 1px 3px rgba(74,124,89,0.06); }
+    .pr-card:hover { background: var(--bg-card-hover); border-color: var(--border-medium); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(74,124,89,0.1); }
+    .pr-card.approved { border-left-color: var(--accent-green); }
+    .pr-card.draft { border-left-color: var(--accent-gray); }
+    .pr-card.dismissed { border-left-color: var(--accent-red); }
+    .pr-card.changes-requested { border-left-color: var(--accent-red); }
+    .pr-card.all-approved { border-left-color: var(--accent-green); }
+    .pr-card.has-unresolved { border-left-color: var(--accent-amber); }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .pr-card-top {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .repo-pill {
+      font-size: 0.72rem; font-weight: 500;
+      color: var(--accent-blue);
+      background: rgba(74,124,89,0.08);
+      border-radius: 100px;
+      padding: 0.2rem 0.65rem;
+      white-space: nowrap;
+    }
+
+    .pr-age { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+
+    .tag {
+      font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      border-radius: 100px; padding: 0.15rem 0.55rem;
+    }
+
+    .tag.draft { color: var(--accent-gray); background: var(--accent-gray-dim); }
+    .tag.dismissed { color: var(--accent-red); background: var(--accent-red-dim); }
+    .tag.re-review { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+    .tag.re-review.approved  { color: var(--accent-green); background: var(--accent-green-dim); }
+    .tag.re-review.changes   { color: var(--accent-red);   background: var(--accent-red-dim); }
+    .tag.re-review.commented { color: var(--accent-amber); background: var(--accent-amber-dim); }
+
+    .pr-title {
+      font-size: 0.95rem; font-weight: 500; line-height: 1.4;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+      display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    .pr-title a { color: inherit; text-decoration: none; }
+    .pr-title a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+    .pr-card-bottom {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .pr-author {
+      display: flex; align-items: center; gap: 0.45rem;
+      font-size: 0.8rem; color: var(--text-secondary); min-width: 0;
+    }
+
+    .pr-author img { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; }
+    .pr-author span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .pr-approvals { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+
+    .approval-avatars { display: flex; align-items: center; }
+    .approval-avatars .avatar-wrap {
+      position: relative;
+      margin-left: -6px;
+      display: inline-block;
+    }
+    .approval-avatars .avatar-wrap:first-child { margin-left: 0; }
+    .approval-avatars img {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 2px solid var(--bg-card);
+      display: block;
+    }
+
+    .approval-count {
+      font-size: 0.78rem; font-weight: 500;
+      display: flex; align-items: center; gap: 0.3rem;
+    }
+
+    .approval-count.has-approvals { color: var(--accent-green); }
+    .approval-count.no-approvals { color: var(--text-muted); }
+    .approval-count svg { width: 14px; height: 14px; }
+
+    /* ============ MY PR CARD EXTRAS ============ */
+    .reviewer-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .reviewer-badge {
+      display: flex; align-items: center; gap: 0.35rem;
+      font-size: 0.75rem; color: var(--text-secondary);
+      background: var(--bg-surface);
+      border-radius: 100px;
+      padding: 0.2rem 0.55rem 0.2rem 0.2rem;
+    }
+
+    .reviewer-badge img {
+      width: 20px; height: 20px; border-radius: 50%;
+    }
+
+    .reviewer-badge .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .reviewer-badge .status-dot.s-approved { background: var(--accent-green); }
+    .reviewer-badge .status-dot.s-changes { background: var(--accent-red); }
+    .reviewer-badge .status-dot.s-commented { background: var(--accent-amber); }
+    .reviewer-badge .status-dot.s-pending { background: var(--accent-gray); }
+
+    .pr-card-meta {
+      display: flex; align-items: center;
+      gap: 1rem;
+      font-size: 0.78rem;
+    }
+
+    .meta-item {
+      display: flex; align-items: center; gap: 0.3rem;
+    }
+
+    .meta-item svg { width: 14px; height: 14px; }
+    .meta-item.unresolved { color: var(--accent-amber); font-weight: 500; }
+    .meta-item.all-resolved { color: var(--accent-green); }
+    .meta-item.comments { color: var(--text-muted); }
+    .meta-item.my-replied { color: var(--text-muted); }
+
+    .reviewer-badge .re-req-mark {
+      font-size: 0.7rem; color: var(--accent-amber);
+      line-height: 1; flex-shrink: 0;
+    }
+
+    /* ============ EMPTY / LOADING / ERROR ============ */
+    .empty-state {
+      text-align: center; padding: 5rem 2rem;
+      max-width: var(--max-w); margin: 0 auto;
+      display: none;
+    }
+
+    .empty-state .empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+
+    .empty-state h2 {
+      font-family: var(--font-display);
+      font-size: 1.8rem; font-weight: 400;
+      color: var(--text-secondary); margin-bottom: 0.5rem;
+    }
+
+    .empty-state p { color: var(--text-muted); font-size: 0.9rem; }
+
+    .loading-grid {
+      max-width: var(--max-w); margin: 0 auto;
+      padding: 0 var(--px) 3rem;
+      display: none;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 1rem;
+    }
+
+    .loading-grid.visible { display: grid; }
+
+    .skeleton-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.4rem;
+      border-left: 3px solid var(--border-subtle);
+    }
+
+    .skeleton-line {
+      background: linear-gradient(90deg, var(--bg-surface) 25%, rgba(74,124,89,0.05) 50%, var(--bg-surface) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 4px; height: 12px; margin-bottom: 0.65rem;
+    }
+
+    .skeleton-line.short { width: 40%; }
+    .skeleton-line.medium { width: 70%; }
+    .skeleton-line.long { width: 90%; height: 14px; }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .error-banner {
+      max-width: var(--max-w); margin: 0 auto 1rem; padding: 0 var(--px);
+      display: none;
+    }
+
+    .error-banner.visible { display: block; }
+
+    .error-banner-inner {
+      background: var(--accent-red-dim);
+      border: 1px solid rgba(183,71,42,0.2);
+      border-radius: var(--radius);
+      padding: 0.8rem 1.2rem;
+      color: var(--accent-red); font-size: 0.85rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    .tooltip { position: relative; }
+    .tooltip::after {
+      content: attr(data-tooltip);
+      position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-deep); border: 1px solid var(--border-medium);
+      color: var(--text-primary); font-size: 0.72rem;
+      padding: 0.3rem 0.6rem; border-radius: var(--radius-sm);
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .tooltip:hover::after { opacity: 1; }
+
+    /* ============ DEPLOY CARD ============ */
+    .deploy-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.4rem;
+      border-left: 3px solid var(--accent-green);
+      box-shadow: 0 1px 3px rgba(74,124,89,0.06);
+      opacity: 0;
+      animation: cardIn 0.35s ease-out forwards;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    }
+
+    .deploy-card:hover { background: var(--bg-card-hover); border-color: var(--border-medium); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(74,124,89,0.1); }
+    .deploy-card.snapshot { border-left-color: var(--accent-amber); }
+    .deploy-card.no-deploy { border-left-color: var(--accent-gray); }
+
+    .deploy-card-top {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .deploy-service-name {
+      font-family: var(--font-display);
+      font-size: 1.05rem; font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .deploy-env {
+      font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      border-radius: 100px; padding: 0.15rem 0.55rem;
+    }
+
+    .deploy-env.dev { color: var(--accent-amber); background: var(--accent-amber-dim); }
+    .deploy-env.staging { color: var(--accent-blue); background: rgba(74,124,89,0.08); }
+    .deploy-env.prod { color: var(--accent-green); background: var(--accent-green-dim); }
+
+    .deploy-version {
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 0.45rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    .deploy-version .tag.snapshot {
+      color: var(--accent-amber);
+      background: var(--accent-amber-dim);
+    }
+
+    .deploy-version .tag.release {
+      color: var(--accent-green);
+      background: var(--accent-green-dim);
+    }
+
+    .deploy-meta {
+      display: flex; align-items: center; gap: 1rem;
+      font-size: 0.75rem; color: var(--text-muted);
+    }
+
+    .deploy-meta a {
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+
+    .deploy-meta a:hover { text-decoration: underline; }
+
+    /* ============ SECTION DIVIDER ============ */
+    .section-divider {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 1rem var(--px) 1rem;
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .section-header {
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+
+    .section-header h2 {
+      font-family: var(--font-display);
+      font-size: 1.6rem; font-weight: 400;
+      letter-spacing: -0.01em;
+    }
+
+    .section-header h2 em { font-style: italic; color: var(--text-secondary); }
+
+    .section-count {
+      font-size: 0.72rem; font-weight: 600;
+      background: var(--accent-green-dim);
+      color: var(--accent-green);
+      border-radius: 100px;
+      padding: 0.15rem 0.55rem;
+    }
+
+    .section-count-red {
+      background: var(--accent-red-dim);
+      color: var(--accent-red);
+    }
+
+    .section-count-amber {
+      background: var(--accent-amber-dim);
+      color: var(--accent-amber);
+    }
+
+    /* ============ NEW CHANGES BADGE ============ */
+    .new-changes-badge {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      font-size: 0.72rem; font-weight: 600;
+      color: var(--accent-amber);
+      background: var(--accent-amber-dim);
+      border-radius: 100px;
+      padding: 0.15rem 0.6rem;
+    }
+
+    .new-changes-badge svg { width: 12px; height: 12px; }
+
+    .no-changes-badge {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      font-size: 0.72rem; font-weight: 500;
+      color: var(--text-muted);
+      background: var(--accent-gray-dim);
+      border-radius: 100px;
+      padding: 0.15rem 0.6rem;
+    }
+
+    /* ============ CLAUDE CODE TAB ============ */
+    .session-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.4rem;
+      border-left: 3px solid var(--accent-purple);
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      position: relative;
+      opacity: 0;
+      animation: cardIn 0.35s ease-out forwards;
+    }
+
+    .session-card { box-shadow: 0 1px 3px rgba(74,124,89,0.06); }
+    .session-card:hover { background: var(--bg-card-hover); border-color: var(--border-medium); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(74,124,89,0.1); }
+    .session-card.vscode { border-left-color: var(--accent-blue); }
+
+    .session-card-top {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .entrypoint-badge {
+      font-size: 0.7rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      border-radius: 100px; padding: 0.15rem 0.6rem;
+      display: flex; align-items: center; gap: 0.35rem;
+    }
+
+    .entrypoint-badge.cli {
+      color: var(--accent-purple); background: rgba(107,143,94,0.1);
+    }
+
+    .entrypoint-badge.vscode {
+      color: var(--accent-blue); background: rgba(74,124,89,0.1);
+    }
+
+    .entrypoint-badge svg { width: 12px; height: 12px; }
+
+    .session-duration {
+      font-size: 0.72rem; color: var(--text-muted);
+      display: flex; align-items: center; gap: 0.3rem;
+    }
+
+    .session-name {
+      font-size: 0.92rem; font-weight: 500;
+      color: var(--text-primary);
+      margin-bottom: 0.35rem;
+    }
+
+    .session-cwd {
+      font-size: 0.8rem; color: var(--accent-blue);
+      font-family: var(--font-mono);
+      margin-bottom: 0.65rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    .session-cwd .dim { color: var(--text-muted); }
+
+    .session-context {
+      font-size: 0.82rem; color: var(--text-secondary);
+      line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical; overflow: hidden;
+      padding: 0.55rem 0.75rem;
+      background: var(--bg-surface);
+      border-radius: var(--radius-sm);
+      border-left: 2px solid var(--border-medium);
+      font-style: italic;
+    }
+
+    .session-meta {
+      display: flex; align-items: center; gap: 1rem;
+      margin-top: 0.65rem;
+      font-size: 0.75rem; color: var(--text-muted);
+    }
+
+    .session-meta .meta-tag {
+      display: flex; align-items: center; gap: 0.3rem;
+    }
+
+    .session-meta .meta-tag code {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      background: var(--bg-surface);
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+    }
+
+    .sessions-hint {
+      max-width: var(--max-w); margin: 0 auto;
+      padding: 0 var(--px) 1rem;
+      font-size: 0.78rem; color: var(--text-muted);
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    .sessions-hint code {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--accent-blue);
+      background: rgba(74,124,89,0.08);
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width: 768px) {
+      :root { --px: 1.25rem; }
+      .dashboard-header h1 { font-size: 2rem; }
+      .card-grid, .loading-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ======= SETUP ======= -->
+  <div id="setup" class="setup-screen">
+    <div class="setup-card">
+      <h1>PR Dashboard</h1>
+      <p>
+        Paste your GitHub token to get started.<br>
+        Run this in your terminal to copy it:
+      </p>
+      <code id="copy-cmd" onclick="navigator.clipboard.writeText('gh auth token | pbcopy'); this.textContent='Copied!'; setTimeout(()=>this.innerHTML='gh auth token | pbcopy',1200)">gh auth token | pbcopy</code>
+      <div class="token-input-group">
+        <input type="password" id="token-input" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+        <button class="btn-primary" id="save-token-btn" onclick="saveToken()">Connect to GitHub</button>
+      </div>
+      <p class="setup-error" id="setup-error"></p>
+    </div>
+  </div>
+
+  <!-- ======= DASHBOARD ======= -->
+  <div id="dashboard" class="dashboard">
+    <header class="dashboard-header">
+      <h1>PR <em>Dashboard</em></h1>
+      <div class="header-actions">
+        <span class="last-updated" id="last-updated"></span>
+        <button class="btn-icon tooltip" data-tooltip="Refresh" id="refresh-btn" onclick="refreshCurrentTab()">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182M2.985 14.652" /></svg>
+        </button>
+        <button class="btn-text" onclick="forgetToken()">Forget token</button>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tab-bar">
+      <button class="tab active" data-tab="reviews" onclick="switchTab('reviews')">
+        Reviews
+        <span class="tab-count" id="tab-count-reviews">-</span>
+      </button>
+      <button class="tab" data-tab="my-prs" onclick="switchTab('my-prs')">
+        My PRs
+        <span class="tab-count" id="tab-count-my-prs">-</span>
+      </button>
+      <button class="tab" data-tab="claude" onclick="switchTab('claude')">
+        Claude Code
+        <span class="tab-count" id="tab-count-claude">-</span>
+      </button>
+      <button class="tab" data-tab="deployments" onclick="switchTab('deployments')">
+        Deployments
+        <span class="tab-count" id="tab-count-deployments">-</span>
+      </button>
+    </nav>
+
+    <!-- ===== REVIEWS TAB ===== -->
+    <div class="tab-content active" id="tab-reviews">
+      <div class="stats-bar" id="reviews-stats"></div>
+
+      <div class="filter-bar">
+        <span class="filter-bar-label">Filters</span>
+        <div class="filter-chip" id="filter-hide-approved" onclick="toggleFilter('hideApproved')">
+          <span class="filter-icon"></span>
+          Hide PRs with &ge;
+          <select id="approval-threshold" onclick="event.stopPropagation()" onchange="updateThreshold(this.value)">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+          approvals
+        </div>
+        <div class="filter-chip" id="filter-dismissed" onclick="toggleFilter('showDismissed')">
+          <span class="filter-icon"></span>
+          Show my dismissed reviews
+        </div>
+      </div>
+
+      <div class="error-banner" id="reviews-error"><div class="error-banner-inner" id="reviews-error-msg"></div></div>
+      <div class="loading-grid" id="reviews-loading">
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+      </div>
+      <div class="card-grid" id="reviews-grid"></div>
+      <div class="empty-state" id="reviews-empty">
+        <div class="empty-icon">&#10003;</div>
+        <h2>All clear</h2>
+        <p>No pull requests waiting for your review.</p>
+      </div>
+
+      <!-- Changes Requested section -->
+      <div class="section-divider" id="changes-section" style="display:none">
+        <div class="section-header">
+          <h2>Changes <em>Requested</em></h2>
+          <span class="section-count section-count-red" id="changes-count"></span>
+        </div>
+      </div>
+      <div class="card-grid" id="changes-grid"></div>
+
+      <!-- Commented section -->
+      <div class="section-divider" id="commented-section" style="display:none">
+        <div class="section-header">
+          <h2>My <em>Comments</em></h2>
+          <span class="section-count section-count-amber" id="commented-count"></span>
+        </div>
+      </div>
+      <div class="card-grid" id="commented-grid"></div>
+
+      <!-- Already approved section -->
+      <div class="section-divider" id="approved-section" style="display:none">
+        <div class="section-header">
+          <h2>Already <em>Approved</em></h2>
+          <span class="section-count" id="approved-count"></span>
+        </div>
+      </div>
+      <div class="card-grid" id="approved-grid"></div>
+    </div>
+
+    <!-- ===== MY PRS TAB ===== -->
+    <div class="tab-content" id="tab-my-prs">
+      <div class="stats-bar" id="myprs-stats"></div>
+      <div class="error-banner" id="myprs-error"><div class="error-banner-inner" id="myprs-error-msg"></div></div>
+      <div class="loading-grid" id="myprs-loading">
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+      </div>
+      <div class="card-grid" id="myprs-grid"></div>
+      <div class="empty-state" id="myprs-empty">
+        <div class="empty-icon">&#9998;</div>
+        <h2>No open PRs</h2>
+        <p>You have no open pull requests right now.</p>
+      </div>
+    </div>
+
+    <!-- ===== CLAUDE CODE TAB ===== -->
+    <div class="tab-content" id="tab-claude">
+      <div class="stats-bar" id="claude-stats"></div>
+      <div class="sessions-hint" id="claude-hint">
+        Run <code>python3 refresh-sessions.py</code> to update session data
+      </div>
+      <div class="card-grid" id="claude-grid"></div>
+      <div class="empty-state" id="claude-empty">
+        <div class="empty-icon">&#9679;</div>
+        <h2>No sessions found</h2>
+        <p>Run <code style="font-family:var(--font-mono);color:var(--accent-blue)">python3 refresh-sessions.py</code> in the dashboard directory to detect active sessions.</p>
+      </div>
+    </div>
+
+    <!-- ===== DEPLOYMENTS TAB ===== -->
+    <div class="tab-content" id="tab-deployments">
+      <div class="stats-bar" id="deploy-stats"></div>
+      <div class="error-banner" id="deploy-error"><div class="error-banner-inner" id="deploy-error-msg"></div></div>
+      <div class="loading-grid" id="deploy-loading">
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
+      </div>
+      <div class="card-grid" id="deploy-grid"></div>
+    </div>
+  </div>
+
+  <script id="sessions-script-tag" src="claude-sessions.js" onerror="window.__claudeSessions=[]"></script>
+  <script>
+    const API = 'https://api.github.com';
+    const GQL = `${API}/graphql`;
+
+    /* ============ STATE ============ */
+    let currentUser = null;
+    let activeTab = localStorage.getItem('gh_dashboard_tab') || 'reviews';
+
+    // Reviews tab
+    let reviewPRs = [];
+    let dismissedPRs = [];
+    let myReviewedPRs = [];
+    let reviewsLoaded = false;
+
+    // My PRs tab
+    let myPRs = [];
+    let myPRsLoaded = false;
+
+    /* ============ FILTERS ============ */
+    function loadFilters() {
+      try {
+        return JSON.parse(localStorage.getItem('gh_dashboard_filters')) || {
+          hideApproved: false, approvalThreshold: 2, showDismissed: false
+        };
+      } catch { return { hideApproved: false, approvalThreshold: 2, showDismissed: false }; }
+    }
+
+    function saveFilters(f) { localStorage.setItem('gh_dashboard_filters', JSON.stringify(f)); }
+
+    let filters = loadFilters();
+
+    function toggleFilter(name) {
+      filters[name] = !filters[name];
+      saveFilters(filters);
+      syncFilterUI();
+      renderReviews();
+    }
+
+    function updateThreshold(val) {
+      filters.approvalThreshold = parseInt(val, 10);
+      saveFilters(filters);
+      renderReviews();
+    }
+
+    function syncFilterUI() {
+      document.getElementById('filter-hide-approved').classList.toggle('active', filters.hideApproved);
+      document.getElementById('filter-dismissed').classList.toggle('active', filters.showDismissed);
+      document.getElementById('approval-threshold').value = filters.approvalThreshold;
+    }
+
+    /* ============ AUTH / API ============ */
+    function getToken() { return localStorage.getItem('gh_dashboard_token'); }
+
+    function showSetup() {
+      document.getElementById('setup').style.display = 'flex';
+      document.getElementById('dashboard').classList.remove('active');
+    }
+
+    function showDashboard() {
+      document.getElementById('setup').style.display = 'none';
+      document.getElementById('dashboard').classList.add('active');
+    }
+
+    async function saveToken() {
+      const input = document.getElementById('token-input');
+      const errEl = document.getElementById('setup-error');
+      const btn = document.getElementById('save-token-btn');
+      const token = input.value.trim();
+
+      if (!token) { errEl.textContent = 'Please paste a token.'; errEl.style.display = 'block'; return; }
+
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      errEl.style.display = 'none';
+
+      try {
+        const res = await fetch(`${API}/user`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) throw new Error('Invalid token or insufficient permissions.');
+        const u = await res.json();
+        currentUser = u.login;
+        localStorage.setItem('gh_dashboard_token', token);
+        showDashboard();
+        loadTab(activeTab);
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Connect to GitHub';
+      }
+    }
+
+    function forgetToken() {
+      localStorage.removeItem('gh_dashboard_token');
+      currentUser = null;
+      reviewPRs = []; dismissedPRs = []; myPRs = [];
+      reviewsLoaded = false; myPRsLoaded = false;
+      showSetup();
+    }
+
+    async function ghFetch(path) {
+      const token = getToken();
+      const res = await fetch(`${API}${path}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
+      });
+      if (!res.ok) {
+        if (res.status === 401) { forgetToken(); throw new Error('Token expired.'); }
+        throw new Error(`GitHub API error: ${res.status}`);
+      }
+      return res.json();
+    }
+
+    async function ghGraphQL(query, variables = {}) {
+      const token = getToken();
+      const res = await fetch(GQL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      if (!res.ok) {
+        if (res.status === 401) { forgetToken(); throw new Error('Token expired.'); }
+        throw new Error(`GraphQL error: ${res.status}`);
+      }
+      const json = await res.json();
+      if (json.errors) throw new Error(json.errors[0].message);
+      return json.data;
+    }
+
+    async function ensureCurrentUser() {
+      if (!currentUser) {
+        const u = await ghFetch('/user');
+        currentUser = u.login;
+      }
+    }
+
+    function timeAgo(dateStr) {
+      const diffMs = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      if (days > 0) return `${days}d ago`;
+      if (hours > 0) return `${hours}h ago`;
+      if (mins > 0) return `${mins}m ago`;
+      return 'just now';
+    }
+
+    function escapeHtml(str) {
+      const d = document.createElement('div'); d.textContent = str; return d.innerHTML;
+    }
+
+    function updateTimestamp() {
+      const now = new Date();
+      document.getElementById('last-updated').textContent =
+        `Updated ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    /* ============ TABS ============ */
+    function switchTab(tab) {
+      activeTab = tab;
+      localStorage.setItem('gh_dashboard_tab', tab);
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
+      loadTab(tab);
+    }
+
+    async function refreshCurrentTab() {
+      if (activeTab === 'reviews') { reviewsLoaded = false; }
+      else if (activeTab === 'my-prs') { myPRsLoaded = false; }
+      else if (activeTab === 'claude') { claudeLoaded = false; await reloadSessionsScript(); }
+      else if (activeTab === 'deployments') { deploymentsLoaded = false; }
+      loadTab(activeTab);
+    }
+
+    function loadTab(tab) {
+      if (tab === 'reviews' && !reviewsLoaded) loadReviews();
+      else if (tab === 'my-prs' && !myPRsLoaded) loadMyPRs();
+      else if (tab === 'claude' && !claudeLoaded) loadClaudeSessions();
+      else if (tab === 'deployments' && !deploymentsLoaded) loadDeployments();
+    }
+
+    /* ============ REVIEWS TAB ============ */
+    async function loadReviews() {
+      const btn = document.getElementById('refresh-btn');
+      const loading = document.getElementById('reviews-loading');
+      const grid = document.getElementById('reviews-grid');
+      const empty = document.getElementById('reviews-empty');
+      const errorBanner = document.getElementById('reviews-error');
+
+      btn.classList.add('spinning');
+      loading.classList.add('visible');
+      grid.innerHTML = '';
+      empty.style.display = 'none';
+      errorBanner.classList.remove('visible');
+
+      try {
+        await ensureCurrentUser();
+        const [rr, dm, reviewed] = await Promise.all([fetchReviewRequestedPRs(), fetchDismissedPRs(), fetchMyReviewedPRs()]);
+        reviewPRs = rr;
+        dismissedPRs = dm;
+        myReviewedPRs = reviewed;
+        reviewsLoaded = true;
+        loading.classList.remove('visible');
+        renderReviews();
+        updateTimestamp();
+      } catch (e) {
+        loading.classList.remove('visible');
+        document.getElementById('reviews-error-msg').textContent = e.message;
+        errorBanner.classList.add('visible');
+      } finally {
+        btn.classList.remove('spinning');
+      }
+    }
+
+    async function fetchReviewRequestedPRs() {
+      const data = await ghFetch('/search/issues?q=review-requested:@me+is:pr+is:open&sort=updated&order=desc&per_page=50');
+      return Promise.all((data.items || []).map(async pr => {
+        const repo = pr.repository_url.replace(`${API}/repos/`, '');
+        try {
+          const reviews = await ghFetch(`/repos/${repo}/pulls/${pr.number}/reviews`);
+          const map = new Map();
+          for (const r of reviews) {
+            if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED') {
+              map.set(r.user.login, { login: r.user.login, avatar: r.user.avatar_url, state: r.state });
+            }
+          }
+          const allReviewers = [...map.values()];
+          const approvals = allReviewers.filter(r => r.state === 'APPROVED');
+          const changesRequested = allReviewers.filter(r => r.state === 'CHANGES_REQUESTED');
+          const myReviews = reviews.filter(r => r.user && r.user.login === currentUser);
+          let myPriorReviewState = null;
+          if (myReviews.length) {
+            const dominated = myReviews.filter(r => r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED');
+            const effective = dominated.length ? dominated[dominated.length - 1] : myReviews[myReviews.length - 1];
+            myPriorReviewState = effective.state;
+          }
+          return { ...pr, repo, approvals, changesRequested, myPriorReviewState, source: 'review-requested' };
+        } catch { return { ...pr, repo, approvals: [], myPriorReviewState: null, source: 'review-requested' }; }
+      }));
+    }
+
+    async function fetchDismissedPRs() {
+      const data = await ghFetch('/search/issues?q=reviewed-by:@me+is:pr+is:open+-review:approved+-review-requested:@me&sort=updated&order=desc&per_page=50');
+      const results = await Promise.all((data.items || []).map(async pr => {
+        const repo = pr.repository_url.replace(`${API}/repos/`, '');
+        try {
+          const reviews = await ghFetch(`/repos/${repo}/pulls/${pr.number}/reviews`);
+          const mine = reviews.filter(r => r.user.login === currentUser);
+          if (!mine.length || mine[mine.length - 1].state !== 'DISMISSED') return null;
+          const map = new Map();
+          for (const r of reviews) {
+            if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED') {
+              map.set(r.user.login, { login: r.user.login, avatar: r.user.avatar_url, state: r.state });
+            }
+          }
+          const allReviewers = [...map.values()];
+          const approvals = allReviewers.filter(r => r.state === 'APPROVED');
+          const changesRequested = allReviewers.filter(r => r.state === 'CHANGES_REQUESTED');
+          return { ...pr, repo, approvals, changesRequested, source: 'dismissed' };
+        } catch { return null; }
+      }));
+      return results.filter(Boolean);
+    }
+
+    async function fetchMyReviewedPRs() {
+      const data = await ghFetch('/search/issues?q=reviewed-by:@me+is:pr+is:open+-author:@me&sort=updated&order=desc&per_page=50');
+      return Promise.all((data.items || []).map(async pr => {
+        const repo = pr.repository_url.replace(`${API}/repos/`, '');
+        try {
+          const [reviews, commits] = await Promise.all([
+            ghFetch(`/repos/${repo}/pulls/${pr.number}/reviews`),
+            ghFetch(`/repos/${repo}/pulls/${pr.number}/commits?per_page=100`)
+          ]);
+
+          // My latest review state
+          const myReviews = reviews.filter(r => r.user && r.user.login === currentUser);
+          let myState = 'COMMENTED';
+          let myReviewDate = null;
+          if (myReviews.length) {
+            const dominated = myReviews.filter(r => r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED');
+            const effective = dominated.length ? dominated[dominated.length - 1] : myReviews[myReviews.length - 1];
+            myState = effective.state;
+            myReviewDate = new Date(effective.submitted_at);
+          }
+
+          // Check for commits after my review
+          let newCommitsAfterReview = 0;
+          if (myReviewDate) {
+            newCommitsAfterReview = commits.filter(c => {
+              const commitDate = new Date(c.commit.committer.date || c.commit.author.date);
+              return commitDate > myReviewDate;
+            }).length;
+          }
+
+          // All reviewer states (latest per reviewer; DISMISSED overwrites prior states)
+          const map = new Map();
+          for (const r of reviews) {
+            if (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED') {
+              map.set(r.user.login, { login: r.user.login, avatar: r.user.avatar_url, state: r.state });
+            }
+          }
+          const allReviewers = [...map.values()];
+          const approvals = allReviewers.filter(r => r.state === 'APPROVED');
+          const changesRequested = allReviewers.filter(r => r.state === 'CHANGES_REQUESTED');
+
+          return {
+            ...pr, repo, approvals, changesRequested,
+            myReviewState: myState, myReviewDate, newCommitsAfterReview
+          };
+        } catch { return { ...pr, repo, approvals: [], myReviewState: 'UNKNOWN', myReviewDate: null, newCommitsAfterReview: 0 }; }
+      }));
+    }
+
+    function renderReviews() {
+      const grid = document.getElementById('reviews-grid');
+      const empty = document.getElementById('reviews-empty');
+      const statsEl = document.getElementById('reviews-stats');
+      grid.innerHTML = '';
+
+      let visible = [];
+      for (const pr of reviewPRs) {
+        if (filters.hideApproved && pr.approvals.length >= filters.approvalThreshold) continue;
+        visible.push(pr);
+      }
+      if (filters.showDismissed) {
+        const seen = new Set(visible.map(p => p.id));
+        for (const pr of dismissedPRs) { if (!seen.has(pr.id)) { visible.push(pr); seen.add(pr.id); } }
+      }
+
+      const withApp = reviewPRs.filter(p => p.approvals.length > 0).length;
+      const drafts = reviewPRs.filter(p => p.draft).length;
+      const pending = reviewPRs.length - withApp - drafts;
+      const hidden = reviewPRs.length + (filters.showDismissed ? dismissedPRs.length : 0) - visible.length;
+
+      statsEl.innerHTML = `
+        <div class="stat-chip"><span class="dot amber"></span> <strong>${pending}</strong> awaiting</div>
+        <div class="stat-chip"><span class="dot green"></span> <strong>${withApp}</strong> with approvals</div>
+        ${drafts ? `<div class="stat-chip"><span class="dot gray"></span> <strong>${drafts}</strong> drafts</div>` : ''}
+        ${filters.showDismissed && dismissedPRs.length ? `<div class="stat-chip" style="color:var(--accent-red)"><strong>${dismissedPRs.length}</strong> dismissed</div>` : ''}
+        <div class="stat-chip"><strong>${visible.length}</strong> showing${hidden ? ` <span style="color:var(--text-muted)">(${hidden} hidden)</span>` : ''}</div>
+      `;
+
+      document.getElementById('tab-count-reviews').textContent = reviewPRs.length;
+
+      if (!visible.length) { empty.style.display = 'block'; } else { empty.style.display = 'none'; }
+
+      renderReviewCards(grid, visible);
+
+      // --- My past reviews sections ---
+      const pendingIds = new Set(reviewPRs.map(p => p.id));
+      const reviewed = myReviewedPRs.filter(p => !pendingIds.has(p.id));
+
+      const changesReq = reviewed.filter(p => p.myReviewState === 'CHANGES_REQUESTED');
+      const commented = reviewed.filter(p => p.myReviewState === 'COMMENTED');
+      const approved = reviewed.filter(p => p.myReviewState === 'APPROVED');
+
+      renderSection('changes', changesReq);
+      renderSection('commented', commented);
+      renderSection('approved', approved);
+    }
+
+    function renderSection(id, prs) {
+      const section = document.getElementById(`${id}-section`);
+      const grid = document.getElementById(`${id}-grid`);
+      const countEl = document.getElementById(`${id}-count`);
+      grid.innerHTML = '';
+
+      if (prs.length) {
+        section.style.display = 'block';
+        countEl.textContent = prs.length;
+        renderReviewCards(grid, prs);
+      } else {
+        section.style.display = 'none';
+      }
+    }
+
+    function priorStateClass(state) {
+      if (state === 'APPROVED') return 'approved';
+      if (state === 'CHANGES_REQUESTED') return 'changes';
+      return 'commented';
+    }
+
+    function priorStateShort(state) {
+      if (state === 'APPROVED') return 'Approved';
+      if (state === 'CHANGES_REQUESTED') return 'Changes';
+      return 'Commented';
+    }
+
+    function priorStateTooltip(state) {
+      if (state === 'APPROVED') return 'Re-review requested — you previously approved';
+      if (state === 'CHANGES_REQUESTED') return 'Re-review requested — you previously requested changes';
+      return 'Re-review requested — you previously commented';
+    }
+
+    function renderReviewCards(grid, prs) {
+      prs.forEach((pr, i) => {
+        const isDraft = pr.draft;
+        const isDismissed = pr.source === 'dismissed';
+        const hasApp = pr.approvals.length > 0;
+        const hasChanges = (pr.changesRequested || []).length > 0;
+
+        const card = document.createElement('div');
+        let cls = 'pr-card';
+        if (isDismissed) cls += ' dismissed';
+        else if (hasChanges) cls += ' changes-requested';
+        else if (hasApp) cls += ' approved';
+        else if (isDraft) cls += ' draft';
+        card.className = cls;
+        card.style.animationDelay = `${i * 0.04}s`;
+
+        const avs = pr.approvals.map(a => `<span class="avatar-wrap tooltip" data-tooltip="${a.login}"><img src="${a.avatar}&s=44" alt="${a.login}"></span>`).join('');
+        const changesAvs = (pr.changesRequested || []).map(a => `<span class="avatar-wrap tooltip" data-tooltip="${a.login}"><img src="${a.avatar}&s=44" alt="${a.login}"></span>`).join('');
+
+        card.innerHTML = `
+          <div class="pr-card-top">
+            <span class="repo-pill">${pr.repo}</span>
+            <span style="display:flex;align-items:center;gap:0.5rem">
+              ${isDismissed ? '<span class="tag dismissed">Dismissed</span>' : ''}
+              ${isDraft ? '<span class="tag draft">Draft</span>' : ''}
+              ${pr.myPriorReviewState && !isDismissed ? `<span class="tag re-review ${priorStateClass(pr.myPriorReviewState)}" title="${priorStateTooltip(pr.myPriorReviewState)}">↻ ${priorStateShort(pr.myPriorReviewState)}</span>` : ''}
+              <span class="pr-age">${timeAgo(pr.created_at)}</span>
+            </span>
+          </div>
+          <div class="pr-title"><a href="${pr.html_url}" target="_blank" rel="noopener">#${pr.number} ${escapeHtml(pr.title)}</a></div>
+          <div class="pr-card-bottom">
+            <div class="pr-author">
+              <img src="${pr.user.avatar_url}&s=40" alt="${pr.user.login}">
+              <span>${pr.user.login}</span>
+            </div>
+            <div class="pr-approvals">
+              ${!hasApp && !hasChanges ? `<span class="approval-count no-approvals">No approvals</span>` : ''}
+              ${hasApp ? `
+                <div class="approval-avatars">${avs}</div>
+                <span class="approval-count has-approvals">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                  ${pr.approvals.length}
+                </span>
+              ` : ''}
+              ${hasApp && hasChanges ? `<span style="color:var(--text-muted);font-size:0.75rem">·</span>` : ''}
+              ${hasChanges ? `
+                <div class="approval-avatars">${changesAvs}</div>
+                <span class="approval-count" style="color:var(--accent-red)">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+                  ${pr.changesRequested.length}
+                </span>
+              ` : ''}
+            </div>
+          </div>
+          ${pr.newCommitsAfterReview > 0 ? `
+            <div style="margin-top:0.6rem">
+              <span class="new-changes-badge">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126Z"/></svg>
+                ${pr.newCommitsAfterReview} new commit${pr.newCommitsAfterReview > 1 ? 's' : ''} since your review
+              </span>
+            </div>
+          ` : pr.myReviewDate ? `
+            <div style="margin-top:0.6rem">
+              <span class="no-changes-badge">No changes since your review</span>
+            </div>
+          ` : ''}`;
+
+        card.addEventListener('click', e => { if (e.target.tagName !== 'A') window.open(pr.html_url, '_blank', 'noopener'); });
+        grid.appendChild(card);
+      });
+    }
+
+    /* ============ MY PRS TAB ============ */
+    async function loadMyPRs() {
+      const btn = document.getElementById('refresh-btn');
+      const loading = document.getElementById('myprs-loading');
+      const grid = document.getElementById('myprs-grid');
+      const empty = document.getElementById('myprs-empty');
+      const errorBanner = document.getElementById('myprs-error');
+
+      btn.classList.add('spinning');
+      loading.classList.add('visible');
+      grid.innerHTML = '';
+      empty.style.display = 'none';
+      errorBanner.classList.remove('visible');
+
+      try {
+        await ensureCurrentUser();
+        const data = await ghFetch('/search/issues?q=author:@me+is:pr+is:open&sort=updated&order=desc&per_page=50');
+        const prs = data.items || [];
+
+        myPRs = await Promise.all(prs.map(async pr => {
+          const repo = pr.repository_url.replace(`${API}/repos/`, '');
+          const [owner, name] = repo.split('/');
+          try {
+            // Fetch reviews + thread info via GraphQL in one call
+            const [restReviews, gqlData] = await Promise.all([
+              ghFetch(`/repos/${repo}/pulls/${pr.number}/reviews`),
+              ghGraphQL(`query($owner:String!,$name:String!,$number:Int!){
+                repository(owner:$owner,name:$name){
+                  pullRequest(number:$number){
+                    reviewRequests(first:20){nodes{requestedReviewer{...on User{login avatarUrl}...on Team{name avatarUrl}}}}
+                    reviewThreads(first:100){totalCount nodes{isResolved comments(last:1){totalCount nodes{author{login}}}}}
+                  }
+                }
+              }`, { owner, name, number: pr.number })
+            ]);
+
+            const prData = gqlData.repository.pullRequest;
+
+            // Build reviewer map: latest state per reviewer
+            const reviewerMap = new Map();
+            for (const r of restReviews) {
+              if (!r.user) continue;
+              reviewerMap.set(r.user.login, {
+                login: r.user.login,
+                avatar: r.user.avatar_url,
+                state: r.state // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED, PENDING
+              });
+            }
+
+            // Add pending reviewers (requested but haven't reviewed).
+            // If a reviewer already appears in reviewerMap AND is in reviewRequests,
+            // the author re-requested them — mark accordingly.
+            for (const node of (prData.reviewRequests?.nodes || [])) {
+              const reviewer = node.requestedReviewer;
+              if (!reviewer) continue;
+              const login = reviewer.login || reviewer.name;
+              const avatar = reviewer.avatarUrl;
+              if (!login) continue;
+              if (reviewerMap.has(login)) {
+                reviewerMap.get(login).reRequested = true;
+              } else {
+                reviewerMap.set(login, { login, avatar, state: 'PENDING' });
+              }
+            }
+
+            // Thread stats
+            const threads = prData.reviewThreads?.nodes || [];
+            const totalThreads = prData.reviewThreads?.totalCount || 0;
+            const unresolvedThreads = threads.filter(t => !t.isResolved);
+            const unresolvedWithMyReply = unresolvedThreads.filter(t => {
+              const last = t.comments?.nodes?.[t.comments.nodes.length - 1];
+              return last && last.author && last.author.login === currentUser;
+            }).length;
+            const unresolvedAwaitingMe = unresolvedThreads.length - unresolvedWithMyReply;
+            const totalComments = threads.reduce((sum, t) => sum + (t.comments?.totalCount || 0), 0);
+
+            return {
+              ...pr, repo, reviewers: [...reviewerMap.values()],
+              unresolved: unresolvedThreads.length,
+              unresolvedAwaitingMe, unresolvedWithMyReply,
+              totalThreads, totalComments
+            };
+          } catch {
+            return { ...pr, repo, reviewers: [], unresolved: 0, unresolvedAwaitingMe: 0, unresolvedWithMyReply: 0, totalThreads: 0, totalComments: 0 };
+          }
+        }));
+
+        myPRsLoaded = true;
+        loading.classList.remove('visible');
+        renderMyPRs();
+        updateTimestamp();
+      } catch (e) {
+        loading.classList.remove('visible');
+        document.getElementById('myprs-error-msg').textContent = e.message;
+        errorBanner.classList.add('visible');
+      } finally {
+        btn.classList.remove('spinning');
+      }
+    }
+
+    function renderMyPRs() {
+      const grid = document.getElementById('myprs-grid');
+      const empty = document.getElementById('myprs-empty');
+      const statsEl = document.getElementById('myprs-stats');
+      grid.innerHTML = '';
+
+      const approved = myPRs.filter(p => p.reviewers.some(r => r.state === 'APPROVED')).length;
+      const changesReq = myPRs.filter(p => p.reviewers.some(r => r.state === 'CHANGES_REQUESTED')).length;
+      const withUnresolved = myPRs.filter(p => p.unresolvedAwaitingMe > 0).length;
+      const drafts = myPRs.filter(p => p.draft).length;
+
+      statsEl.innerHTML = `
+        <div class="stat-chip"><span class="dot green"></span> <strong>${approved}</strong> with approvals</div>
+        <div class="stat-chip"><span class="dot red"></span> <strong>${changesReq}</strong> changes requested</div>
+        ${withUnresolved ? `<div class="stat-chip"><span class="dot amber"></span> <strong>${withUnresolved}</strong> awaiting your reply</div>` : ''}
+        ${drafts ? `<div class="stat-chip"><span class="dot gray"></span> <strong>${drafts}</strong> drafts</div>` : ''}
+        <div class="stat-chip"><strong>${myPRs.length}</strong> total</div>
+      `;
+
+      document.getElementById('tab-count-my-prs').textContent = myPRs.length;
+
+      if (!myPRs.length) { empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+
+      myPRs.forEach((pr, i) => {
+        const card = document.createElement('div');
+        const hasChangesReq = pr.reviewers.some(r => r.state === 'CHANGES_REQUESTED');
+        const allApproved = pr.reviewers.length > 0 && pr.reviewers.every(r => r.state === 'APPROVED');
+
+        let cls = 'pr-card';
+        if (pr.draft) cls += ' draft';
+        else if (hasChangesReq) cls += ' changes-requested';
+        else if (pr.unresolvedAwaitingMe > 0) cls += ' has-unresolved';
+        else if (allApproved) cls += ' all-approved';
+        card.className = cls;
+        card.style.animationDelay = `${i * 0.04}s`;
+
+        const stateLabel = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes', COMMENTED: 'Commented', DISMISSED: 'Dismissed', PENDING: 'Pending' };
+        const stateCls = { APPROVED: 's-approved', CHANGES_REQUESTED: 's-changes', COMMENTED: 's-commented', DISMISSED: 's-changes', PENDING: 's-pending' };
+
+        const reviewerBadges = pr.reviewers.map(r => {
+          const tipState = r.reRequested ? `${stateLabel[r.state] || r.state} · re-review requested` : (stateLabel[r.state] || r.state);
+          return `
+            <div class="reviewer-badge tooltip" data-tooltip="${r.login}: ${tipState}">
+              <img src="${r.avatar}&s=40" alt="${r.login}">
+              <span class="status-dot ${stateCls[r.state] || 's-pending'}"></span>
+              <span>${r.login}</span>
+              ${r.reRequested ? '<span class="re-req-mark">↻</span>' : ''}
+            </div>
+          `;
+        }).join('');
+
+        const approvedCount = pr.reviewers.filter(r => r.state === 'APPROVED').length;
+
+        card.innerHTML = `
+          <div class="pr-card-top">
+            <span class="repo-pill">${pr.repo}</span>
+            <span style="display:flex;align-items:center;gap:0.5rem">
+              ${pr.draft ? '<span class="tag draft">Draft</span>' : ''}
+              <span class="pr-age">${timeAgo(pr.created_at)}</span>
+            </span>
+          </div>
+          <div class="pr-title"><a href="${pr.html_url}" target="_blank" rel="noopener">#${pr.number} ${escapeHtml(pr.title)}</a></div>
+          ${pr.reviewers.length ? `<div class="reviewer-row">${reviewerBadges}</div>` : ''}
+          <div class="pr-card-bottom">
+            <div class="pr-card-meta">
+              ${pr.reviewers.length ? `
+                <span class="meta-item ${allApproved ? 'all-resolved' : 'comments'}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/></svg>
+                  ${approvedCount}/${pr.reviewers.length} approved
+                </span>
+              ` : '<span class="meta-item comments">No reviewers</span>'}
+              ${pr.unresolvedAwaitingMe > 0 ? `
+                <span class="meta-item unresolved">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
+                  ${pr.unresolvedAwaitingMe} awaiting you
+                </span>
+              ` : pr.totalThreads > 0 ? `
+                <span class="meta-item all-resolved">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+                  All resolved
+                </span>
+              ` : ''}
+              ${pr.unresolvedWithMyReply > 0 ? `
+                <span class="meta-item my-replied">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"/></svg>
+                  ${pr.unresolvedWithMyReply} replied
+                </span>
+              ` : ''}
+            </div>
+            <div class="pr-card-meta">
+              ${pr.totalComments > 0 ? `
+                <span class="meta-item comments">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"/></svg>
+                  ${pr.totalComments}
+                </span>
+              ` : ''}
+            </div>
+          </div>`;
+
+        card.addEventListener('click', e => { if (e.target.tagName !== 'A') window.open(pr.html_url, '_blank', 'noopener'); });
+        grid.appendChild(card);
+      });
+    }
+
+    /* ============ CLAUDE CODE TAB ============ */
+    let claudeLoaded = false;
+
+    function loadClaudeSessions() {
+      claudeLoaded = true;
+      renderClaudeSessions();
+    }
+
+    function durationSince(epochMs) {
+      const diffMs = Date.now() - epochMs;
+      const mins = Math.floor(diffMs / 60000);
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      if (days > 0) return `${days}d ${hours % 24}h`;
+      if (hours > 0) return `${hours}h ${mins % 60}m`;
+      return `${mins}m`;
+    }
+
+    function formatCwd(cwd) {
+      const home = cwd.replace(/^\/Users\/[^/]+/, '~');
+      const parts = home.split('/');
+      if (parts.length <= 2) return `<span>${escapeHtml(home)}</span>`;
+      const last = parts.pop();
+      return `<span class="dim">${escapeHtml(parts.join('/'))}/</span>${escapeHtml(last)}`;
+    }
+
+    function reloadSessionsScript() {
+      return new Promise(resolve => {
+        const old = document.getElementById('sessions-script-tag');
+        if (old) old.remove();
+        const s = document.createElement('script');
+        s.id = 'sessions-script-tag';
+        s.src = 'claude-sessions.js?' + Date.now();
+        s.onload = () => resolve(true);
+        s.onerror = () => { window.__claudeSessions = []; resolve(false); };
+        document.head.appendChild(s);
+      });
+    }
+
+    function renderClaudeSessions() {
+      const sessions = window.__claudeSessions || [];
+      const grid = document.getElementById('claude-grid');
+      const empty = document.getElementById('claude-empty');
+      const statsEl = document.getElementById('claude-stats');
+      grid.innerHTML = '';
+
+      const cliCount = sessions.filter(s => s.entrypoint === 'cli').length;
+      const vscodeCount = sessions.filter(s => s.entrypoint !== 'cli').length;
+
+      document.getElementById('tab-count-claude').textContent = sessions.length;
+
+      statsEl.innerHTML = `
+        <div class="stat-chip"><span class="dot purple"></span> <strong>${cliCount}</strong> CLI</div>
+        ${vscodeCount ? `<div class="stat-chip"><span class="dot" style="background:var(--accent-blue)"></span> <strong>${vscodeCount}</strong> VS Code</div>` : ''}
+        <div class="stat-chip"><strong>${sessions.length}</strong> total</div>
+      `;
+
+      if (!sessions.length) { empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+
+      sessions.forEach((s, i) => {
+        const card = document.createElement('div');
+        const isVscode = s.entrypoint !== 'cli';
+        card.className = `session-card${isVscode ? ' vscode' : ''}`;
+        card.style.animationDelay = `${i * 0.04}s`;
+
+        const entrypointIcon = isVscode
+          ? `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z"/></svg>`;
+
+        const contextHtml = s.name
+          ? `<div class="session-name">${escapeHtml(s.name)}</div>`
+          : s.lastPrompt
+            ? `<div class="session-context">${escapeHtml(s.lastPrompt)}</div>`
+            : '';
+
+        card.innerHTML = `
+          <div class="session-card-top">
+            <span class="entrypoint-badge ${isVscode ? 'vscode' : 'cli'}">
+              ${entrypointIcon}
+              ${isVscode ? 'VS Code' : 'Terminal'}
+            </span>
+            <span class="session-duration">running ${durationSince(s.startedAt)}</span>
+          </div>
+          <div class="session-cwd">${formatCwd(s.cwd)}</div>
+          ${contextHtml}
+          <div class="session-meta">
+            <span class="meta-tag">PID <code>${s.pid}</code></span>
+            <span class="meta-tag">Started ${new Date(s.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    /* ============ DEPLOYMENTS TAB ============ */
+    const DEPLOY_ORG = 'Ala-com';
+    const DEPLOY_WORKFLOW = 'Deploy to EKS from ECR';
+    const SERVICES = [
+      'account', 'worker', 'rental', 'worker_logs', 'model_gateway',
+      'worker_gateway', 'model_catalog', 'template', 'rag', 'rag_atlassian_plugin'
+    ];
+
+    function serviceToRepo(service) {
+      return `backend-${service.replace(/_/g, '-')}`;
+    }
+
+    function serviceDisplayName(service) {
+      return service.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Parse run name like "[dev] Deploy v1.21.1-feature-jwt-943-snapshot apply w/out WAF"
+    function parseDeployRun(run) {
+      const nameMatch = run.name.match(/^\[(\w+)\]\s+Deploy\s+v?([\S]+?)(?:\s+apply|$)/i);
+      if (!nameMatch) return null;
+      const env = nameMatch[1].toLowerCase();
+      const version = nameMatch[2];
+      const isSnapshot = !/^\d+\.\d+\.\d+$/.test(version);
+      return { env, version, isSnapshot, run };
+    }
+
+    let deploymentsLoaded = false;
+    let deployments = [];
+
+    const KNOWN_DEPLOY_ENVS = ['prod', 'dev'];
+
+    // Fetch latest deploy-per-env by paging through successful runs until all
+    // known envs are found or we hit the page cap. Needed because dev can
+    // deploy so often it fills the first page and starves prod.
+    async function fetchDeployEnvMap(org, repo, workflowId) {
+      const envMap = new Map();
+      const PER_PAGE = 100;
+      const MAX_PAGES = 2;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const data = await ghFetch(`/repos/${org}/${repo}/actions/workflows/${workflowId}/runs?per_page=${PER_PAGE}&status=success&page=${page}`);
+        const runs = data.workflow_runs || [];
+        for (const run of runs) {
+          const parsed = parseDeployRun(run);
+          if (!parsed) continue;
+          if (!envMap.has(parsed.env)) envMap.set(parsed.env, parsed);
+        }
+        if (KNOWN_DEPLOY_ENVS.every(e => envMap.has(e))) break;
+        if (runs.length < PER_PAGE) break;
+      }
+      return envMap;
+    }
+
+    function fillDeployCard(card, d) {
+      const hasEnvs = d.envs.size > 0;
+      let cardCls = 'deploy-card';
+      if (!hasEnvs) {
+        cardCls += ' no-deploy';
+      } else {
+        const hasSnapshot = [...d.envs.values()].some(e => e.isSnapshot);
+        if (hasSnapshot) cardCls += ' snapshot';
+      }
+      card.className = cardCls;
+
+      if (!hasEnvs) {
+        card.innerHTML = `
+          <div class="deploy-card-top">
+            <span class="deploy-service-name">${serviceDisplayName(d.service)}</span>
+          </div>
+          <div class="deploy-meta" style="color:var(--text-muted)">No recent deployments found</div>
+        `;
+        return;
+      }
+
+      const envOrder = { prod: 0, staging: 1, dev: 2 };
+      const sortedEnvs = [...d.envs.entries()].sort((a, b) => (envOrder[a[0]] ?? 3) - (envOrder[b[0]] ?? 3));
+
+      const envsHtml = sortedEnvs.map(([env, info]) => {
+        const envCls = ['prod', 'staging', 'dev'].includes(env) ? env : 'dev';
+        const tagCls = info.isSnapshot ? 'snapshot' : 'release';
+        const tagLabel = info.isSnapshot ? 'snapshot' : 'release';
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;margin-bottom:0.4rem">
+            <div class="deploy-version">
+              <span class="deploy-env ${envCls}">${escapeHtml(env)}</span>
+              ${escapeHtml(info.version)}
+              <span class="tag ${tagCls}">${tagLabel}</span>
+            </div>
+          </div>
+          <div class="deploy-meta" style="margin-bottom:0.5rem">
+            <span>${timeAgo(info.run.created_at)}</span>
+            <a href="${info.run.html_url}" target="_blank" rel="noopener">View run</a>
+          </div>
+        `;
+      }).join('');
+
+      card.innerHTML = `
+        <div class="deploy-card-top">
+          <span class="deploy-service-name">${serviceDisplayName(d.service)}</span>
+        </div>
+        ${envsHtml}
+      `;
+    }
+
+    function renderDeployStats() {
+      const statsEl = document.getElementById('deploy-stats');
+      let snapshotCount = 0, releaseCount = 0, noDeployCount = 0;
+      for (const d of deployments) {
+        if (d.envs.size === 0) { noDeployCount++; continue; }
+        for (const [, info] of d.envs) {
+          if (info.isSnapshot) snapshotCount++;
+          else releaseCount++;
+        }
+      }
+      document.getElementById('tab-count-deployments').textContent = SERVICES.length;
+      statsEl.innerHTML = `
+        <div class="stat-chip"><span class="dot green"></span> <strong>${releaseCount}</strong> releases</div>
+        <div class="stat-chip"><span class="dot amber"></span> <strong>${snapshotCount}</strong> snapshots</div>
+        ${noDeployCount ? `<div class="stat-chip"><span class="dot gray"></span> <strong>${noDeployCount}</strong> no deploys found</div>` : ''}
+        <div class="stat-chip"><strong>${SERVICES.length}</strong> services</div>
+      `;
+    }
+
+    function latestDeployTime(d) {
+      let max = 0;
+      for (const [, info] of d.envs) {
+        const t = new Date(info.run.created_at).getTime();
+        if (t > max) max = t;
+      }
+      return max;
+    }
+
+    function insertDeployCardSorted(grid, d) {
+      const card = document.createElement('div');
+      card.id = `deploy-card-${d.service}`;
+      const myTime = latestDeployTime(d);
+      card.dataset.deployTime = String(myTime);
+      fillDeployCard(card, d);
+
+      const insertBefore = [...grid.children].find(c => Number(c.dataset.deployTime || 0) < myTime);
+      if (insertBefore) {
+        grid.insertBefore(card, insertBefore);
+      } else {
+        grid.appendChild(card);
+      }
+    }
+
+    async function loadDeployments() {
+      const btn = document.getElementById('refresh-btn');
+      const loading = document.getElementById('deploy-loading');
+      const grid = document.getElementById('deploy-grid');
+      const errorBanner = document.getElementById('deploy-error');
+
+      btn.classList.add('spinning');
+      errorBanner.classList.remove('visible');
+      grid.innerHTML = '';
+      loading.classList.add('visible');
+
+      try {
+        await ensureCurrentUser();
+
+        // Fetch all services concurrently; insert each card in sorted position as it resolves.
+        deployments = [];
+        await Promise.allSettled(SERVICES.map(async (service) => {
+          const repo = serviceToRepo(service);
+          let d;
+          try {
+            const workflows = await ghFetch(`/repos/${DEPLOY_ORG}/${repo}/actions/workflows`);
+            const deployWf = (workflows.workflows || []).find(w => w.name === DEPLOY_WORKFLOW);
+            d = deployWf
+              ? { service, repo, envs: await fetchDeployEnvMap(DEPLOY_ORG, repo, deployWf.id) }
+              : { service, repo, envs: new Map() };
+          } catch {
+            d = { service, repo, envs: new Map() };
+          }
+          deployments.push(d);
+          insertDeployCardSorted(grid, d);
+        }));
+
+        loading.classList.remove('visible');
+        deploymentsLoaded = true;
+        renderDeployStats();
+        updateTimestamp();
+      } catch (e) {
+        loading.classList.remove('visible');
+        document.getElementById('deploy-error-msg').textContent = e.message;
+        errorBanner.classList.add('visible');
+      } finally {
+        btn.classList.remove('spinning');
+      }
+    }
+
+    /* ============ INIT ============ */
+    syncFilterUI();
+
+    if (getToken()) {
+      showDashboard();
+      switchTab(activeTab);
+    } else {
+      showSetup();
+    }
+
+    document.getElementById('token-input').addEventListener('keydown', e => { if (e.key === 'Enter') saveToken(); });
+  </script>
+</body>
+</html>
