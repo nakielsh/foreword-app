@@ -2,31 +2,44 @@
 //  WorkHomepageApp.swift
 //  WorkHomepage
 //
-//  Created by Hubert Nakielski Ala on 09/05/2026.
+//  App entry. Bootstraps the GitHub token from `gh auth token` if absent.
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct WorkHomepageApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var showFirstLaunchTokenPrompt: Bool = false
+    @State private var didBootstrap: Bool = false
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            SidebarView()
+                .frame(minWidth: 800, minHeight: 500)
+                .task {
+                    guard !didBootstrap else { return }
+                    didBootstrap = true
+                    await bootstrapToken()
+                }
+                .sheet(isPresented: $showFirstLaunchTokenPrompt) {
+                    TokenPromptSheet(reason: .firstLaunch) {
+                        showFirstLaunchTokenPrompt = false
+                    }
+                }
         }
-        .modelContainer(sharedModelContainer)
+    }
+
+    private func bootstrapToken() async {
+        if KeychainStore.get(key: "github.token") != nil {
+            return
+        }
+        if let token = await GitHubTokenBootstrap.bootstrap() {
+            KeychainStore.set(key: "github.token", value: token)
+            return
+        }
+        // Still no token — prompt the user.
+        await MainActor.run {
+            showFirstLaunchTokenPrompt = true
+        }
     }
 }
