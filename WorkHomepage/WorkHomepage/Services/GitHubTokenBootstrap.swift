@@ -4,32 +4,24 @@
 //
 //  Tries to read the GitHub token from the `gh` CLI on first launch.
 //  Absolute paths only — GUI processes don't inherit interactive shell PATH.
+//  Path is resolved by `BinaryResolver.resolve(.gh)` so user overrides + cache
+//  apply consistently across the app.
 //
 
 import Foundation
 
 enum GitHubTokenBootstrap {
-    /// Probes known absolute install paths for `gh`. No PATH lookup, no shell wrapper.
-    private static let candidatePaths: [String] = [
-        "/opt/homebrew/bin/gh",
-        "/usr/local/bin/gh"
-    ]
-
     /// Returns a non-empty trimmed token from `gh auth token` if available, else nil.
     static func bootstrap() async -> String? {
-        for path in candidatePaths {
-            guard FileManager.default.isExecutableFile(atPath: path) else { continue }
-            if let token = await runGhAuthToken(at: path), !token.isEmpty {
-                return token
-            }
-        }
-        return nil
+        guard let ghURL = BinaryResolver.resolve(.gh) else { return nil }
+        guard let token = await runGhAuthToken(at: ghURL), !token.isEmpty else { return nil }
+        return token
     }
 
-    private static func runGhAuthToken(at path: String) async -> String? {
+    private static func runGhAuthToken(at url: URL) async -> String? {
         await Task.detached(priority: .userInitiated) {
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: path)
+            process.executableURL = url
             process.arguments = ["auth", "token"]
 
             let stdout = Pipe()
