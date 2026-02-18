@@ -49,6 +49,16 @@ struct ReviewsTab: View {
     @State private var hasFetchedOnce: Bool = false
     @State private var currentUser: String?
 
+    /// PR currently being prepared for review (sheet target). nil → no sheet.
+    @State private var reviewSheetPR: ReviewTarget?
+    /// Surfaces transient errors from the Review button (branch fetch failure,
+    /// single-flight rejection). Cleared on next attempt.
+    @State private var reviewError: String?
+
+    /// Singleton orchestrator state, observed so the Review button on each
+    /// card can disable itself while another review is running.
+    @State private var orchestrator = ReviewOrchestrator.shared
+
     private let client = GitHubClient()
 
     var body: some View {
@@ -80,6 +90,53 @@ struct ReviewsTab: View {
                 showReauthSheet = false
                 Task { await refresh() }
             }
+        }
+        .sheet(item: $reviewSheetPR) { target in
+            ReviewSheet(
+                repo: target.repo,
+                prNumber: target.prNumber,
+                prTitle: target.prTitle,
+                headBranch: target.headBranch,
+                headSha: target.headSha
+            )
+        }
+    }
+
+    // MARK: - Review button plumbing
+
+    /// Identity for the modal sheet — `Identifiable` so SwiftUI's
+    /// `sheet(item:)` works.
+    struct ReviewTarget: Identifiable, Hashable {
+        let id: String
+        let repo: String
+        let prNumber: Int
+        let prTitle: String
+        let headBranch: String
+        let headSha: String
+    }
+
+    /// Resolves head branch + SHA via REST, then presents the sheet. Surfaces
+    /// failures via `reviewError`. Single-flight rejection is handled inside
+    /// the orchestrator and shown by the sheet itself.
+    @MainActor
+    fileprivate func startReview(repo: String, prNumber: Int, prTitle: String) async {
+        if orchestrator.isRunning {
+            reviewError = "A review is already running. Wait for it to finish before starting another."
+            return
+        }
+        reviewError = nil
+        do {
+            let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
+            reviewSheetPR = ReviewTarget(
+                id: "\(repo)#\(prNumber)",
+                repo: repo,
+                prNumber: prNumber,
+                prTitle: prTitle,
+                headBranch: info.headBranch,
+                headSha: info.headSha
+            )
+        } catch {
+            reviewError = "Could not fetch PR branch info: \(error)"
         }
     }
 
@@ -172,8 +229,29 @@ struct ReviewsTab: View {
                 .frame(minHeight: 80)
         } else {
             VStack(alignment: .leading, spacing: 8) {
+                if let reviewError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(reviewError)
+                            .font(.caption)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
                 ForEach(visible) { pr in
-                    PendingPRCard(pr: pr)
+                    HStack(alignment: .top, spacing: 8) {
+                        PendingPRCard(pr: pr)
+                        ReviewButton(
+                            isRunning: orchestrator.isRunning
+                        ) {
+                            Task {
+                                await startReview(repo: pr.repoFullName, prNumber: pr.number, prTitle: pr.title)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -191,7 +269,7 @@ struct ReviewsTab: View {
             SubSection(title: "Changes Requested", count: changesReq.count, accent: .red) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(changesReq) { pr in
-                        ReviewedPRCard(pr: pr)
+                        reviewedRow(pr: pr)
                     }
                 }
             }
@@ -200,7 +278,7 @@ struct ReviewsTab: View {
             SubSection(title: "My Comments", count: commented.count, accent: .orange) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(commented) { pr in
-                        ReviewedPRCard(pr: pr)
+                        reviewedRow(pr: pr)
                     }
                 }
             }
@@ -209,8 +287,25 @@ struct ReviewsTab: View {
             SubSection(title: "Already Approved", count: approved.count, accent: .green) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(approved) { pr in
-                        ReviewedPRCard(pr: pr)
+                        reviewedRow(pr: pr)
                     }
+                }
+            }
+        }
+    }
+
+    /// Row used in each "reviewed-by:@me" sub-section. Card on the left,
+    /// Review button on the right — same layout as the pending row, but the
+    /// PR identity comes from `ReviewedPR` instead of `PendingReviewPR`.
+    @ViewBuilder
+    fileprivate func reviewedRow(pr: ReviewedPR) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            ReviewedPRCard(pr: pr)
+            ReviewButton(
+                isRunning: orchestrator.isRunning
+            ) {
+                Task {
+                    await startReview(repo: pr.repoFullName, prNumber: pr.number, prTitle: pr.title)
                 }
             }
         }
@@ -652,4 +747,24 @@ private func timeAgo(_ date: Date) -> String {
     if hours > 0 { return "\(hours)h ago" }
     if mins > 0 { return "\(mins)m ago" }
     return "just now"
+}
+
+// MARK: - Review button (slice 07)
+
+/// Trigger button on each PR row. Disabled (with a tooltip) while another
+/// review is running — slice 07 enforces single-flight.
+private struct ReviewButton: View {
+    let isRunning: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label("Review", systemImage: "wand.and.stars")
+                .font(.caption.weight(.semibold))
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
+        .disabled(isRunning)
+        .help(isRunning ? "Review in progress — wait for it to finish before starting another." : "Run a Claude review on this PR.")
+    }
 }
