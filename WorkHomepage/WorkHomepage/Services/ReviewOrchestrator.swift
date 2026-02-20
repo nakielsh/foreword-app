@@ -92,6 +92,17 @@ final class ReviewOrchestrator {
         streamTask = nil
     }
 
+    /// Clear the currently surfaced review reference. Used by the global
+    /// "Active review" pill's dismiss button. Does not cancel an in-flight
+    /// run — call `cancel()` first if you mean to. Refuses to clear while a
+    /// review is still running so the user can't accidentally lose the UI
+    /// handle to a live process.
+    func clearCurrent() {
+        guard !isRunning else { return }
+        current = nil
+        lastRejection = nil
+    }
+
     // MARK: - Pipeline
 
     private func execute(

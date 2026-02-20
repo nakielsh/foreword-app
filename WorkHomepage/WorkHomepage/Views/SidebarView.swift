@@ -3,6 +3,9 @@
 //  WorkHomepage
 //
 //  NavigationSplitView shell. One toolbar refresh button, one selected tab.
+//  Slice/07-fix adds an "Active review" pill next to Refresh: visible only
+//  when the orchestrator has a current run, click reopens the modal, the
+//  small "X" clears the row reference once the run is done.
 //
 
 import SwiftUI
@@ -29,6 +32,13 @@ struct SidebarView: View {
     @State private var selection: AppTab = .reviews
     /// Bumped on toolbar Refresh; ReviewsTab observes via `.onChange` to trigger a fetch.
     @State private var refreshTick: Int = 0
+    /// Singleton orchestrator. Drives the active-review pill and re-opens
+    /// the modal sheet from there.
+    @State private var orchestrator = ReviewOrchestrator.shared
+    /// True when the active-review modal is up via the pill click. ReviewsTab
+    /// has its own boolean for the per-card path; both present the same
+    /// orchestrator-driven sheet, so racing them is harmless.
+    @State private var showReviewSheet: Bool = false
 
     var body: some View {
         NavigationSplitView {
@@ -42,6 +52,14 @@ struct SidebarView: View {
         } detail: {
             detail
                 .toolbar {
+                    if orchestrator.current != nil {
+                        ToolbarItem(placement: .primaryAction) {
+                            ActiveReviewPill(
+                                orchestrator: orchestrator,
+                                onOpen: { showReviewSheet = true }
+                            )
+                        }
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             refreshTick &+= 1
@@ -50,6 +68,9 @@ struct SidebarView: View {
                         }
                         .help("Refresh the active tab")
                     }
+                }
+                .sheet(isPresented: $showReviewSheet) {
+                    ReviewSheet(orchestrator: orchestrator)
                 }
         }
     }
@@ -65,6 +86,67 @@ struct SidebarView: View {
             SessionsTab()
         case .deploys:
             DeploysTab()
+        }
+    }
+}
+
+// MARK: - Active review pill
+
+/// Small toolbar widget surfacing the orchestrator's current run. State dot +
+/// `<repo>#<n>` label, click to re-open the modal. Trailing X clears
+/// `orchestrator.current` once the run is done so the pill goes away.
+private struct ActiveReviewPill: View {
+    @Bindable var orchestrator: ReviewOrchestrator
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onOpen) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(stateColor)
+                        .frame(width: 8, height: 8)
+                    Image(systemName: "wand.and.stars")
+                        .font(.caption)
+                    Text(label)
+                        .font(.caption.weight(.semibold))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(stateColor.opacity(0.12)))
+                .foregroundStyle(stateColor)
+            }
+            .buttonStyle(.plain)
+            .help("Open active review")
+
+            // Dismiss the pill (clears orchestrator.current) — only enabled
+            // when the run is in a terminal state. We never let the user
+            // lose the UI handle to a still-running process.
+            if !orchestrator.isRunning {
+                Button {
+                    orchestrator.clearCurrent()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+            }
+        }
+    }
+
+    private var label: String {
+        guard let r = orchestrator.current else { return "—" }
+        return "\(r.repoFullName)#\(r.prNumber)"
+    }
+
+    private var stateColor: Color {
+        switch orchestrator.current?.state {
+        case "running":   return .blue
+        case "completed": return .green
+        case "failed":    return .red
+        case "timeout":   return .orange
+        default:          return .gray
         }
     }
 }

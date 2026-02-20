@@ -57,19 +57,38 @@ struct ReviewStore {
     // MARK: - Terminal transitions
 
     /// Marks the review `completed`, sets `summary`/`verdict`/`rawResultJSON`
-    /// from the decoded payload, and inserts one `Finding` per
-    /// `SchemaFinding`.
-    func markCompleted(_ review: Review, schema: ReviewSchema, rawJSON: String) {
+    /// from the decoded payload (when present), and inserts one `Finding`
+    /// per `SchemaFinding`.
+    ///
+    /// `schema` may be nil when claude's structured payload could not be
+    /// decoded against `ReviewSchema`. In that case `rawResultJSON` is still
+    /// persisted (so the modal can show the raw output), `state` is still set
+    /// to `completed` (the run finished), and `errorMessage` carries a flag
+    /// noting the decode failure. This is the slice/07-fix tracer-bullet
+    /// resilience contract — claude finished, the user gets to see it, even
+    /// if the shape drifted.
+    func markCompleted(_ review: Review, schema: ReviewSchema?, rawJSON: String) {
         review.state = "completed"
         review.finishedAt = Date()
+        review.rawResultJSON = rawJSON
+
+        guard let schema else {
+            // Decode failed but the run finished. Surface raw output and
+            // flag the failure via errorMessage; state stays `completed`.
+            review.summary = nil
+            review.verdict = nil
+            review.errorMessage = "Schema decode failed — raw output below."
+            try? context.save()
+            return
+        }
+
         review.summary = schema.summary
         review.verdict = schema.verdict
-        review.rawResultJSON = rawJSON
         review.errorMessage = nil
 
         for sf in schema.findings {
             let finding = Finding(
-                severity: sf.severity,
+                severity: sf.normalizedSeverity,
                 file: sf.file,
                 line: sf.line,
                 endLine: sf.endLine,

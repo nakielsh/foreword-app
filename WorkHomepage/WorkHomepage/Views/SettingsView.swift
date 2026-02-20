@@ -52,6 +52,8 @@ struct SettingsView: View {
                 Divider()
                 behaviorSection
                 Divider()
+                storageSection
+                Divider()
                 wizardSection
 
                 HStack {
@@ -214,6 +216,65 @@ struct SettingsView: View {
         HStack {
             Spacer()
             Button("Re-run first-run wizard") { showWizardSheet = true }
+        }
+    }
+
+    // MARK: - Storage section
+
+    /// Reveals where SwiftData persists the `Review` / `Finding` rows. Useful
+    /// when the user wants to inspect the store on disk or wipe it manually
+    /// (no in-app delete yet — that's slice 13+).
+    private var storageSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Storage").font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text("SwiftData store")
+                    .frame(width: 130, alignment: .leading)
+                Text(storeDirectoryURL().path)
+                    .font(.callout.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Spacer()
+                Button("Reveal in Finder") {
+                    revealStoreInFinder()
+                }
+            }
+        }
+    }
+
+    /// Resolve the directory containing the SwiftData store. We ask Foundation
+    /// for the user's Application Support dir; on a sandboxed build this lands
+    /// inside `~/Library/Containers/.../Data/Library/Application Support/`,
+    /// on an unsandboxed build it's `~/Library/Application Support/`.
+    /// SwiftData drops `default.store` (and its `-wal` / `-shm` siblings) into
+    /// that directory by default.
+    private func storeDirectoryURL() -> URL {
+        let fm = FileManager.default
+        if let dir = try? fm.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) {
+            return dir
+        }
+        // Fallback to the modern URL accessor — used on macOS 13+ when the
+        // legacy lookup misbehaves.
+        return URL.applicationSupportDirectory
+    }
+
+    private func revealStoreInFinder() {
+        let dir = storeDirectoryURL()
+        let storeFile = dir.appending(path: "default.store")
+        let fm = FileManager.default
+        // Prefer selecting the actual store file when present; otherwise just
+        // open the parent directory.
+        if fm.fileExists(atPath: storeFile.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([storeFile])
+        } else {
+            NSWorkspace.shared.activateFileViewerSelecting([dir])
         }
     }
 
