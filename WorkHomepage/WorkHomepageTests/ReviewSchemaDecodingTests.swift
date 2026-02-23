@@ -3,8 +3,10 @@
 //  WorkHomepageTests
 //
 //  Slice 07 — pure decode tests for `ReviewSchema` against fixture JSON.
-//  Covers: full payload, null `jira_alignment`, missing `endLine` and
-//  `suggestion`, missing `jira_alignment` entirely, and verdict variants.
+//  Slice/07-fix added lenient field aliases (`overallAssessment` → `verdict`,
+//  `description` → `message`, `suggestedFix` → `suggestion`), made `verdict`
+//  optional, and added a severity normalization table. These tests pin both
+//  the canonical-shape decode and the lenient real-world variants.
 //
 //  No URLSession, no SwiftData — just `JSONDecoder` + the wire types.
 //
@@ -114,6 +116,7 @@ final class ReviewSchemaDecodingTests: XCTestCase {
         XCTAssertEqual(decoded.line, 1)
         XCTAssertNil(decoded.endLine)
         XCTAssertNil(decoded.suggestion)
+        XCTAssertNil(decoded.category)
     }
 
     // MARK: - jira_alignment partial (only notes)
@@ -142,5 +145,182 @@ final class ReviewSchemaDecodingTests: XCTestCase {
             let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
             XCTAssertEqual(decoded.verdict, verdict)
         }
+    }
+
+    // MARK: - slice/07-fix lenient aliases
+
+    /// Real claude output uses `overallAssessment` instead of `verdict`.
+    func testVerdictAliasOverallAssessment() throws {
+        let json = """
+        {
+          "summary": "x",
+          "overallAssessment": "needsWork",
+          "findings": []
+        }
+        """
+        let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.verdict, "needsWork")
+    }
+
+    /// `verdict` may be omitted entirely. Slice/07-fix made it optional.
+    func testVerdictOmittedDecodesToNil() throws {
+        let json = """
+        {
+          "summary": "x",
+          "findings": []
+        }
+        """
+        let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.verdict)
+        XCTAssertEqual(decoded.summary, "x")
+    }
+
+    /// `verdict` wins over `overallAssessment` when both are present.
+    func testVerdictWinsOverOverallAssessment() throws {
+        let json = """
+        {
+          "summary": "x",
+          "verdict": "approve",
+          "overallAssessment": "needsWork",
+          "findings": []
+        }
+        """
+        let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.verdict, "approve")
+    }
+
+    /// Real claude output uses `description` instead of `message`.
+    func testFindingDescriptionAliasMapsToMessage() throws {
+        let json = """
+        {
+          "severity": "high",
+          "file": "f.swift",
+          "line": 5,
+          "title": "t",
+          "description": "real description here"
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.message, "real description here")
+    }
+
+    /// Real claude output uses `suggestedFix` instead of `suggestion`.
+    func testFindingSuggestedFixAliasMapsToSuggestion() throws {
+        let json = """
+        {
+          "severity": "minor",
+          "file": "f.swift",
+          "line": 5,
+          "title": "t",
+          "message": "m",
+          "suggestedFix": "do this instead"
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.suggestion, "do this instead")
+    }
+
+    /// `category` is captured when present.
+    func testFindingCategoryCaptured() throws {
+        let json = """
+        {
+          "severity": "critical",
+          "category": "security",
+          "file": "f.swift",
+          "line": 5,
+          "title": "t",
+          "message": "m"
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.category, "security")
+    }
+
+    /// `positives` is captured when present.
+    func testTopLevelPositivesArrayCaptured() throws {
+        let json = """
+        {
+          "summary": "x",
+          "verdict": "approve",
+          "findings": [],
+          "positives": ["good doc", "good tests"]
+        }
+        """
+        let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.positives, ["good doc", "good tests"])
+    }
+
+    // MARK: - Severity normalization table
+
+    /// Pin the severity-normalization mapping. Unknown values pass through
+    /// unchanged so the UI can still display whatever claude said.
+    func testSeverityNormalizationTable() {
+        let cases: [(input: String, expected: String)] = [
+            // 5-bucket canonical
+            ("blocker",  "blocker"),
+            ("major",    "major"),
+            ("minor",    "minor"),
+            ("nit",      "nit"),
+            ("praise",   "praise"),
+            // Common claude synonyms
+            ("critical", "blocker"),
+            ("high",     "major"),
+            ("medium",   "minor"),
+            ("low",      "nit"),
+            ("info",     "nit"),
+            // Case-insensitive
+            ("CRITICAL", "blocker"),
+            ("High",     "major"),
+            // Unknown passes through unchanged
+            ("trivial",  "trivial"),
+            ("",         "")
+        ]
+        for c in cases {
+            let f = SchemaFinding(
+                severity: c.input,
+                file: "x", line: 1,
+                title: "t", message: "m"
+            )
+            XCTAssertEqual(
+                f.normalizedSeverity, c.expected,
+                "severity '\(c.input)' should normalize to '\(c.expected)'"
+            )
+        }
+    }
+
+    // MARK: - Real-world payload from user smoke test
+
+    /// The exact payload shape that triggered the user's smoke-test failure.
+    /// Renamed fields, `critical` severity, missing `verdict`, plus
+    /// `positives`. Must round-trip cleanly with the lenient decoder.
+    func testRealWorldClaudePayload() throws {
+        let json = """
+        {
+          "summary": "Looks reasonable.",
+          "overallAssessment": "needsWork",
+          "findings": [
+            {
+              "file": "src/foo.swift",
+              "line": 10,
+              "severity": "critical",
+              "category": "security",
+              "title": "Plaintext password",
+              "description": "Stored in plaintext; rotate to hashed.",
+              "suggestedFix": "Use bcrypt(password)"
+            }
+          ],
+          "positives": ["Good test coverage"]
+        }
+        """
+        let decoded = try decoder.decode(ReviewSchema.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.summary, "Looks reasonable.")
+        XCTAssertEqual(decoded.verdict, "needsWork")
+        XCTAssertEqual(decoded.findings.count, 1)
+        XCTAssertEqual(decoded.findings[0].severity, "critical")
+        XCTAssertEqual(decoded.findings[0].normalizedSeverity, "blocker")
+        XCTAssertEqual(decoded.findings[0].message, "Stored in plaintext; rotate to hashed.")
+        XCTAssertEqual(decoded.findings[0].suggestion, "Use bcrypt(password)")
+        XCTAssertEqual(decoded.findings[0].category, "security")
+        XCTAssertEqual(decoded.positives, ["Good test coverage"])
     }
 }

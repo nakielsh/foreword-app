@@ -54,11 +54,14 @@ enum ClaudeEvent: Equatable {
     /// 08+.
     case toolUse(name: String)
     /// Final structured result. `rawJSON` is the pretty-printed JSON of the
-    /// `result` payload (used for the "raw" tab in slice 07's modal); `decoded`
-    /// is the same payload typed against `ReviewSchema`.
-    case finalResult(rawJSON: String, decoded: ReviewSchema)
-    /// Anything terminal that isn't a structured result: stderr, decode
-    /// failure, timeout, non-zero exit, missing `claude` binary.
+    /// `result` payload (used for the "raw" tab in the modal); `decoded` is
+    /// the same payload typed against `ReviewSchema`, or `nil` when the
+    /// payload could not be structure-decoded. The orchestrator persists the
+    /// raw JSON regardless, so the user always sees what claude actually said.
+    case finalResult(rawJSON: String, decoded: ReviewSchema?)
+    /// Anything terminal that isn't a structured result: stderr, timeout,
+    /// non-zero exit, missing `claude` binary. Decode failure is NOT an error
+    /// — it surfaces as `.finalResult(rawJSON:, decoded: nil)`.
     case error(String)
 }
 
@@ -370,7 +373,9 @@ struct ClaudeRunner {
         //   - a JSON-encoded string (legacy / common): `"result": "{\"summary\":\"…\"}"`.
         //   - a JSON object directly under `result`.
         // We handle both by re-encoding to canonical JSON and decoding against
-        // `ReviewSchema`.
+        // `ReviewSchema`. On decode failure we still emit `.finalResult` with
+        // the raw payload preserved and `decoded: nil` — the run finished, the
+        // modal needs to surface what came back.
         if let resultString = raw["result"] as? String {
             return decodeResultPayload(resultString)
         }
@@ -381,35 +386,188 @@ struct ClaudeRunner {
                 }
             }
         }
-        // Couldn't extract a structured payload from a non-error result — log
-        // the raw line as an error so the user sees what came back.
-        return [.error("Unrecognized result payload: \(line)")]
+        // Couldn't extract any payload at all — emit a finalResult with the
+        // raw line so the user still sees something, rather than a useless
+        // "unrecognized" error that hides claude's output.
+        return [.finalResult(rawJSON: line, decoded: nil)]
     }
 
     /// Decode a JSON string against `ReviewSchema`. Pretty-print the same
     /// payload to feed `Review.rawResultJSON` and the modal's raw tab.
+    ///
+    /// Robustness contract: this NEVER returns `.error`. Either it finds
+    /// JSON it can decode (returns `.finalResult` with `decoded` set), or it
+    /// returns `.finalResult` with `decoded: nil` and the raw payload
+    /// preserved verbatim so the user can still read what claude said.
+    /// `claude --json-schema` is best-effort, not enforced — the payload may
+    /// arrive wrapped in a markdown fence, prefixed with prose, or with
+    /// renamed fields.
     static func decodeResultPayload(_ json: String) -> [ClaudeEvent] {
-        guard let data = json.data(using: .utf8) else {
-            return [.error("Result was not valid UTF-8")]
-        }
+        let candidates = candidateJSONStrings(from: json)
         let decoder = JSONDecoder()
-        do {
-            let decoded = try decoder.decode(ReviewSchema.self, from: data)
-            // Pretty-print for display + persistence. JSONSerialization is
-            // happy to round-trip the bytes; if that fails, fall back to the
-            // raw string so we never block the success path on cosmetic issues.
-            let pretty: String = {
-                if let obj = try? JSONSerialization.jsonObject(with: data, options: []),
-                   let prettyData = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
-                   let s = String(data: prettyData, encoding: .utf8) {
-                    return s
-                }
-                return json
-            }()
-            return [.finalResult(rawJSON: pretty, decoded: decoded)]
-        } catch {
-            return [.error("Failed to decode result against ReviewSchema: \(error)")]
+        for candidate in candidates {
+            guard let data = candidate.data(using: .utf8) else { continue }
+            if let decoded = try? decoder.decode(ReviewSchema.self, from: data) {
+                let pretty = prettyPrint(data: data, fallback: candidate)
+                return [.finalResult(rawJSON: pretty, decoded: decoded)]
+            }
         }
+        // No candidate decoded. Preserve the raw payload (prefer the first
+        // pretty-printable candidate; otherwise the original input) so the
+        // modal can still show the user what came back.
+        if let first = candidates.first,
+           let data = first.data(using: .utf8) {
+            let pretty = prettyPrint(data: data, fallback: first)
+            return [.finalResult(rawJSON: pretty, decoded: nil)]
+        }
+        return [.finalResult(rawJSON: json, decoded: nil)]
+    }
+
+    /// Pretty-print JSON if the input parses, otherwise return the fallback
+    /// string verbatim. Used so the raw-display tab always shows formatted
+    /// JSON when possible without silently dropping the payload on parse
+    /// failure.
+    private static func prettyPrint(data: Data, fallback: String) -> String {
+        if let obj = try? JSONSerialization.jsonObject(with: data, options: []),
+           let prettyData = try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]),
+           let s = String(data: prettyData, encoding: .utf8) {
+            return s
+        }
+        return fallback
+    }
+
+    /// Produce a list of candidate JSON strings to try, in order of
+    /// preference, by stripping common wrappers claude tends to add despite
+    /// the `--json-schema` flag:
+    ///   1. Input as-is.
+    ///   2. Trimmed of leading/trailing whitespace.
+    ///   3. Markdown code fence stripped (` ```json\n...\n``` ` or
+    ///      ` ```\n...\n``` `).
+    ///   4. Largest balanced `{...}` substring (handles prose preamble /
+    ///      trailing commentary).
+    /// Duplicates and empty strings are filtered out.
+    static func candidateJSONStrings(from input: String) -> [String] {
+        var candidates: [String] = []
+        let seenLock = NSLock()
+        var seen = Set<String>()
+        func push(_ s: String) {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            seenLock.lock()
+            defer { seenLock.unlock() }
+            if seen.insert(trimmed).inserted {
+                candidates.append(trimmed)
+            }
+        }
+
+        push(input)
+
+        // Strip markdown code fence: ```json\n...\n``` or ```\n...\n```.
+        if let fenced = stripCodeFence(input) {
+            push(fenced)
+        }
+
+        // Extract the largest top-level balanced `{...}` substring.
+        if let balanced = extractBalancedObject(from: input) {
+            push(balanced)
+        }
+        // Also try balanced extraction after fence stripping in case the
+        // fenced content itself has prose around the JSON.
+        if let fenced = stripCodeFence(input),
+           let balanced = extractBalancedObject(from: fenced) {
+            push(balanced)
+        }
+
+        return candidates
+    }
+
+    /// Strip a leading ` ```...\n ` and trailing ` ``` ` if both are present.
+    /// Returns `nil` when the input isn't fenced (caller falls back to other
+    /// strategies).
+    private static func stripCodeFence(_ input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```") else { return nil }
+        // Drop the opening fence line (everything up to and including the
+        // first newline). Tolerate ```json, ```JSON, ```  json, etc.
+        guard let firstNewline = trimmed.firstIndex(of: "\n") else { return nil }
+        let afterOpen = trimmed[trimmed.index(after: firstNewline)...]
+        // Drop a trailing ``` (with optional trailing whitespace/newlines).
+        let body = String(afterOpen)
+        let bodyTrimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard bodyTrimmed.hasSuffix("```") else { return nil }
+        let withoutClose = bodyTrimmed.dropLast(3)
+        return String(withoutClose).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Find the largest balanced `{...}` substring in `input`, ignoring
+    /// braces that appear inside JSON string literals (with backslash
+    /// escaping). Returns nil when no balanced object is found. This handles
+    /// `Here is my review:\n{...}\nHope it helps!` shaped inputs.
+    static func extractBalancedObject(from input: String) -> String? {
+        let scalars = Array(input)
+        var bestStart: Int?
+        var bestEnd: Int?
+        var bestLength = 0
+
+        var i = 0
+        while i < scalars.count {
+            if scalars[i] == "{" {
+                if let endIdx = matchBalancedObject(scalars, startingAt: i) {
+                    let length = endIdx - i + 1
+                    if length > bestLength {
+                        bestLength = length
+                        bestStart = i
+                        bestEnd = endIdx
+                    }
+                    // Skip past this balanced block so we don't re-scan its
+                    // interior; nested objects can't be larger than the
+                    // enclosing one.
+                    i = endIdx + 1
+                    continue
+                }
+            }
+            i += 1
+        }
+
+        guard let s = bestStart, let e = bestEnd else { return nil }
+        return String(scalars[s...e])
+    }
+
+    /// Walk forward from `startingAt` (which must point to `{`) and return
+    /// the index of the matching `}`, or nil if no match exists. String
+    /// literals are skipped over so braces inside `"..."` don't fool the
+    /// counter; backslash escapes inside strings are honoured.
+    private static func matchBalancedObject(_ scalars: [Character], startingAt: Int) -> Int? {
+        guard startingAt < scalars.count, scalars[startingAt] == "{" else { return nil }
+        var depth = 0
+        var i = startingAt
+        var inString = false
+        var escape = false
+        while i < scalars.count {
+            let c = scalars[i]
+            if inString {
+                if escape {
+                    escape = false
+                } else if c == "\\" {
+                    escape = true
+                } else if c == "\"" {
+                    inString = false
+                }
+            } else {
+                if c == "\"" {
+                    inString = true
+                } else if c == "{" {
+                    depth += 1
+                } else if c == "}" {
+                    depth -= 1
+                    if depth == 0 {
+                        return i
+                    }
+                }
+            }
+            i += 1
+        }
+        return nil
     }
 
     // MARK: - Helpers
