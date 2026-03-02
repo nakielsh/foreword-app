@@ -45,10 +45,14 @@ struct WorkHomepageApp: App {
                 configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
             )
         }
+        // Slice 16: instantiate the menu-bar counts singleton at launch so it
+        // starts observing `ReviewOrchestrator` and `NotificationCenter`
+        // before the user can interact with anything.
+        _ = MenuBarCounts.shared
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: MenuBarWindowID.main) {
             SidebarView()
                 .frame(minWidth: 800, minHeight: 500)
                 .task {
@@ -72,6 +76,14 @@ struct WorkHomepageApp: App {
 
         Settings {
             SettingsView()
+        }
+
+        // Slice 16: at-a-glance counts in the system menu bar. The label
+        // reads `MenuBarCounts.shared` directly, so no parameters needed.
+        MenuBarExtra {
+            MenuBarContent()
+        } label: {
+            MenuBarLabel()
         }
     }
 
