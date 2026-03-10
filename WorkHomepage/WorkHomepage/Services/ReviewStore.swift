@@ -133,3 +133,49 @@ struct ReviewStore {
         return (try? context.fetch(descriptor))?.first
     }
 }
+
+// MARK: - Slice 15: PR-close cleanup
+//
+// `dropForPR` is the SwiftData write path used by both the automatic
+// closed-PR sweep (`ClosedPRDetector`) and the per-card "Evict review state"
+// menu in the Reviews tab. It deletes every `Review` row matching the given
+// `prKey`; the cascade rule on `Review.findings` takes the `Finding` rows
+// down with each Review.
+//
+// `distinctTrackedPRKeys` returns the unique set of `prKey`s for which we
+// have at least one Review row — i.e. the set of PRs the orchestrator has
+// "touched" that may now need cleanup. The detector cross-references this
+// with the live open-PR set to compute the eviction list.
+
+extension ReviewStore {
+
+    /// Drop all `Review` rows (and cascaded `Finding` rows) matching `prKey`.
+    /// No-op when there are none. Saves once at the end so the deletion
+    /// becomes durable in a single transaction.
+    func dropForPR(prKey: String) {
+        let descriptor = FetchDescriptor<Review>(
+            predicate: #Predicate { $0.prKey == prKey }
+        )
+        guard let rows = try? context.fetch(descriptor) else { return }
+        if rows.isEmpty { return }
+        for row in rows {
+            context.delete(row)
+        }
+        try? context.save()
+    }
+
+    /// Returns every distinct `prKey` for which at least one `Review` row
+    /// exists. Order is unspecified.
+    func distinctTrackedPRKeys() -> [String] {
+        let descriptor = FetchDescriptor<Review>()
+        guard let rows = try? context.fetch(descriptor) else { return [] }
+        var seen: Set<String> = []
+        var out: [String] = []
+        for row in rows {
+            if seen.insert(row.prKey).inserted {
+                out.append(row.prKey)
+            }
+        }
+        return out
+    }
+}
