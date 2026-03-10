@@ -51,6 +51,16 @@ struct ReviewSheet: View {
     @AppStorage("findings.showResolved") private var showResolved: Bool = false
     @AppStorage("findings.showDismissed") private var showDismissed: Bool = false
 
+    // MARK: - Slice 09: launcher feedback
+    //
+    // A single piece of state captures the most recent launch outcome so the
+    // sheet can surface the right affordance:
+    //   - `.openedInIntelliJ`            → no UI feedback
+    //   - `.openedWithoutLineJump`       → 3s auto-dismissing toast banner
+    //   - `.fileMissing` / `.failed`     → modal alert with OK
+    @State private var launcherToastMessage: String?
+    @State private var launcherAlertMessage: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -72,6 +82,96 @@ struct ReviewSheet: View {
             .padding()
         }
         .frame(minWidth: 720, minHeight: 560)
+        .overlay(alignment: .top) {
+            if let toast = launcherToastMessage {
+                launcherToast(message: toast)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .alert(
+            "Could not open file",
+            isPresented: Binding(
+                get: { launcherAlertMessage != nil },
+                set: { if !$0 { launcherAlertMessage = nil } }
+            ),
+            actions: {
+                Button("OK", role: .cancel) { launcherAlertMessage = nil }
+            },
+            message: {
+                Text(launcherAlertMessage ?? "")
+            }
+        )
+    }
+
+    // MARK: - Toast
+
+    @ViewBuilder
+    private func launcherToast(message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.callout)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.thickMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.orange.opacity(0.5), lineWidth: 1)
+        )
+        .shadow(radius: 4)
+    }
+
+    // MARK: - Launcher dispatch
+
+    /// Builds the worktree URL for the current review and launches IntelliJ
+    /// at `file:line`. Maps `FallbackResult` cases onto toast / alert state
+    /// so the body's overlays render the right feedback.
+    private func handleFindingClick(finding: Finding) {
+        guard let review = orchestrator.current else { return }
+        let worktree = WorktreePath.url(
+            for: review.repoFullName,
+            prNumber: review.prNumber
+        )
+        let result = IntelliJLauncher.openWithFallback(
+            worktree: worktree,
+            file: finding.file,
+            line: finding.line
+        )
+        switch result {
+        case .openedInIntelliJ:
+            // Success is silent — IntelliJ will surface itself.
+            break
+        case .openedWithoutLineJump:
+            showToast("idea CLI not found — opened without line jump")
+        case .fileMissing(let url):
+            launcherAlertMessage = "File not found in worktree: \(url.path)"
+        case .failed(let msg):
+            launcherAlertMessage = "Could not open file: \(msg)"
+        }
+    }
+
+    /// Shows a toast for ~3s, dismissing automatically. Re-showing the same
+    /// toast resets the timer.
+    private func showToast(_ message: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            launcherToastMessage = message
+        }
+        let captured = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            // Only clear if the visible toast is still the one we showed —
+            // otherwise a later toast would get clobbered by this stale timer.
+            if launcherToastMessage == captured {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    launcherToastMessage = nil
+                }
+            }
+        }
     }
 
     // MARK: - Header
@@ -392,7 +492,8 @@ struct ReviewSheet: View {
                     ForEach(section.items, id: \.id) { finding in
                         FindingRow(
                             finding: finding,
-                            store: FindingStateStore(context: modelContext)
+                            store: FindingStateStore(context: modelContext),
+                            onOpenInIntelliJ: { handleFindingClick(finding: finding) }
                         )
                     }
                 }
@@ -574,6 +675,11 @@ struct ReviewSheet: View {
 private struct FindingRow: View {
     @Bindable var finding: Finding
     let store: FindingStateStore
+    /// Slice 09 — invoked when the user taps the row body (anywhere except
+    /// the state menu / icon button) or the explicit "open in IntelliJ"
+    /// chevron. Both routes go through the same handler so they behave
+    /// identically.
+    let onOpenInIntelliJ: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -587,6 +693,7 @@ private struct FindingRow: View {
                     .foregroundStyle(severityColor)
                     .textCase(.uppercase)
                 Spacer()
+                openInIntelliJButton
                 stateMenu
             }
 
@@ -619,6 +726,26 @@ private struct FindingRow: View {
                 .stroke(Color.gray.opacity(0.18), lineWidth: 1)
         )
         .opacity(finding.state == FindingState.dismissed ? 0.55 : 1.0)
+        // Make the whole card area hit-testable, not just the text glyphs,
+        // so tapping anywhere on the row jumps into IntelliJ. The state
+        // menu and the icon button still capture their own taps because
+        // SwiftUI gives child controls hit priority.
+        .contentShape(Rectangle())
+        .onTapGesture { onOpenInIntelliJ() }
+    }
+
+    /// Small explicit affordance on the right of the header row. Same action
+    /// as tapping the row body, but with a clear icon so the click target is
+    /// discoverable.
+    @ViewBuilder
+    private var openInIntelliJButton: some View {
+        Button(action: onOpenInIntelliJ) {
+            Image(systemName: "arrow.up.right.square")
+                .font(.callout)
+        }
+        .buttonStyle(.borderless)
+        .help("Open in IntelliJ at \(fileLineLabel)")
+        .accessibilityLabel("Open in IntelliJ")
     }
 
     private var fileLineLabel: String {
