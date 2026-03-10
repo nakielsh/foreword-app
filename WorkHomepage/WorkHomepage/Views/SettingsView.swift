@@ -33,6 +33,13 @@ struct SettingsView: View {
     @State private var showRePasteTokenSheet: Bool = false
     @State private var showWizardSheet: Bool = false
 
+    // Storage / disk usage (slice 17)
+    @State private var totalDiskBytes: Int64 = 0
+    @State private var perRepoUsage: [WorktreeManager.RepoUsage] = []
+    @State private var isComputingSizes: Bool = false
+    @State private var pendingEvictRepo: String? = nil
+    @State private var evictError: String? = nil
+
     @Environment(\.dismiss) private var dismiss
 
     enum TestStatus: Equatable {
@@ -221,12 +228,46 @@ struct SettingsView: View {
 
     // MARK: - Storage section
 
-    /// Reveals where SwiftData persists the `Review` / `Finding` rows. Useful
-    /// when the user wants to inspect the store on disk or wipe it manually
-    /// (no in-app delete yet — that's slice 13+).
+    /// Slice 17: surfaces disk usage of the local caches (`~/.work-homepage/repos`
+    /// and `~/.work-homepage/worktrees`) with a per-repo table and a per-row
+    /// "Evict" button. Sizes are I/O-heavy so they're computed off the main
+    /// thread, only when the section first appears or when the user clicks
+    /// "Refresh sizes" — never on every render. The SwiftData "Reveal in
+    /// Finder" affordance from slice 07-fix is preserved at the bottom of the
+    /// section.
     private var storageSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Storage").font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Storage").font(.headline)
+                Spacer()
+                Button("Refresh sizes") {
+                    Task { await refreshDiskUsage() }
+                }
+                .disabled(isComputingSizes)
+                if isComputingSizes {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            // Total disk usage line.
+            HStack(alignment: .firstTextBaseline) {
+                Text("Cache total")
+                    .frame(width: 130, alignment: .leading)
+                Text(Self.formatBytes(totalDiskBytes))
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                Text("(bare clones + worktrees)")
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                Spacer()
+            }
+
+            // Per-repo table.
+            perRepoTable
+
+            Divider()
+
+            // SwiftData store reveal (preserved from slice 07-fix).
             HStack(alignment: .firstTextBaseline) {
                 Text("SwiftData store")
                     .frame(width: 130, alignment: .leading)
@@ -241,6 +282,165 @@ struct SettingsView: View {
                     revealStoreInFinder()
                 }
             }
+        }
+        .task {
+            // Compute sizes once when the section first appears. Subsequent
+            // recomputes happen via the explicit "Refresh sizes" button so we
+            // don't pin the disk every time the user opens Settings.
+            if perRepoUsage.isEmpty && totalDiskBytes == 0 {
+                await refreshDiskUsage()
+            }
+        }
+        .confirmationDialog(
+            evictDialogTitle,
+            isPresented: Binding(
+                get: { pendingEvictRepo != nil },
+                set: { if !$0 { pendingEvictRepo = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingEvictRepo
+        ) { repo in
+            Button("Evict", role: .destructive) {
+                evictConfirmed(repo: repo)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingEvictRepo = nil
+            }
+        } message: { _ in
+            Text("This removes the bare clone and all worktrees. Saved reviews and findings persist.")
+        }
+        .alert(
+            "Couldn't evict",
+            isPresented: Binding(
+                get: { evictError != nil },
+                set: { if !$0 { evictError = nil } }
+            ),
+            presenting: evictError
+        ) { _ in
+            Button("OK", role: .cancel) { evictError = nil }
+        } message: { msg in
+            Text(msg)
+        }
+    }
+
+    @ViewBuilder
+    private var perRepoTable: some View {
+        if perRepoUsage.isEmpty {
+            HStack {
+                Text(isComputingSizes ? "Computing sizes…" : "No repo caches on disk yet.")
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                // Header row.
+                HStack(spacing: 8) {
+                    Text("Repo")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Bare")
+                        .frame(width: 80, alignment: .trailing)
+                    Text("Worktree")
+                        .frame(width: 80, alignment: .trailing)
+                    Text("Total")
+                        .frame(width: 80, alignment: .trailing)
+                    Text("")
+                        .frame(width: 70, alignment: .trailing)
+                }
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 4)
+
+                Divider()
+
+                ForEach(perRepoUsage, id: \.repo) { usage in
+                    HStack(spacing: 8) {
+                        Text(usage.repo)
+                            .font(.callout.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        Text(Self.formatBytes(usage.bareBytes))
+                            .font(.callout.monospaced())
+                            .frame(width: 80, alignment: .trailing)
+                        Text(Self.formatBytes(usage.worktreeBytes))
+                            .font(.callout.monospaced())
+                            .frame(width: 80, alignment: .trailing)
+                        Text(Self.formatBytes(usage.totalBytes))
+                            .font(.callout.monospaced())
+                            .frame(width: 80, alignment: .trailing)
+                        Button("Evict") {
+                            pendingEvictRepo = usage.repo
+                        }
+                        .frame(width: 70, alignment: .trailing)
+                    }
+                    .padding(.vertical, 4)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var evictDialogTitle: String {
+        if let repo = pendingEvictRepo {
+            return "Evict all caches for \(repo)?"
+        }
+        return "Evict all caches?"
+    }
+
+    /// `ByteCountFormatter` configured per the slice spec: `.useAll` so we get
+    /// KB/MB/GB as appropriate, `.file` for filesystem-style rounding (matches
+    /// what Finder shows in column view), and `.allowsNonnumericFormatting` so
+    /// "Zero KB" renders for empty caches.
+    private static let byteFormatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.allowedUnits = .useAll
+        f.countStyle = .file
+        f.allowsNonnumericFormatting = true
+        return f
+    }()
+
+    private static func formatBytes(_ bytes: Int64) -> String {
+        byteFormatter.string(fromByteCount: bytes)
+    }
+
+    /// Recompute disk usage off the main thread. Walking the cache trees is
+    /// pure I/O, so we hop to a detached task and then publish the result back
+    /// to `@State` on the main actor.
+    private func refreshDiskUsage() async {
+        if isComputingSizes { return }
+        isComputingSizes = true
+        defer { isComputingSizes = false }
+        let result = await Task.detached(priority: .userInitiated) {
+            (
+                total: WorktreeManager.diskUsage(),
+                perRepo: WorktreeManager.usagePerRepo()
+            )
+        }.value
+        totalDiskBytes = result.total
+        perRepoUsage = result.perRepo
+    }
+
+    /// Confirmation handler. The `evictAllForRepo` call is `@MainActor`-isolated
+    /// because it reads `ReviewOrchestrator.shared` to refuse eviction while a
+    /// review is running; the actual `FileManager.removeItem` cost is
+    /// dominated by APFS metadata operations which are O(directory entries)
+    /// and fast in practice. After eviction succeeds we recompute sizes off
+    /// the main thread.
+    private func evictConfirmed(repo: String) {
+        pendingEvictRepo = nil
+        do {
+            try WorktreeManager.evictAllForRepo(repo)
+            Task { await refreshDiskUsage() }
+        } catch let error as WorktreeError {
+            if case .cannotEvictWhileReviewRunning(let r) = error {
+                evictError = "A review is currently running against \(r). Wait for it to finish before evicting its caches."
+            } else {
+                evictError = "Eviction failed: \(error)"
+            }
+        } catch {
+            evictError = "Eviction failed: \(error.localizedDescription)"
         }
     }
 

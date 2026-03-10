@@ -49,6 +49,10 @@ enum WorktreeError: Error, Equatable {
     case resetFailed(stderr: String)
     /// FileManager I/O failed (e.g. couldn't create base dirs).
     case ioFailed(String)
+    /// Slice 17: refused to wipe caches because a review is still running
+    /// against the same repo. Carries the repo full name so the UI can render
+    /// a meaningful message.
+    case cannotEvictWhileReviewRunning(String)
 }
 
 // MARK: - WorktreeManager
@@ -417,5 +421,259 @@ struct WorktreeManager {
         let out = String(data: outData, encoding: .utf8) ?? ""
         let err = String(data: errData, encoding: .utf8) ?? ""
         return ProcessResult(exitCode: process.terminationStatus, stdout: out, stderr: err)
+    }
+}
+
+// MARK: - Slice 17: Disk usage + per-repo evict
+//
+// `diskUsage()` and `usagePerRepo()` walk the on-disk caches under
+// `~/.work-homepage/repos` and `~/.work-homepage/worktrees` and sum file sizes
+// via `FileManager`'s directory enumerator. There's no `du` shellout — we want
+// portable, sandbox-friendly I/O, and 200MB-class repos enumerate in well under
+// a second on an SSD. The work is still I/O-bound, so the production callers
+// (Settings) wrap these in `Task.detached` and explicitly drive recomputation
+// via a "Refresh" button rather than re-running per-render.
+//
+// The path resolution is layered: the no-arg public entrypoints read the
+// production `~/.work-homepage` HOME, and parameterized internal entrypoints
+// take a `baseDir: URL` so tests can build a temp filesystem and exercise the
+// real walker. This mirrors the `prepare(...:baseDir:gitURL:)` pattern from
+// Slice 07.
+//
+// `evictAllForRepo` is the destructive operation — it nukes both the bare
+// clone and the entire `worktrees/<org>/<repo>/` subtree. To avoid yanking the
+// disk out from under a running review, the public entrypoint refuses if the
+// `ReviewOrchestrator` singleton currently has a `running` review against the
+// same repo. Tests inject a custom "is busy" closure to drive that branch
+// without mutating the shared singleton (which lives on `@MainActor`).
+
+extension WorktreeManager {
+
+    // MARK: - RepoUsage
+
+    /// Per-repo cache footprint. `bareBytes` is the bare clone, `worktreeBytes`
+    /// is the sum across all live PR worktrees for that repo.
+    struct RepoUsage: Equatable {
+        let repo: String              // "<org>/<repo>"
+        let bareBytes: Int64
+        let worktreeBytes: Int64
+        var totalBytes: Int64 { bareBytes + worktreeBytes }
+    }
+
+    // MARK: - Public API (production defaults)
+
+    /// Total bytes used by all bare clones + worktrees under the production
+    /// `~/.work-homepage` base directory. Synchronous and I/O-heavy — call from
+    /// a detached task.
+    static func diskUsage() -> Int64 {
+        diskUsage(baseDir: defaultBaseDir())
+    }
+
+    /// Per-repo breakdown sorted by `totalBytes` descending. Synchronous and
+    /// I/O-heavy — call from a detached task.
+    static func usagePerRepo() -> [RepoUsage] {
+        usagePerRepo(baseDir: defaultBaseDir())
+    }
+
+    /// Removes both the bare clone and all worktrees for the given repo.
+    /// Throws `WorktreeError.cannotEvictWhileReviewRunning` if a review is in
+    /// flight against this repo. Production reads `ReviewOrchestrator.shared`
+    /// for the busy check; tests inject their own predicate.
+    ///
+    /// Note: this entrypoint must be called from the main actor because the
+    /// busy check reads the `@MainActor`-isolated orchestrator singleton. Off
+    /// the main thread, callers should snapshot the busy-state on the main
+    /// actor and use the `isBusy:` overload.
+    @MainActor
+    static func evictAllForRepo(_ repo: String) throws {
+        try evictAllForRepo(
+            repo,
+            baseDir: defaultBaseDir(),
+            isBusy: { Self.defaultIsBusy(repo: $0) }
+        )
+    }
+
+    // MARK: - Testable internal API
+
+    /// `diskUsage` parameterized by base dir. Walks `<baseDir>/repos` and
+    /// `<baseDir>/worktrees` and sums per-file allocated sizes. Missing dirs
+    /// contribute 0.
+    static func diskUsage(baseDir: URL) -> Int64 {
+        let repos = baseDir.appendingPathComponent("repos", isDirectory: true)
+        let worktrees = baseDir.appendingPathComponent("worktrees", isDirectory: true)
+        return directorySize(at: repos) + directorySize(at: worktrees)
+    }
+
+    /// Per-repo breakdown parameterized by base dir. Walks two parallel
+    /// directory trees:
+    ///
+    ///   - `<baseDir>/repos/<org>/<repo>.git` → `bareBytes`
+    ///   - `<baseDir>/worktrees/<org>/<repo>/<pr#>/...` → `worktreeBytes`
+    ///
+    /// The set of repos is the union of repos seen in either tree. Sorted by
+    /// `totalBytes` descending so the largest spenders surface first.
+    static func usagePerRepo(baseDir: URL) -> [RepoUsage] {
+        var bareByRepo: [String: Int64] = [:]
+        var worktreeByRepo: [String: Int64] = [:]
+
+        let reposRoot = baseDir.appendingPathComponent("repos", isDirectory: true)
+        for org in immediateSubdirectories(of: reposRoot) {
+            let orgURL = reposRoot.appendingPathComponent(org, isDirectory: true)
+            for entry in immediateSubdirectories(of: orgURL) {
+                guard entry.hasSuffix(".git") else { continue }
+                let repoName = String(entry.dropLast(".git".count))
+                let key = "\(org)/\(repoName)"
+                let url = orgURL.appendingPathComponent(entry, isDirectory: true)
+                bareByRepo[key, default: 0] += directorySize(at: url)
+            }
+        }
+
+        let worktreesRoot = baseDir.appendingPathComponent("worktrees", isDirectory: true)
+        for org in immediateSubdirectories(of: worktreesRoot) {
+            let orgURL = worktreesRoot.appendingPathComponent(org, isDirectory: true)
+            for repoName in immediateSubdirectories(of: orgURL) {
+                let key = "\(org)/\(repoName)"
+                let url = orgURL.appendingPathComponent(repoName, isDirectory: true)
+                worktreeByRepo[key, default: 0] += directorySize(at: url)
+            }
+        }
+
+        let allKeys = Set(bareByRepo.keys).union(worktreeByRepo.keys)
+        let usages = allKeys.map { key in
+            RepoUsage(
+                repo: key,
+                bareBytes: bareByRepo[key] ?? 0,
+                worktreeBytes: worktreeByRepo[key] ?? 0
+            )
+        }
+        return usages.sorted { lhs, rhs in
+            if lhs.totalBytes != rhs.totalBytes { return lhs.totalBytes > rhs.totalBytes }
+            return lhs.repo < rhs.repo
+        }
+    }
+
+    /// Test seam for `evictAllForRepo`. The `isBusy` closure receives the repo
+    /// full name and returns `true` if eviction must be refused. Production
+    /// passes a closure that reads `ReviewOrchestrator.shared.current`.
+    static func evictAllForRepo(
+        _ repo: String,
+        baseDir: URL,
+        isBusy: (String) -> Bool
+    ) throws {
+        if isBusy(repo) {
+            throw WorktreeError.cannotEvictWhileReviewRunning(repo)
+        }
+        let bareDir = bareCloneURL(baseDir: baseDir, repo: repo)
+        let worktreesDir = worktreesRootForRepo(baseDir: baseDir, repo: repo)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: bareDir.path) {
+            do {
+                try fm.removeItem(at: bareDir)
+            } catch {
+                throw WorktreeError.ioFailed("Could not remove bare clone at \(bareDir.path): \(error.localizedDescription)")
+            }
+        }
+        if fm.fileExists(atPath: worktreesDir.path) {
+            do {
+                try fm.removeItem(at: worktreesDir)
+            } catch {
+                throw WorktreeError.ioFailed("Could not remove worktrees at \(worktreesDir.path): \(error.localizedDescription)")
+            }
+        }
+    }
+
+    // MARK: - Layout helpers
+
+    /// `<baseDir>/worktrees/<org>/<name>` — the per-repo worktree root that
+    /// holds all `<pr#>` subdirectories. Used by `evictAllForRepo` to take
+    /// down the entire subtree in one `removeItem` call.
+    static func worktreesRootForRepo(baseDir: URL, repo: String) -> URL {
+        baseDir
+            .appendingPathComponent("worktrees", isDirectory: true)
+            .appendingPathComponent(repo, isDirectory: true)
+    }
+
+    // MARK: - Internals
+
+    /// Production "is this repo currently being reviewed?" predicate. The
+    /// orchestrator singleton lives on `@MainActor`; the public
+    /// `evictAllForRepo(_:)` is itself `@MainActor`-isolated, so this
+    /// `assumeIsolated` is safe — Swift just can't see through the closure.
+    private static func defaultIsBusy(repo: String) -> Bool {
+        MainActor.assumeIsolated {
+            let orch = ReviewOrchestrator.shared
+            return orch.current?.state == "running" && orch.current?.repoFullName == repo
+        }
+    }
+
+    /// Returns the total size in bytes of every regular file reachable from
+    /// `url` via a recursive directory enumerator. Missing or unreadable paths
+    /// contribute 0 — this is a best-effort measurement, not a correctness
+    /// boundary.
+    ///
+    /// We prefer `URLResourceValues.totalFileAllocatedSize` (allocated blocks
+    /// on disk, including any sparse-file slack) and fall back to
+    /// `fileSize` when the allocated size isn't available — same shape as the
+    /// AppKit Finder reports.
+    private static func directorySize(at url: URL) -> Int64 {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return 0
+        }
+        let keys: Set<URLResourceKey> = [
+            .isRegularFileKey,
+            .totalFileAllocatedSizeKey,
+            .fileAllocatedSizeKey,
+            .fileSizeKey
+        ]
+        guard let enumerator = fm.enumerator(
+            at: url,
+            includingPropertiesForKeys: Array(keys),
+            options: [],
+            errorHandler: nil
+        ) else {
+            return 0
+        }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            guard let values = try? fileURL.resourceValues(forKeys: keys) else { continue }
+            // Skip non-regular files (directories, symlinks). Their own bytes
+            // are negligible and the enumerator will descend into directories
+            // separately.
+            if values.isRegularFile != true { continue }
+            if let allocated = values.totalFileAllocatedSize {
+                total += Int64(allocated)
+            } else if let allocated = values.fileAllocatedSize {
+                total += Int64(allocated)
+            } else if let size = values.fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
+    }
+
+    /// Lists immediate subdirectory names of `url`, ignoring dotfiles and any
+    /// non-directory entries. Returns `[]` if the path doesn't exist or isn't
+    /// readable. We list names rather than URLs so callers can pattern-match
+    /// `.git` suffixes cheaply.
+    private static func immediateSubdirectories(of url: URL) -> [String] {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return []
+        }
+        guard let entries = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return entries.compactMap { entryURL in
+            let values = try? entryURL.resourceValues(forKeys: [.isDirectoryKey])
+            guard values?.isDirectory == true else { return nil }
+            return entryURL.lastPathComponent
+        }
     }
 }
