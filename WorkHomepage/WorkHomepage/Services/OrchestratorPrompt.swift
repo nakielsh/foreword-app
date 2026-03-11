@@ -3,18 +3,32 @@
 //  WorkHomepage
 //
 //  Slice 10 — Jira basic.
+//  Slice 11 — adds the subtask-with-parent prompt block. When the Jira
+//  ticket carries an attached `parent`, we render a different shape that
+//  surfaces "subtask of X" up top and includes the parent's description
+//  underneath. No-parent and no-Jira shapes are unchanged from slice 10.
 //
 //  Pulled out of `ReviewOrchestrator` so it can be unit-tested without
 //  spinning up the orchestrator (which is `@MainActor` and owns SwiftData
 //  state). Pure function: PR meta + optional Jira ticket → final prompt.
 //
 //  Format (Q6 from PRD):
-//    - When Jira is wired up:
+//    - When Jira is wired up (no parent):
 //        Jira: <KEY>
 //        Title: <summary>
 //        Type: <issueType>  Status: <status>  Priority: <priority or "Unset">
 //        Description:
 //        <plaintext description>
+//
+//        You are reviewing PR #<n> in <repo>, branch <branch>.
+//        ...
+//    - When Jira ticket is a subtask whose parent we also fetched:
+//        Jira: <KEY> (subtask of <PARENT_KEY>)
+//        Subtask title: <subtask summary>
+//        Subtask description: <subtask plaintext or "(empty)">
+//
+//        Parent <PARENT_KEY> title: <parent summary>
+//        Parent description: <parent plaintext>
 //
 //        You are reviewing PR #<n> in <repo>, branch <branch>.
 //        ...
@@ -54,6 +68,12 @@ enum OrchestratorPrompt {
             return "Jira: null\n"
         }
 
+        // Slice 11: subtask with attached parent gets a different shape so
+        // the model sees both descriptions clearly delimited.
+        if let parent = jira.parent {
+            return renderSubtaskWithParentBlock(subtask: jira, parent: parent)
+        }
+
         let priority = jira.priority?.isEmpty == false ? jira.priority! : "Unset"
         var block = ""
         block += "Jira: \(jira.key)\n"
@@ -63,6 +83,29 @@ enum OrchestratorPrompt {
         block += jira.description
         // Trailing newline so the next section is visually separated even
         // when the description itself didn't end with one.
+        if !block.hasSuffix("\n") { block += "\n" }
+        return block
+    }
+
+    /// Slice 11 — subtask block with attached parent. The shape was nailed
+    /// down in PRD Q6c: lead with "subtask of PARENT", then the subtask's
+    /// own (possibly empty) description, then a blank line, then the parent
+    /// title + description. An empty subtask description renders as the
+    /// literal "(empty)" rather than a blank value.
+    private static func renderSubtaskWithParentBlock(
+        subtask: JiraTicket,
+        parent: JiraTicket
+    ) -> String {
+        let subtaskDesc = subtask.description.isEmpty ? "(empty)" : subtask.description
+        var block = ""
+        block += "Jira: \(subtask.key) (subtask of \(parent.key))\n"
+        block += "Subtask title: \(subtask.summary)\n"
+        block += "Subtask description: \(subtaskDesc)\n"
+        block += "\n"
+        block += "Parent \(parent.key) title: \(parent.summary)\n"
+        block += "Parent description: \(parent.description)"
+        // Trailing newline so the next section is visually separated even
+        // when the parent description itself didn't end with one.
         if !block.hasSuffix("\n") { block += "\n" }
         return block
     }
