@@ -56,6 +56,15 @@ struct ReviewsTab: View {
     /// single-flight rejection). Cleared on next attempt.
     @State private var reviewError: String?
 
+    /// Slice 15 — transient banner shown after the closed-PR sweep or a manual
+    /// evict. Auto-dismisses after 3s. Nil when nothing to show.
+    @State private var cleanupNotice: String?
+    /// Slice 15 — confirmation alert state for the per-card "Evict review
+    /// state" context-menu item.
+    @State private var pendingManualEvict: PendingManualEvict?
+    /// Slice 15 — error alert when a manual evict is refused (running review).
+    @State private var manualEvictError: String?
+
     /// Singleton orchestrator state, observed so the Review button on each
     /// card can disable itself while another review is running and so the
     /// modal sheet can pull live state.
@@ -99,6 +108,108 @@ struct ReviewsTab: View {
         }
         .sheet(isPresented: $showReviewSheet) {
             ReviewSheet(orchestrator: orchestrator)
+        }
+        .overlay(alignment: .top) {
+            if let cleanupNotice {
+                CleanupToast(text: cleanupNotice)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .alert(
+            "Evict cached review state?",
+            isPresented: Binding(
+                get: { pendingManualEvict != nil },
+                set: { if !$0 { pendingManualEvict = nil } }
+            ),
+            presenting: pendingManualEvict
+        ) { evict in
+            Button("Evict", role: .destructive) {
+                performManualEvict(evict)
+                pendingManualEvict = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingManualEvict = nil
+            }
+        } message: { evict in
+            Text("Evict cached review state for \(evict.prKey)? Bare clone is preserved.")
+        }
+        .alert(
+            "Cannot evict",
+            isPresented: Binding(
+                get: { manualEvictError != nil },
+                set: { if !$0 { manualEvictError = nil } }
+            ),
+            presenting: manualEvictError
+        ) { _ in
+            Button("OK", role: .cancel) { manualEvictError = nil }
+        } message: { msg in
+            Text(msg)
+        }
+    }
+
+    // MARK: - Slice 15 — manual evict plumbing
+
+    /// Captures the data needed by the confirmation alert. Must be Identifiable
+    /// for `.alert(presenting:)`.
+    fileprivate struct PendingManualEvict: Identifiable {
+        let id = UUID()
+        let repo: String
+        let prNumber: Int
+        var prKey: String { "\(repo)#\(prNumber)" }
+    }
+
+    /// Called by the per-card context menu. Refuses immediately if the
+    /// orchestrator currently has a running review against this exact PR;
+    /// otherwise stages the alert.
+    @MainActor
+    fileprivate func requestManualEvict(repo: String, prNumber: Int) {
+        let prKey = "\(repo)#\(prNumber)"
+        if let cur = orchestrator.current,
+           cur.prKey == prKey,
+           cur.state == "running" {
+            manualEvictError = "A review is currently running for \(prKey). Wait for it to finish before evicting."
+            return
+        }
+        pendingManualEvict = PendingManualEvict(repo: repo, prNumber: prNumber)
+    }
+
+    /// Confirmed path. Runs the same evict + drop the auto-cleanup uses, then
+    /// surfaces a toast.
+    @MainActor
+    fileprivate func performManualEvict(_ evict: PendingManualEvict) {
+        // Re-check single-flight at confirm time — the user could have
+        // started a review between opening the menu and confirming.
+        if let cur = orchestrator.current,
+           cur.prKey == evict.prKey,
+           cur.state == "running" {
+            manualEvictError = "A review is currently running for \(evict.prKey). Wait for it to finish before evicting."
+            return
+        }
+        do {
+            try WorktreeManager.evict(repo: evict.repo, prNumber: evict.prNumber)
+        } catch {
+            // Tolerate evict failure — still drop the rows. Bare clone is
+            // untouched either way; the user can retry from the disk-usage
+            // screen (slice 17) if the worktree dir is wedged.
+        }
+        let store = ReviewStore(context: modelContext)
+        store.dropForPR(prKey: evict.prKey)
+        showCleanupNotice("Evicted review state for \(evict.prKey)")
+    }
+
+    /// Posts a transient toast and schedules its dismissal. New posts cancel
+    /// any in-flight dismissal by overwriting the @State.
+    @MainActor
+    fileprivate func showCleanupNotice(_ text: String) {
+        cleanupNotice = text
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            // Only clear if this is still the same notice — a later post
+            // would have overwritten the string already.
+            if cleanupNotice == text {
+                cleanupNotice = nil
+            }
         }
     }
 
@@ -243,6 +354,11 @@ struct ReviewsTab: View {
                             }
                         }
                     }
+                    .contextMenu {
+                        Button("Evict review state") {
+                            requestManualEvict(repo: pr.repoFullName, prNumber: pr.number)
+                        }
+                    }
                 }
             }
         }
@@ -298,6 +414,11 @@ struct ReviewsTab: View {
                 Task {
                     await startReview(repo: pr.repoFullName, prNumber: pr.number, prTitle: pr.title)
                 }
+            }
+        }
+        .contextMenu {
+            Button("Evict review state") {
+                requestManualEvict(repo: pr.repoFullName, prNumber: pr.number)
             }
         }
     }
@@ -378,6 +499,20 @@ struct ReviewsTab: View {
             pendingPRs = p
             reviewedPRs = r
             hasFetchedOnce = true
+
+            // 3. Slice 15 — sweep tracked PRs that no longer appear in either
+            // open-PR set. `prKey` shape matches what `ReviewOrchestrator`
+            // writes ("<org>/<repo>#<number>").
+            var openKeys: Set<String> = []
+            openKeys.reserveCapacity(p.count + r.count)
+            for pr in p { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
+            for pr in r { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
+            let store = ReviewStore(context: modelContext)
+            let detector = ClosedPRDetector(store: store)
+            let cleaned = detector.cleanupClosedPRs(openPRKeys: openKeys)
+            if cleaned > 0 {
+                showCleanupNotice("Cleaned up \(cleaned) closed PR\(cleaned == 1 ? "" : "s")")
+            }
         } catch GitHubError.unauthorized {
             errorMessage = "GitHub returned 401. Please re-enter your token."
             pendingPRs = []
@@ -738,6 +873,34 @@ private func timeAgo(_ date: Date) -> String {
     if hours > 0 { return "\(hours)h ago" }
     if mins > 0 { return "\(mins)m ago" }
     return "just now"
+}
+
+// MARK: - Cleanup toast (slice 15)
+
+/// Transient banner used by the closed-PR sweep and the per-card manual
+/// evict. Auto-dismisses after 3s — the parent view owns the timer.
+private struct CleanupToast: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "trash.circle.fill")
+                .foregroundStyle(.green)
+            Text(text)
+                .font(.callout.weight(.medium))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(nsColor: .windowBackgroundColor))
+                .shadow(radius: 4)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+        )
+    }
 }
 
 // MARK: - Review button (slice 07)
