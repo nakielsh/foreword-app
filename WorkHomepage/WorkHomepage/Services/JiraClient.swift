@@ -3,10 +3,15 @@
 //  WorkHomepage
 //
 //  Slice 10 — Jira basic.
+//  Slice 11 — adds the subtask parent fallback: when a subtask's own
+//  description is too thin to stand alone, we also fetch its parent and
+//  attach it under `JiraTicket.parent`. Strictly one level — the parent's
+//  own parent is never fetched.
 //
-//  Thin Atlassian Cloud REST client with one method: `fetchTicket(key:)`.
-//  Reads credentials from `JiraConfig` (base URL in UserDefaults, email
-//  + API token in Keychain) and authenticates via HTTP Basic.
+//  Thin Atlassian Cloud REST client with one public method:
+//  `fetchTicket(key:)`. Reads credentials from `JiraConfig` (base URL in
+//  UserDefaults, email + API token in Keychain) and authenticates via
+//  HTTP Basic.
 //
 //  Returns a value-type `JiraTicket` with the description flattened from
 //  ADF (Atlassian Document Format) to plaintext. ADF flattening is a
@@ -25,6 +30,15 @@
 import Foundation
 
 struct JiraClient {
+
+    /// Threshold (in plaintext characters, post ADF flatten) below which a
+    /// subtask's own description is considered "thin" and we additionally
+    /// fetch the parent ticket. ~100 chars is roughly two short sentences:
+    /// less than that and the subtask is almost certainly title-only with
+    /// the real spec living on the parent (the team's working pattern per
+    /// PRD Q6c). Above that we trust the subtask alone and skip the extra
+    /// network round-trip.
+    static let thinDescriptionThreshold: Int = 100
 
     enum JiraError: Error, Equatable {
         case notConfigured
@@ -55,7 +69,63 @@ struct JiraClient {
     /// Fetch a ticket by key. Returns nil for 404 (the caller treats that the
     /// same as no-key-on-branch). Throws for unauthorized, missing config, or
     /// other non-2xx HTTP responses.
+    ///
+    /// Slice 11: if the fetched ticket is a subtask (`parentKey != nil`) and
+    /// its own description is shorter than `thinDescriptionThreshold`
+    /// characters of plaintext, also fetch the parent and attach it under
+    /// `parent`. Hard rule: never fetch the parent's parent — one level only.
     func fetchTicket(key: String) async throws -> JiraTicket? {
+        let ticket = try await fetchTicketRaw(key: key)
+
+        // No parent → nothing to fall back to.
+        guard let parentKey = ticket.parentKey, !parentKey.isEmpty else {
+            return ticket
+        }
+
+        // Subtask description is rich enough to stand on its own.
+        if ticket.description.count >= Self.thinDescriptionThreshold {
+            return ticket
+        }
+
+        // Thin subtask: fetch the parent. We deliberately discard any deeper
+        // ancestry — even if the parent itself claims a parent, we drop it so
+        // the recursion terminates strictly at one level.
+        let parent: JiraTicket
+        do {
+            let rawParent = try await fetchTicketRaw(key: parentKey)
+            parent = JiraTicket(
+                key: rawParent.key,
+                summary: rawParent.summary,
+                description: rawParent.description,
+                status: rawParent.status,
+                issueType: rawParent.issueType,
+                priority: rawParent.priority,
+                parentKey: rawParent.parentKey,
+                parent: nil // hard cap — no grandparent fetch, ever.
+            )
+        } catch JiraError.ticketNotFound {
+            // Parent vanished or permissions changed: degrade gracefully and
+            // return the subtask as-is rather than failing the whole fetch.
+            return ticket
+        }
+
+        return JiraTicket(
+            key: ticket.key,
+            summary: ticket.summary,
+            description: ticket.description,
+            status: ticket.status,
+            issueType: ticket.issueType,
+            priority: ticket.priority,
+            parentKey: ticket.parentKey,
+            parent: parent
+        )
+    }
+
+    /// Network + decode for a single ticket — no parent-fallback logic. Used
+    /// twice from `fetchTicket(key:)` (once for the subtask, once for its
+    /// parent) and isolated so the parent-fallback branch is a pure
+    /// decision-tree on top of plain "fetch one ticket".
+    private func fetchTicketRaw(key: String) async throws -> JiraTicket {
         guard let rawBase = baseURLProvider(), !rawBase.isEmpty,
               let email = emailProvider(), !email.isEmpty,
               let token = tokenProvider(), !token.isEmpty
