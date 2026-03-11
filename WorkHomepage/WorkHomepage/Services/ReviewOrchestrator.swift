@@ -21,6 +21,7 @@
 
 import Foundation
 import Observation
+import SwiftData
 
 @MainActor
 @Observable
@@ -127,10 +128,29 @@ final class ReviewOrchestrator {
             return
         }
 
-        // Step 2: build the prompt. Slice 07 sends PR meta only (no Jira).
-        let prompt = Self.buildPrompt(repo: repo, prNumber: prNumber, branch: branch, sha: sha)
+        // Step 2: resolve Jira context (slice 10).
+        // Extract a ticket key from the head branch (e.g. `feature/JWT-123`).
+        // Record what we attempted on the Review row regardless of whether
+        // the fetch succeeds — slice 08's modal header surfaces this.
+        let jiraKey = TicketKeyExtractor.extract(branchName: branch)
+        if let jiraKey {
+            review.jiraKey = jiraKey
+            try? store.context.save()
+        }
 
-        // Step 3: spawn `claude` and consume the stream.
+        let jiraTicket = await fetchJiraTicket(key: jiraKey)
+
+        // Step 3: build the prompt. With Jira context above PR meta when
+        // available; otherwise the prompt opens with `Jira: null`.
+        let prompt = OrchestratorPrompt.build(
+            repo: repo,
+            prNumber: prNumber,
+            branch: branch,
+            sha: sha,
+            jira: jiraTicket
+        )
+
+        // Step 4: spawn `claude` and consume the stream.
         let stream: AsyncThrowingStream<ClaudeEvent, Error>
         do {
             stream = try ClaudeRunner.run(
@@ -172,7 +192,7 @@ final class ReviewOrchestrator {
             lastError = "Stream error: \(error)"
         }
 
-        // Step 4: terminal-state housekeeping. If we saw a structured
+        // Step 5: terminal-state housekeeping. If we saw a structured
         // `.finalResult`, the row is already `completed`. Otherwise classify
         // the failure.
         if review.state != "completed" {
@@ -188,20 +208,52 @@ final class ReviewOrchestrator {
         }
     }
 
+    // MARK: - Jira
+
+    /// Fetch the Jira ticket for `key` if both a key and credentials are
+    /// available. Returns nil for the (common) "no Jira" cases:
+    ///   - branch had no recognised ticket key,
+    ///   - Jira credentials weren't configured,
+    ///   - the ticket wasn't found,
+    ///   - 401 or other HTTP failure (logged, swallowed),
+    ///   - underlying URLSession threw (offline, DNS, …).
+    /// The orchestrator never blocks the review on Jira problems.
+    private func fetchJiraTicket(key: String?) async -> JiraTicket? {
+        guard let key else { return nil }
+
+        do {
+            return try await JiraClient().fetchTicket(key: key)
+        } catch JiraClient.JiraError.notConfigured {
+            NSLog("[ReviewOrchestrator] Jira not configured — proceeding without Jira context.")
+            return nil
+        } catch JiraClient.JiraError.unauthorized {
+            NSLog("[ReviewOrchestrator] Jira returned 401 for \(key) — proceeding without Jira context.")
+            return nil
+        } catch JiraClient.JiraError.ticketNotFound {
+            NSLog("[ReviewOrchestrator] Jira ticket \(key) not found — proceeding without Jira context.")
+            return nil
+        } catch JiraClient.JiraError.http(let status, _) {
+            NSLog("[ReviewOrchestrator] Jira fetch for \(key) failed with HTTP \(status) — proceeding without Jira context.")
+            return nil
+        } catch {
+            NSLog("[ReviewOrchestrator] Jira fetch for \(key) errored: \(error) — proceeding without Jira context.")
+            return nil
+        }
+    }
+
     // MARK: - Prompt
 
-    /// Slice 07 prompt: PR meta only. The agent does its own `gh pr view` /
-    /// `gh pr diff` inside the worktree to gather context. Slice 10 adds Jira
-    /// context above this.
-    static func buildPrompt(repo: String, prNumber: Int, branch: String, sha: String) -> String {
-        """
-        You are reviewing PR #\(prNumber) in \(repo), branch \(branch).
-
-        Use `gh pr view \(prNumber) --repo \(repo)` and `gh pr diff \(prNumber) --repo \(repo)` to fetch PR details and the diff. Use `git log`, `git blame`, and file reads in the current working directory to understand context. The current directory IS the PR head checked out at SHA \(sha).
-
-        Review the changes for correctness, ticket alignment (no Jira context provided this run), and code quality.
-
-        Return JSON conformant to the provided schema. Findings must reference real file paths and line numbers from the changed files.
-        """
+    /// Compatibility shim for callers that referenced the legacy slice 07
+    /// prompt builder. New code should call `OrchestratorPrompt.build`
+    /// directly so it can pass a `JiraTicket?`. Pure function — no actor
+    /// isolation required.
+    nonisolated static func buildPrompt(repo: String, prNumber: Int, branch: String, sha: String) -> String {
+        OrchestratorPrompt.build(
+            repo: repo,
+            prNumber: prNumber,
+            branch: branch,
+            sha: sha,
+            jira: nil
+        )
     }
 }
