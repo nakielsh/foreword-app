@@ -165,9 +165,7 @@ struct ReviewsTab: View {
     @MainActor
     fileprivate func requestManualEvict(repo: String, prNumber: Int) {
         let prKey = "\(repo)#\(prNumber)"
-        if let cur = orchestrator.current,
-           cur.prKey == prKey,
-           cur.state == "running" {
+        if orchestrator.running.contains(where: { $0.prKey == prKey }) {
             manualEvictError = "A review is currently running for \(prKey). Wait for it to finish before evicting."
             return
         }
@@ -178,11 +176,9 @@ struct ReviewsTab: View {
     /// surfaces a toast.
     @MainActor
     fileprivate func performManualEvict(_ evict: PendingManualEvict) {
-        // Re-check single-flight at confirm time — the user could have
-        // started a review between opening the menu and confirming.
-        if let cur = orchestrator.current,
-           cur.prKey == evict.prKey,
-           cur.state == "running" {
+        // Re-check at confirm time — the user could have started a review
+        // between opening the menu and confirming.
+        if orchestrator.running.contains(where: { $0.prKey == evict.prKey }) {
             manualEvictError = "A review is currently running for \(evict.prKey). Wait for it to finish before evicting."
             return
         }
@@ -216,15 +212,11 @@ struct ReviewsTab: View {
     // MARK: - Review button plumbing
 
     /// Resolves head branch + SHA via REST, kicks off the orchestrator, then
-    /// reveals the sheet. Surfaces failures via `reviewError`. Single-flight
-    /// rejection is handled inside the orchestrator and shown by the sheet
-    /// itself.
+    /// reveals the sheet. Surfaces failures via `reviewError`. The orchestrator
+    /// (slice 13) accepts multiple in-flight reviews up to the configured
+    /// concurrency cap and queues anything beyond that.
     @MainActor
     fileprivate func startReview(repo: String, prNumber: Int, prTitle: String) async {
-        if orchestrator.isRunning {
-            reviewError = "A review is already running. Wait for it to finish before starting another."
-            return
-        }
         reviewError = nil
         do {
             let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
@@ -240,6 +232,24 @@ struct ReviewsTab: View {
         } catch {
             reviewError = "Could not fetch PR branch info: \(error)"
         }
+    }
+
+    // MARK: - Slice 13 — pending lookup
+
+    /// Returns the orchestrator's row for `prKey` if it's currently queued or
+    /// running, otherwise nil. Drives the per-card Review button's state.
+    @MainActor
+    fileprivate func pendingForPR(_ prKey: String) -> Review? {
+        if let r = orchestrator.running.first(where: { $0.prKey == prKey }) { return r }
+        if let r = orchestrator.queued.first(where: { $0.prKey == prKey }) { return r }
+        return nil
+    }
+
+    /// Position of `review` among queued reviews (0-based). Used to render
+    /// "Queued (N ahead)". The first queued review is "Queued (0 ahead)".
+    @MainActor
+    fileprivate func queuePosition(of review: Review) -> Int {
+        orchestrator.queued.firstIndex(where: { $0.id == review.id }) ?? 0
     }
 
     // MARK: - Filter bar
@@ -346,13 +356,11 @@ struct ReviewsTab: View {
                 ForEach(visible) { pr in
                     HStack(alignment: .top, spacing: 8) {
                         PendingPRCard(pr: pr)
-                        ReviewButton(
-                            isRunning: orchestrator.isRunning
-                        ) {
-                            Task {
-                                await startReview(repo: pr.repoFullName, prNumber: pr.number, prTitle: pr.title)
-                            }
-                        }
+                        reviewButton(
+                            for: pr.repoFullName,
+                            prNumber: pr.number,
+                            prTitle: pr.title
+                        )
                     }
                     .contextMenu {
                         Button("Evict review state") {
@@ -408,17 +416,51 @@ struct ReviewsTab: View {
     fileprivate func reviewedRow(pr: ReviewedPR) -> some View {
         HStack(alignment: .top, spacing: 8) {
             ReviewedPRCard(pr: pr)
-            ReviewButton(
-                isRunning: orchestrator.isRunning
-            ) {
-                Task {
-                    await startReview(repo: pr.repoFullName, prNumber: pr.number, prTitle: pr.title)
-                }
-            }
+            reviewButton(
+                for: pr.repoFullName,
+                prNumber: pr.number,
+                prTitle: pr.title
+            )
         }
         .contextMenu {
             Button("Evict review state") {
                 requestManualEvict(repo: pr.repoFullName, prNumber: pr.number)
+            }
+        }
+    }
+
+    // MARK: - Slice 13 — per-card review button factory
+
+    /// Resolves the per-PR `ReviewButton.Mode` from orchestrator state.
+    /// Pulled out of the view builder so the `if let` / `switch` ladder
+    /// doesn't trip the ViewBuilder result-builder.
+    @MainActor
+    fileprivate func reviewButtonMode(for prKey: String) -> ReviewButton.Mode {
+        guard let p = pendingForPR(prKey) else { return .start }
+        switch p.state {
+        case "queued":  return .queued(ahead: queuePosition(of: p))
+        case "running": return .running
+        default:        return .start
+        }
+    }
+
+    /// Builds the right-hand Review button for a PR row. Delegates to
+    /// `ReviewButton`, which renders one of four states based on whether the
+    /// orchestrator currently has a queued/running entry for this PR.
+    @ViewBuilder
+    fileprivate func reviewButton(for repo: String, prNumber: Int, prTitle: String) -> some View {
+        let prKey = "\(repo)#\(prNumber)"
+        let mode = reviewButtonMode(for: prKey)
+        ReviewButton(mode: mode) {
+            switch mode {
+            case .start:
+                Task {
+                    await startReview(repo: repo, prNumber: prNumber, prTitle: prTitle)
+                }
+            case .queued, .running:
+                if let p = pendingForPR(prKey) {
+                    orchestrator.cancel(p)
+                }
             }
         }
     }
@@ -903,22 +945,65 @@ private struct CleanupToast: View {
     }
 }
 
-// MARK: - Review button (slice 07)
+// MARK: - Review button (slice 13)
 
-/// Trigger button on each PR row. Disabled (with a tooltip) while another
-/// review is running — slice 07 enforces single-flight.
+/// Trigger button on each PR row. Three modes mapped to the orchestrator's
+/// per-PR state:
+///   - `.start`               → "Review", borderedProminent, click starts a run
+///   - `.queued(ahead: N)`    → "Queued (N ahead)", click cancels (removes
+///                             from queue, never spawns)
+///   - `.running`             → "Running…" with a spinner, click cancels
+///                             (SIGTERM/SIGKILL the process)
+///
+/// Slice 14 will add a "Re-review" mode for terminated states; for now the
+/// per-card button stays at `.start` once the orchestrator has dropped the
+/// review out of running/queued, which is fine because the existing modal
+/// surfaces past results.
 private struct ReviewButton: View {
-    let isRunning: Bool
+    enum Mode: Equatable {
+        case start
+        case queued(ahead: Int)
+        case running
+    }
+
+    let mode: Mode
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Label("Review", systemImage: "wand.and.stars")
+            label
                 .font(.caption.weight(.semibold))
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.small)
-        .disabled(isRunning)
-        .help(isRunning ? "Review in progress — wait for it to finish before starting another." : "Run a Claude review on this PR.")
+        .help(helpText)
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        switch mode {
+        case .start:
+            Label("Review", systemImage: "wand.and.stars")
+        case .queued(let ahead):
+            Label("Queued (\(ahead) ahead)", systemImage: "clock")
+        case .running:
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(.white)
+                Text("Running…")
+            }
+        }
+    }
+
+    private var helpText: String {
+        switch mode {
+        case .start:
+            return "Run a Claude review on this PR."
+        case .queued(let ahead):
+            return "Queued (\(ahead) ahead). Click to cancel."
+        case .running:
+            return "Review in progress. Click to cancel."
+        }
     }
 }

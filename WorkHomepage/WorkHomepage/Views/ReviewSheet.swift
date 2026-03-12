@@ -76,6 +76,7 @@ struct ReviewSheet: View {
 
             HStack {
                 Spacer()
+                cancelButtonIfNeeded
                 Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
@@ -219,10 +220,12 @@ struct ReviewSheet: View {
         let state = orchestrator.current?.state ?? "idle"
         let (label, color): (String, Color) = {
             switch state {
+            case "queued": return ("Queued", .gray)
             case "running": return ("Running", .blue)
             case "completed": return ("Completed", .green)
             case "failed": return ("Failed", .red)
             case "timeout": return ("Timed out", .orange)
+            case "cancelled": return ("Cancelled", .gray)
             default: return ("Idle", .gray)
             }
         }()
@@ -235,6 +238,25 @@ struct ReviewSheet: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(color.opacity(0.12)))
+    }
+
+    /// Slice 13 cancel button. Visible only when the focused review is
+    /// queued or running. Routes to `orchestrator.cancel(_:)`. Cancelling a
+    /// queued review removes it from the queue (no spawn). Cancelling a
+    /// running review SIGTERMs the underlying child and flips the row's
+    /// state to `cancelled`.
+    @ViewBuilder
+    private var cancelButtonIfNeeded: some View {
+        if let cur = orchestrator.current, cur.state == "running" || cur.state == "queued" {
+            Button(role: .destructive) {
+                orchestrator.cancel(cur)
+            } label: {
+                Label("Cancel review", systemImage: "stop.circle")
+            }
+            .help(cur.state == "queued"
+                  ? "Remove this review from the queue."
+                  : "Cancel the running review (SIGTERM, then SIGKILL after 2s if still alive).")
+        }
     }
 
     /// Verdict capsule — colored per PRD Q4b: approve→green, request_changes
@@ -324,12 +346,16 @@ struct ReviewSheet: View {
             }
         } else if let review = orchestrator.current {
             switch review.state {
+            case "queued":
+                queuedContent(review: review)
             case "running":
                 runningContent(review: review)
             case "completed":
                 completedContent(review: review)
             case "failed", "timeout":
                 terminalErrorContent(review: review)
+            case "cancelled":
+                cancelledContent(review: review)
             default:
                 VStack {
                     Spacer()
@@ -352,6 +378,49 @@ struct ReviewSheet: View {
     private func runningContent(review: Review) -> some View {
         streamView(review: review)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Slice 13: queued — no stream yet, nothing to render. Show a spinner
+    /// with a "Queued" label.
+    @ViewBuilder
+    private func queuedContent(review: Review) -> some View {
+        VStack(spacing: 10) {
+            Spacer()
+            ProgressView()
+            Text("Queued — waiting for a slot to open up.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Slice 13: cancelled — show whatever stream we accumulated before the
+    /// SIGTERM and a "Cancelled" badge. We deliberately do NOT show
+    /// findings: the cancellation contract drops them.
+    @ViewBuilder
+    private func cancelledContent(review: Review) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "stop.circle.fill")
+                    .foregroundStyle(.gray)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Cancelled")
+                        .font(.subheadline.weight(.semibold))
+                    Text(review.errorMessage ?? "Review was cancelled.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding()
+            .background(Color.gray.opacity(0.08))
+
+            Divider()
+
+            streamLogDisclosure(review: review)
+                .padding()
+        }
     }
 
     /// Completion has two sub-shapes: schema-decoded (render findings) or

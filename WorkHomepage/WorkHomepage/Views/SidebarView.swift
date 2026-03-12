@@ -52,6 +52,11 @@ struct SidebarView: View {
         } detail: {
             detail
                 .toolbar {
+                    if orchestrator.inFlightCount > 0 {
+                        ToolbarItem(placement: .primaryAction) {
+                            InFlightIndicator(orchestrator: orchestrator)
+                        }
+                    }
                     if orchestrator.current != nil {
                         ToolbarItem(placement: .primaryAction) {
                             ActiveReviewPill(
@@ -148,6 +153,29 @@ private struct ActiveReviewPill: View {
         case "timeout":   return .orange
         default:          return .gray
         }
+    }
+}
+
+// MARK: - In-flight indicator (slice 13)
+
+/// Compact toolbar widget showing how many reviews are running and how many
+/// are queued, against the configured concurrency cap. Visible only when at
+/// least one review is in-flight (running or queued).
+private struct InFlightIndicator: View {
+    @Bindable var orchestrator: ReviewOrchestrator
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gearshape.2")
+                .font(.caption)
+            Text("\(orchestrator.running.count)/\(AppSettings.concurrencyCap) · queued \(orchestrator.queued.count)")
+                .font(.caption.weight(.semibold).monospacedDigit())
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.blue.opacity(0.10)))
+        .foregroundStyle(.blue)
+        .help("\(orchestrator.running.count) running, \(orchestrator.queued.count) queued · cap \(AppSettings.concurrencyCap)")
     }
 }
 
