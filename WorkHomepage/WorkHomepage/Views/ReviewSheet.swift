@@ -46,6 +46,19 @@ struct ReviewSheet: View {
     /// automatically.
     @Bindable var orchestrator: ReviewOrchestrator
 
+    /// Slice 14 — closure invoked when the user clicks "Re-review" on a
+    /// terminated review. The caller (ReviewsTab) owns the orchestrator
+    /// start path so this sheet stays orchestrator-agnostic for that flow.
+    /// Optional so previews / tests can omit it; when nil the button is
+    /// hidden.
+    var onReReview: ((Review) -> Void)? = nil
+
+    /// Slice 14 — when set, the sheet renders this Review's persisted data
+    /// instead of the live orchestrator state. Selected from the History
+    /// disclosure; cleared via "Back to current". Finding state mutations
+    /// still work because findings are persisted on each Review row.
+    @State private var historicalReview: Review? = nil
+
     /// Filter toggles persist across launches per PRD Q8d so the user
     /// doesn't have to re-hide noise each time they open a review.
     @AppStorage("findings.showResolved") private var showResolved: Bool = false
@@ -60,6 +73,22 @@ struct ReviewSheet: View {
     //   - `.fileMissing` / `.failed`     → modal alert with OK
     @State private var launcherToastMessage: String?
     @State private var launcherAlertMessage: String?
+
+    /// Single source of truth for "which Review row is the body of this sheet
+    /// rendering?". Either the user-selected historical row, or the live
+    /// orchestrator's `current`. Slice 14 indirection — slices 07-13 read
+    /// `orchestrator.current` directly; we now route every read through this
+    /// computed so toggling history is one line of state instead of a fork
+    /// in every helper.
+    private var displayedReview: Review? {
+        historicalReview ?? orchestrator.current
+    }
+
+    /// True iff the user is currently viewing a historical row (i.e. one
+    /// other than the live `orchestrator.current`).
+    private var isViewingHistorical: Bool {
+        historicalReview != nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -76,6 +105,7 @@ struct ReviewSheet: View {
 
             HStack {
                 Spacer()
+                reReviewButtonIfNeeded
                 cancelButtonIfNeeded
                 Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -134,7 +164,7 @@ struct ReviewSheet: View {
     /// at `file:line`. Maps `FallbackResult` cases onto toast / alert state
     /// so the body's overlays render the right feedback.
     private func handleFindingClick(finding: Finding) {
-        guard let review = orchestrator.current else { return }
+        guard let review = displayedReview else { return }
         let worktree = WorktreePath.url(
             for: review.repoFullName,
             prNumber: review.prNumber
@@ -181,20 +211,23 @@ struct ReviewSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(orchestrator.current?.repoFullName ?? "—")
+                Text(displayedReview?.repoFullName ?? "—")
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
                     .background(Capsule().fill(Color.gray.opacity(0.18)))
-                if let n = orchestrator.current?.prNumber {
+                if let n = displayedReview?.prNumber {
                     Text("#\(n)")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
+                if isViewingHistorical {
+                    historicalIndicator
+                }
                 Spacer()
                 stateBadge
             }
-            if let review = orchestrator.current {
+            if let review = displayedReview {
                 Text("branch: \(review.headBranch)  ·  sha: \(review.headSha.prefix(8))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -215,9 +248,41 @@ struct ReviewSheet: View {
         }
     }
 
+    /// Pill rendered in the header strip while the user is viewing a
+    /// historical Review row. Doubles as the "Back to current" affordance —
+    /// clicking it clears `historicalReview` and the sheet snaps back to
+    /// `orchestrator.current`. Hidden when the live orchestrator has nothing
+    /// to fall back to (rare; would mean no current run at all).
+    @ViewBuilder
+    private var historicalIndicator: some View {
+        Button {
+            historicalReview = nil
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption2)
+                Text("History")
+                    .font(.caption.weight(.semibold))
+                if orchestrator.current != nil {
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Back to current")
+                        .font(.caption2.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.purple.opacity(0.15)))
+            .foregroundStyle(.purple)
+        }
+        .buttonStyle(.plain)
+        .help("Viewing a historical review. Click to return to the current run.")
+    }
+
     @ViewBuilder
     private var stateBadge: some View {
-        let state = orchestrator.current?.state ?? "idle"
+        let state = displayedReview?.state ?? "idle"
         let (label, color): (String, Color) = {
             switch state {
             case "queued": return ("Queued", .gray)
@@ -241,13 +306,16 @@ struct ReviewSheet: View {
     }
 
     /// Slice 13 cancel button. Visible only when the focused review is
-    /// queued or running. Routes to `orchestrator.cancel(_:)`. Cancelling a
-    /// queued review removes it from the queue (no spawn). Cancelling a
-    /// running review SIGTERMs the underlying child and flips the row's
-    /// state to `cancelled`.
+    /// queued or running AND we're looking at the live row (not history —
+    /// a historical row is by definition already terminal). Routes to
+    /// `orchestrator.cancel(_:)`. Cancelling a queued review removes it from
+    /// the queue (no spawn). Cancelling a running review SIGTERMs the
+    /// underlying child and flips the row's state to `cancelled`.
     @ViewBuilder
     private var cancelButtonIfNeeded: some View {
-        if let cur = orchestrator.current, cur.state == "running" || cur.state == "queued" {
+        if !isViewingHistorical,
+           let cur = orchestrator.current,
+           cur.state == "running" || cur.state == "queued" {
             Button(role: .destructive) {
                 orchestrator.cancel(cur)
             } label: {
@@ -256,6 +324,40 @@ struct ReviewSheet: View {
             .help(cur.state == "queued"
                   ? "Remove this review from the queue."
                   : "Cancel the running review (SIGTERM, then SIGKILL after 2s if still alive).")
+        }
+    }
+
+    /// Slice 14 — "Re-review" button. Visible when:
+    ///   - the displayed review reached a terminal state (completed /
+    ///     failed / timeout / cancelled), AND
+    ///   - the orchestrator does not currently have a queued or running
+    ///     review for this PR (avoid stomping a fresh in-flight run that
+    ///     was started by a different click), AND
+    ///   - the parent supplied an `onReReview` closure (omitted in some
+    ///     test / preview contexts).
+    /// Click → caller starts a fresh orchestrator run with `force = true`.
+    @ViewBuilder
+    private var reReviewButtonIfNeeded: some View {
+        if let onReReview,
+           let review = displayedReview,
+           isTerminal(state: review.state),
+           !orchestrator.running.contains(where: { $0.prKey == review.prKey }),
+           !orchestrator.queued.contains(where: { $0.prKey == review.prKey }) {
+            Button {
+                onReReview(review)
+            } label: {
+                Label("Re-review", systemImage: "arrow.clockwise")
+            }
+            .help("Run a fresh review against the current head SHA. Creates a new row; the old row is preserved.")
+        }
+    }
+
+    /// Slice 14 — terminal-state predicate. Matches the orchestrator's
+    /// state-machine vocabulary.
+    private func isTerminal(state: String) -> Bool {
+        switch state {
+        case "completed", "failed", "timeout", "cancelled": return true
+        default: return false
         }
     }
 
@@ -335,7 +437,7 @@ struct ReviewSheet: View {
 
     @ViewBuilder
     private var content: some View {
-        if let rejection = orchestrator.lastRejection, orchestrator.current == nil {
+        if let rejection = orchestrator.lastRejection, displayedReview == nil {
             VStack {
                 Spacer()
                 Text(rejection)
@@ -344,7 +446,7 @@ struct ReviewSheet: View {
                     .padding()
                 Spacer()
             }
-        } else if let review = orchestrator.current {
+        } else if let review = displayedReview {
             switch review.state {
             case "queued":
                 queuedContent(review: review)
@@ -418,8 +520,11 @@ struct ReviewSheet: View {
 
             Divider()
 
-            streamLogDisclosure(review: review)
-                .padding()
+            VStack(alignment: .leading, spacing: 8) {
+                historyDisclosure(review: review)
+                streamLogDisclosure(review: review)
+            }
+            .padding()
         }
     }
 
@@ -460,6 +565,9 @@ struct ReviewSheet: View {
                         }
                     }
 
+                    historyDisclosure(review: review)
+                        .padding(.top, 12)
+
                     streamLogDisclosure(review: review)
                         .padding(.top, 12)
                 }
@@ -476,8 +584,11 @@ struct ReviewSheet: View {
             rawResultView(review: review)
                 .frame(minHeight: 200, maxHeight: 360)
             Divider()
-            streamLogDisclosure(review: review)
-                .padding()
+            VStack(alignment: .leading, spacing: 8) {
+                historyDisclosure(review: review)
+                streamLogDisclosure(review: review)
+            }
+            .padding()
         }
     }
 
@@ -487,8 +598,11 @@ struct ReviewSheet: View {
             errorView(review: review)
                 .frame(minHeight: 80)
             Divider()
-            streamLogDisclosure(review: review)
-                .padding()
+            VStack(alignment: .leading, spacing: 8) {
+                historyDisclosure(review: review)
+                streamLogDisclosure(review: review)
+            }
+            .padding()
         }
     }
 
@@ -633,6 +747,136 @@ struct ReviewSheet: View {
             }
         }
         .padding(.vertical, 8)
+    }
+
+    // MARK: - Slice 14 — History disclosure
+
+    /// Lists every Review row that shares the displayed review's `prKey`,
+    /// newest-first. Clicking a row points the sheet at that historical
+    /// review (read-only display; finding mutations still work because each
+    /// Review owns its own findings). The currently-displayed row is shown
+    /// highlighted in the list. Default-collapsed; only renders when at
+    /// least two rows exist for the PR.
+    @ViewBuilder
+    private func historyDisclosure(review: Review) -> some View {
+        let store = ReviewStore(context: modelContext)
+        let allVersions = store.versions(prKey: review.prKey)
+        if allVersions.count >= 2 {
+            DisclosureGroup("History  ·  \(allVersions.count) reviews") {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(allVersions, id: \.id) { entry in
+                        historyRow(entry: entry, isCurrent: entry.id == review.id)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .font(.callout.weight(.semibold))
+        }
+    }
+
+    /// One History row — timestamp, short sha, verdict, finding count, state.
+    /// The whole row is a button so the user can click anywhere on it to
+    /// switch the sheet's `historicalReview` binding.
+    @ViewBuilder
+    private func historyRow(entry: Review, isCurrent: Bool) -> some View {
+        Button {
+            // If this row is the live orchestrator current, clear the
+            // historical override so the sheet re-binds to live state.
+            if entry.id == orchestrator.current?.id {
+                historicalReview = nil
+            } else {
+                historicalReview = entry
+            }
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(historyTimestampLabel(entry: entry))
+                            .font(.caption.weight(.semibold))
+                        Text(String(entry.headSha.prefix(7)))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 6) {
+                        historyVerdictPill(entry: entry)
+                        historyStatePill(entry: entry)
+                        Text("\(entry.findings.count) finding\(entry.findings.count == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                if isCurrent {
+                    Text("Showing")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                        .foregroundStyle(.tint)
+                }
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isCurrent ? Color.accentColor.opacity(0.08) : Color.gray.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isCurrent ? Color.accentColor.opacity(0.4) : Color.gray.opacity(0.18),
+                            lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(historyRowTooltip(entry: entry))
+    }
+
+    private func historyTimestampLabel(entry: Review) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: entry.startedAt, relativeTo: Date())
+    }
+
+    private func historyRowTooltip(entry: Review) -> String {
+        let abs = entry.startedAt.formatted(date: .abbreviated, time: .standard)
+        return "\(abs)\nsha: \(entry.headSha)"
+    }
+
+    @ViewBuilder
+    private func historyVerdictPill(entry: Review) -> some View {
+        let (label, color): (String, Color) = {
+            switch (entry.verdict ?? "").lowercased() {
+            case "approve":         return ("approve", .green)
+            case "request_changes": return ("changes", .red)
+            case "comment":         return ("comment", .orange)
+            default:                return ("—", .gray)
+            }
+        }()
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.16)))
+            .foregroundStyle(color)
+    }
+
+    @ViewBuilder
+    private func historyStatePill(entry: Review) -> some View {
+        let color: Color = {
+            switch entry.state {
+            case "completed":           return .green
+            case "running", "queued":   return .blue
+            case "failed", "timeout":   return .orange
+            case "cancelled":           return .gray
+            default:                    return .gray
+            }
+        }()
+        Text(entry.state)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.16)))
+            .foregroundStyle(color)
     }
 
     // MARK: - Stream log

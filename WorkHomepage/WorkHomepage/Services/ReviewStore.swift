@@ -179,3 +179,36 @@ extension ReviewStore {
         return out
     }
 }
+
+// MARK: - Slice 14: Versioning + history queries
+//
+// Each new commit on a PR produces a new `Review` row keyed on
+// `(prKey, headSha)`. The modal's History disclosure walks `versions(prKey:)`
+// newest-first; the Review-button click path consults `latestForPRAtSha` to
+// decide between "open existing row" and "start a fresh run".
+
+extension ReviewStore {
+
+    /// All reviews for `prKey`, ordered newest-first by `startedAt`.
+    /// Returns an empty array (never nil) for unknown keys.
+    func versions(prKey: String) -> [Review] {
+        let descriptor = FetchDescriptor<Review>(
+            predicate: #Predicate { $0.prKey == prKey },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// The most recent review for the `(prKey, headSha)` pair, or nil if no
+    /// row matches. "Most recent" is a tie-breaker only — under normal
+    /// operation each `(prKey, headSha)` pair has at most one cleanly-
+    /// completed row, but a "Re-review" against the same sha can produce a
+    /// second one and we want the latest.
+    func latestForPRAtSha(prKey: String, headSha: String) -> Review? {
+        let descriptor = FetchDescriptor<Review>(
+            predicate: #Predicate { $0.prKey == prKey && $0.headSha == headSha },
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor))?.first
+    }
+}
