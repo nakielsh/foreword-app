@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import AppKit
 
 struct SettingsView: View {
@@ -32,6 +33,13 @@ struct SettingsView: View {
     // Sheets
     @State private var showRePasteTokenSheet: Bool = false
     @State private var showWizardSheet: Bool = false
+
+    // Jira cache (slice 12)
+    @State private var showClearJiraCacheConfirm: Bool = false
+    @State private var jiraCacheClearing: Bool = false
+    @State private var jiraCacheStatus: String? = nil
+
+    @Environment(\.modelContext) private var modelContext
 
     // Storage / disk usage (slice 17)
     @State private var totalDiskBytes: Int64 = 0
@@ -130,6 +138,34 @@ struct SettingsView: View {
                 if jiraTesting { ProgressView().controlSize(.small) }
                 jiraStatusLabel
             }
+            // Slice 12 — Clear cache button. The full confirm dialog is
+            // defined as a `.confirmationDialog` modifier on the section so
+            // the role-destructive button gets the standard macOS treatment.
+            HStack {
+                Button("Clear Jira cache") {
+                    showClearJiraCacheConfirm = true
+                }
+                .disabled(jiraCacheClearing)
+                if jiraCacheClearing { ProgressView().controlSize(.small) }
+                if let status = jiraCacheStatus {
+                    Text(status)
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
+                }
+                Spacer()
+            }
+        }
+        .confirmationDialog(
+            "Clear all cached Jira tickets?",
+            isPresented: $showClearJiraCacheConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Clear", role: .destructive) {
+                Task { await clearJiraCache() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Removes every locally cached Jira ticket. Reviews will refetch them on the next run.")
         }
     }
 
@@ -513,6 +549,33 @@ struct SettingsView: View {
             hasGitHubToken = true
         } else {
             hasGitHubToken = (KeychainStore.get(key: "github.token") != nil)
+        }
+    }
+
+    /// Slice 12 — drop every `CachedJiraTicket` row.
+    ///
+    /// Implemented by fetching all rows and deleting them one by one
+    /// (instead of `context.delete(model:)` which would skip the
+    /// `@Attribute(.unique)` cleanup) so the predicate-less `FetchDescriptor`
+    /// reflects what the user sees: "wipe the cache". A failure during
+    /// delete is surfaced as a status string but doesn't crash the view —
+    /// the cache being broken must never block Settings.
+    private func clearJiraCache() async {
+        if jiraCacheClearing { return }
+        jiraCacheClearing = true
+        jiraCacheStatus = nil
+        defer { jiraCacheClearing = false }
+        do {
+            let descriptor = FetchDescriptor<CachedJiraTicket>()
+            let rows = try modelContext.fetch(descriptor)
+            let count = rows.count
+            for row in rows {
+                modelContext.delete(row)
+            }
+            try modelContext.save()
+            jiraCacheStatus = "Cleared \(count) cached ticket\(count == 1 ? "" : "s")."
+        } catch {
+            jiraCacheStatus = "Clear failed: \(error.localizedDescription)"
         }
     }
 
