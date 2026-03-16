@@ -107,7 +107,10 @@ struct ReviewsTab: View {
             }
         }
         .sheet(isPresented: $showReviewSheet) {
-            ReviewSheet(orchestrator: orchestrator)
+            ReviewSheet(
+                orchestrator: orchestrator,
+                onReReview: { review in reReview(review) }
+            )
         }
         .overlay(alignment: .top) {
             if let cleanupNotice {
@@ -211,26 +214,66 @@ struct ReviewsTab: View {
 
     // MARK: - Review button plumbing
 
-    /// Resolves head branch + SHA via REST, kicks off the orchestrator, then
-    /// reveals the sheet. Surfaces failures via `reviewError`. The orchestrator
-    /// (slice 13) accepts multiple in-flight reviews up to the configured
-    /// concurrency cap and queues anything beyond that.
+    /// Resolves head branch + SHA via REST, then either:
+    ///   - opens the modal on the existing `(prKey, headSha)` row when one
+    ///     exists in `completed` state and `force` is false (slice 14
+    ///     dedupe), or
+    ///   - kicks off a fresh orchestrator run otherwise.
+    ///
+    /// Surfaces failures via `reviewError`. The orchestrator (slice 13)
+    /// accepts multiple in-flight reviews up to the configured concurrency
+    /// cap and queues anything beyond that.
+    ///
+    /// `force` is true when the user clicks "Re-review" inside the modal —
+    /// that path always inserts a new Review row even if one already exists
+    /// for the current sha.
     @MainActor
-    fileprivate func startReview(repo: String, prNumber: Int, prTitle: String) async {
+    fileprivate func startReview(
+        repo: String,
+        prNumber: Int,
+        prTitle: String,
+        force: Bool = false
+    ) async {
         reviewError = nil
         do {
             let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
             let store = ReviewStore(context: modelContext)
-            await orchestrator.start(
-                repo: repo,
-                prNumber: prNumber,
-                branch: info.headBranch,
-                sha: info.headSha,
-                store: store
-            )
+            let prKey = "\(repo)#\(prNumber)"
+            let existing = store.latestForPRAtSha(prKey: prKey, headSha: info.headSha)
+            if ReviewVersioning.shouldStartNewRun(existingForSha: existing, force: force) {
+                await orchestrator.start(
+                    repo: repo,
+                    prNumber: prNumber,
+                    branch: info.headBranch,
+                    sha: info.headSha,
+                    store: store
+                )
+            } else if let existing {
+                // Reuse: surface the existing row in the modal without
+                // spawning anything. The modal binds to `orchestrator.current`,
+                // so we point it at the persisted row.
+                orchestrator.current = existing
+            }
             showReviewSheet = true
         } catch {
             reviewError = "Could not fetch PR branch info: \(error)"
+        }
+    }
+
+    /// Closure handed to the modal's "Re-review" button. The modal stays
+    /// orchestrator-agnostic for the start path; this view owns it and re-
+    /// uses `startReview(force: true)`. We extract repo / prNumber / title
+    /// from the displayed Review so the user doesn't have to be on the right
+    /// PR card when they click.
+    @MainActor
+    fileprivate func reReview(_ review: Review) {
+        Task {
+            await startReview(
+                repo: review.repoFullName,
+                prNumber: review.prNumber,
+                prTitle: "",
+                force: true
+            )
         }
     }
 
@@ -356,11 +399,14 @@ struct ReviewsTab: View {
                 ForEach(visible) { pr in
                     HStack(alignment: .top, spacing: 8) {
                         PendingPRCard(pr: pr)
-                        reviewButton(
-                            for: pr.repoFullName,
-                            prNumber: pr.number,
-                            prTitle: pr.title
-                        )
+                        VStack(alignment: .trailing, spacing: 4) {
+                            reviewButton(
+                                for: pr.repoFullName,
+                                prNumber: pr.number,
+                                prTitle: pr.title
+                            )
+                            latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+                        }
                     }
                     .contextMenu {
                         Button("Evict review state") {
@@ -416,16 +462,34 @@ struct ReviewsTab: View {
     fileprivate func reviewedRow(pr: ReviewedPR) -> some View {
         HStack(alignment: .top, spacing: 8) {
             ReviewedPRCard(pr: pr)
-            reviewButton(
-                for: pr.repoFullName,
-                prNumber: pr.number,
-                prTitle: pr.title
-            )
+            VStack(alignment: .trailing, spacing: 4) {
+                reviewButton(
+                    for: pr.repoFullName,
+                    prNumber: pr.number,
+                    prTitle: pr.title
+                )
+                latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+            }
         }
         .contextMenu {
             Button("Evict review state") {
                 requestManualEvict(repo: pr.repoFullName, prNumber: pr.number)
             }
+        }
+    }
+
+    // MARK: - Slice 14 — latest-verdict adornment
+
+    /// Small badge shown under the per-card Review button when at least one
+    /// prior Review row exists for the PR. Independent of the slice 13
+    /// button-state machine: the button reflects in-flight state, the badge
+    /// reflects the most recently *completed* verdict.
+    @ViewBuilder
+    fileprivate func latestVerdictBadge(repo: String, prNumber: Int) -> some View {
+        let prKey = "\(repo)#\(prNumber)"
+        let store = ReviewStore(context: modelContext)
+        if let latest = store.latestForPR(prKey: prKey) {
+            LatestVerdictBadge(review: latest)
         }
     }
 
@@ -1005,5 +1069,68 @@ private struct ReviewButton: View {
         case .running:
             return "Review in progress. Click to cancel."
         }
+    }
+}
+
+// MARK: - Latest verdict badge (slice 14)
+
+/// Surfaces the most recent Review row's verdict / state on the PR card.
+/// Independent of the slice 13 in-flight button-state machine — this is a
+/// pure read of `ReviewStore.latestForPR`. We bind on `Review` so SwiftData
+/// observation re-renders the badge if the row's state or verdict mutates
+/// while the tab is open (e.g. a running review terminates).
+private struct LatestVerdictBadge: View {
+    @Bindable var review: Review
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label)
+                .font(.caption2.weight(.semibold))
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Capsule().fill(color.opacity(0.14)))
+        .foregroundStyle(color)
+        .help(tooltip)
+    }
+
+    private var label: String {
+        // Terminal-but-no-verdict states get their own label so the user
+        // knows why they're not seeing approve/changes/comment.
+        switch review.state {
+        case "running":   return "running"
+        case "queued":    return "queued"
+        case "failed":    return "failed"
+        case "timeout":   return "timed out"
+        case "cancelled": return "cancelled"
+        default:
+            switch (review.verdict ?? "").lowercased() {
+            case "approve":         return "approve"
+            case "request_changes": return "changes"
+            case "comment":         return "comment"
+            default:                return "no verdict"
+            }
+        }
+    }
+
+    private var color: Color {
+        switch review.state {
+        case "running", "queued":      return .blue
+        case "failed", "timeout":      return .orange
+        case "cancelled":              return .gray
+        default:
+            switch (review.verdict ?? "").lowercased() {
+            case "approve":         return .green
+            case "request_changes": return .red
+            case "comment":         return .orange
+            default:                return .gray
+            }
+        }
+    }
+
+    private var tooltip: String {
+        let sha = String(review.headSha.prefix(7))
+        return "Latest review for sha \(sha) — \(review.state)"
     }
 }
