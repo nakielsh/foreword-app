@@ -362,7 +362,7 @@ final class ReviewOrchestrator {
             try? store.context.save()
         }
 
-        let jiraTicket = await fetchJiraTicket(key: jiraKey)
+        let jiraTicket = await Self.fetchJiraTicket(key: jiraKey, context: store.context)
         if input.cancellation.isCancelled { return }
 
         // Step 3: build the prompt.
@@ -441,10 +441,10 @@ final class ReviewOrchestrator {
 
     /// Fetch the Jira ticket for `key` if both a key and credentials are
     /// available. Returns nil for the (common) "no Jira" cases.
-    private static func fetchJiraTicket(key: String?) async -> JiraTicket? {
+    private static func fetchJiraTicket(key: String?, context: ModelContext) async -> JiraTicket? {
         guard let key else { return nil }
         do {
-            return try await JiraClient().fetchTicket(key: key)
+            return try await JiraClient(context: context).fetchTicket(key: key)
         } catch JiraClient.JiraError.notConfigured {
             NSLog("[ReviewOrchestrator] Jira not configured — proceeding without Jira context.")
             return nil
