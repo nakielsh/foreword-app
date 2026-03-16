@@ -32,7 +32,11 @@ struct WorkHomepageApp: App {
     private let modelContainer: ModelContainer
 
     init() {
-        let schema = Schema([Review.self, Finding.self])
+        // Slice 12: `CachedJiraTicket` joins the schema so the cache shares the
+        // same on-disk store as reviews + findings. New `@Model` types must be
+        // listed here or `ModelContainer(for:)` won't see them and queries
+        // against the type at runtime will throw.
+        let schema = Schema([Review.self, Finding.self, CachedJiraTicket.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
