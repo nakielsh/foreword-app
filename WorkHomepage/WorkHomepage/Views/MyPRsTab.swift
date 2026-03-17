@@ -18,25 +18,22 @@
 import SwiftUI
 
 struct MyPRsTab: View {
-    /// Bumped by SidebarView's toolbar Refresh button. Defaulted so the tab can
-    /// also be constructed in previews without a tick source.
-    /// (SidebarView constructs `MyPRsTab()` today — we can't modify SidebarView
-    /// in this slice, so the default keeps that call site valid; the parent
-    /// agent that owns SidebarView can wire `refreshTick:` through later.)
+    /// Persistent data container owned by SidebarView. Survives tab switches
+    /// so the loaded PR rows don't disappear when the user clicks away and
+    /// back.
+    @Bindable var vm: MyPRsViewModel
+    /// Bumped by SidebarView's toolbar Refresh button.
     var refreshTick: Int = 0
 
-    @State private var rows: [MyPRRow] = []
-    @State private var isLoading: Bool = false
-    @State private var errorMessage: String?
+    // MARK: - Transient UI state (does not need to survive tab switches)
+
     @State private var showReauthSheet: Bool = false
-    @State private var hasFetchedOnce: Bool = false
-    @State private var currentUser: String?
 
     private let client = GitHubClient()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let errorMessage {
+            if let errorMessage = vm.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
             statsBar
@@ -59,6 +56,11 @@ struct MyPRsTab: View {
         .onChange(of: refreshTick) { _, _ in
             Task { await refresh() }
         }
+        .task {
+            if !vm.hasFetchedOnce && !vm.isLoading {
+                await refresh()
+            }
+        }
         .sheet(isPresented: $showReauthSheet) {
             TokenPromptSheet(reason: .reauth) {
                 showReauthSheet = false
@@ -71,11 +73,11 @@ struct MyPRsTab: View {
 
     @ViewBuilder
     private var statsBar: some View {
-        if hasFetchedOnce && !rows.isEmpty {
-            let withApprovals = rows.filter { $0.reviewState.reviewers.contains { $0.status == .approved } }.count
-            let changesReq = rows.filter { $0.reviewState.reviewers.contains { $0.status == .changesRequested } }.count
-            let awaitingReply = rows.filter { $0.reviewState.unresolved.awaitingYou > 0 }.count
-            let drafts = rows.filter { $0.pr.draft }.count
+        if vm.hasFetchedOnce && !vm.rows.isEmpty {
+            let withApprovals = vm.rows.filter { $0.reviewState.reviewers.contains { $0.status == .approved } }.count
+            let changesReq = vm.rows.filter { $0.reviewState.reviewers.contains { $0.status == .changesRequested } }.count
+            let awaitingReply = vm.rows.filter { $0.reviewState.unresolved.awaitingYou > 0 }.count
+            let drafts = vm.rows.filter { $0.pr.draft }.count
 
             HStack(spacing: 12) {
                 StatChip(dotColor: .green, value: withApprovals, label: "with approvals")
@@ -86,7 +88,7 @@ struct MyPRsTab: View {
                 if drafts > 0 {
                     StatChip(dotColor: .gray, value: drafts, label: "drafts")
                 }
-                StatChip(dotColor: nil, value: rows.count, label: "total")
+                StatChip(dotColor: nil, value: vm.rows.count, label: "total")
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -99,17 +101,17 @@ struct MyPRsTab: View {
 
     @ViewBuilder
     private var content: some View {
-        if isLoading && rows.isEmpty {
+        if vm.isLoading && vm.rows.isEmpty {
             ProgressView("Loading authored PRs…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !hasFetchedOnce {
-            EmptyHint(text: "Click Refresh to load your authored PRs.")
-        } else if rows.isEmpty {
+        } else if !vm.hasFetchedOnce {
+            EmptyHint(text: "Loading your authored PRs…")
+        } else if vm.rows.isEmpty {
             EmptyHint(text: "No open PRs authored by you.")
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(rows) { row in
+                    ForEach(vm.rows) { row in
                         MyPRCard(row: row)
                     }
                 }
@@ -122,17 +124,17 @@ struct MyPRsTab: View {
 
     @MainActor
     private func refresh() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
+        vm.isLoading = true
+        vm.errorMessage = nil
+        defer { vm.isLoading = false }
         do {
             // 1. Resolve viewer login (cache once).
             let login: String
-            if let cached = currentUser {
+            if let cached = vm.currentUser {
                 login = cached
             } else {
                 login = try await client.fetchCurrentUserLogin()
-                currentUser = login
+                vm.currentUser = login
             }
 
             // 2. Authored PRs.
@@ -163,23 +165,23 @@ struct MyPRsTab: View {
                 return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
             }
 
-            rows = assembled
-            hasFetchedOnce = true
+            vm.rows = assembled
+            vm.hasFetchedOnce = true
         } catch GitHubError.unauthorized {
-            errorMessage = "GitHub returned 401. Please re-enter your token."
-            rows = []
+            vm.errorMessage = "GitHub returned 401. Please re-enter your token."
+            vm.rows = []
             showReauthSheet = true
         } catch GitHubError.missingToken {
-            errorMessage = "No GitHub token stored. Add one to continue."
+            vm.errorMessage = "No GitHub token stored. Add one to continue."
             showReauthSheet = true
         } catch GitHubError.http(let status, _) {
-            errorMessage = "GitHub error \(status)."
+            vm.errorMessage = "GitHub error \(status)."
         } catch GitHubError.decoding(let detail) {
-            errorMessage = "Failed to decode GitHub response: \(detail)"
+            vm.errorMessage = "Failed to decode GitHub response: \(detail)"
         } catch GitHubError.transport(let detail) {
-            errorMessage = "Network error: \(detail)"
+            vm.errorMessage = "Network error: \(detail)"
         } catch {
-            errorMessage = "Unexpected error: \(error.localizedDescription)"
+            vm.errorMessage = "Unexpected error: \(error.localizedDescription)"
         }
     }
 }

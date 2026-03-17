@@ -28,6 +28,9 @@ import SwiftUI
 import struct Foundation.Date
 
 struct ReviewsTab: View {
+    /// Persistent data container owned by SidebarView. Keeping the loaded
+    /// pending/reviewed PRs here means tab switches don't clear the list.
+    @Bindable var vm: ReviewsViewModel
     /// Bumped by SidebarView's toolbar Refresh button. Defaulted so the tab
     /// can be constructed in previews.
     var refreshTick: Int = 0
@@ -39,15 +42,9 @@ struct ReviewsTab: View {
     /// "Show my dismissed reviews" toggle. Default off.
     @AppStorage("reviews.showDismissed") private var showDismissed: Bool = false
 
-    // MARK: - In-memory state
+    // MARK: - Transient UI state (does not need to survive tab switches)
 
-    @State private var pendingPRs: [PendingReviewPR] = []
-    @State private var reviewedPRs: [ReviewedPR] = []
-    @State private var isLoading: Bool = false
-    @State private var errorMessage: String?
     @State private var showReauthSheet: Bool = false
-    @State private var hasFetchedOnce: Bool = false
-    @State private var currentUser: String?
 
     /// True when the review modal should be presented. The modal is
     /// orchestrator-driven (slice/07-fix); we just toggle the binding.
@@ -78,7 +75,7 @@ struct ReviewsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let errorMessage {
+            if let errorMessage = vm.errorMessage {
                 ErrorBanner(message: errorMessage)
             }
             filterBar
@@ -99,6 +96,14 @@ struct ReviewsTab: View {
         }
         .onChange(of: refreshTick) { _, _ in
             Task { await refresh() }
+        }
+        .task {
+            // Auto-fetch the first time the tab is shown. The vm survives
+            // tab switches, so subsequent appearances skip the fetch and
+            // just re-display the cached PRs.
+            if !vm.hasFetchedOnce && !vm.isLoading {
+                await refresh()
+            }
         }
         .sheet(isPresented: $showReauthSheet) {
             TokenPromptSheet(reason: .reauth) {
@@ -332,7 +337,7 @@ struct ReviewsTab: View {
 
     @ViewBuilder
     private var statsBar: some View {
-        if hasFetchedOnce {
+        if vm.hasFetchedOnce {
             let derived = derivedStats()
             HStack(spacing: 12) {
                 StatChip(dotColor: .orange, value: derived.awaiting, label: "awaiting")
@@ -360,11 +365,11 @@ struct ReviewsTab: View {
 
     @ViewBuilder
     private var content: some View {
-        if isLoading && pendingPRs.isEmpty && reviewedPRs.isEmpty {
+        if vm.isLoading && vm.pendingPRs.isEmpty && vm.reviewedPRs.isEmpty {
             ProgressView("Loading reviews…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if !hasFetchedOnce {
-            EmptyHint(text: "Click Refresh to load review-requested PRs.")
+        } else if !vm.hasFetchedOnce {
+            EmptyHint(text: "Loading review-requested PRs…")
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -420,8 +425,8 @@ struct ReviewsTab: View {
 
     @ViewBuilder
     private var reviewedSubSections: some View {
-        let pendingIds = Set(pendingPRs.map(\.id))
-        let reviewed = reviewedPRs.filter { !pendingIds.contains($0.id) }
+        let pendingIds = Set(vm.pendingPRs.map(\.id))
+        let reviewed = vm.reviewedPRs.filter { !pendingIds.contains($0.id) }
         let changesReq = reviewed.filter { $0.myLastReviewState == .changesRequested }
         let commented = reviewed.filter { $0.myLastReviewState == .commented }
         let approved = reviewed.filter { $0.myLastReviewState == .approved }
@@ -489,7 +494,16 @@ struct ReviewsTab: View {
         let prKey = "\(repo)#\(prNumber)"
         let store = ReviewStore(context: modelContext)
         if let latest = store.latestForPR(prKey: prKey) {
-            LatestVerdictBadge(review: latest)
+            Button {
+                // Open the existing review in the modal without spawning a
+                // new run. The modal binds to `orchestrator.current`.
+                orchestrator.current = latest
+                showReviewSheet = true
+            } label: {
+                LatestVerdictBadge(review: latest)
+            }
+            .buttonStyle(.plain)
+            .help("Open this review")
         }
     }
 
@@ -532,7 +546,7 @@ struct ReviewsTab: View {
     // MARK: - Filter / stats derivations
 
     private func visiblePendingPRs() -> [PendingReviewPR] {
-        var visible = pendingPRs.filter {
+        var visible = vm.pendingPRs.filter {
             !ReviewsDerive.isHiddenByApprovalThreshold(
                 approvalCount: $0.approvalCount,
                 threshold: approvalThreshold
@@ -564,12 +578,12 @@ struct ReviewsTab: View {
     }
 
     private func derivedStats() -> DerivedStats {
-        let withApp = pendingPRs.filter { $0.approvalCount > 0 }.count
-        let drafts = pendingPRs.filter { $0.isDraft }.count
-        let dismissed = pendingPRs.filter { $0.isDismissed }.count
-        let awaiting = max(0, pendingPRs.count - withApp - drafts)
+        let withApp = vm.pendingPRs.filter { $0.approvalCount > 0 }.count
+        let drafts = vm.pendingPRs.filter { $0.isDraft }.count
+        let dismissed = vm.pendingPRs.filter { $0.isDismissed }.count
+        let awaiting = max(0, vm.pendingPRs.count - withApp - drafts)
         let visible = visiblePendingPRs()
-        let total = pendingPRs.count
+        let total = vm.pendingPRs.count
         let hidden = max(0, total - visible.count)
         return DerivedStats(
             awaiting: awaiting,
@@ -585,26 +599,26 @@ struct ReviewsTab: View {
 
     @MainActor
     private func refresh() async {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
+        vm.isLoading = true
+        vm.errorMessage = nil
+        defer { vm.isLoading = false }
         do {
             // 1. Resolve viewer login (cache once).
             let login: String
-            if let cached = currentUser {
+            if let cached = vm.currentUser {
                 login = cached
             } else {
                 login = try await client.fetchCurrentUserLogin()
-                currentUser = login
+                vm.currentUser = login
             }
 
             // 2. Fan-out the two searches in parallel.
             async let pending = client.fetchPendingReviewPRs(currentUser: login)
             async let reviewed = client.fetchReviewedByMePRs(currentUser: login)
             let (p, r) = try await (pending, reviewed)
-            pendingPRs = p
-            reviewedPRs = r
-            hasFetchedOnce = true
+            vm.pendingPRs = p
+            vm.reviewedPRs = r
+            vm.hasFetchedOnce = true
 
             // 3. Slice 15 — sweep tracked PRs that no longer appear in either
             // open-PR set. `prKey` shape matches what `ReviewOrchestrator`
@@ -620,21 +634,21 @@ struct ReviewsTab: View {
                 showCleanupNotice("Cleaned up \(cleaned) closed PR\(cleaned == 1 ? "" : "s")")
             }
         } catch GitHubError.unauthorized {
-            errorMessage = "GitHub returned 401. Please re-enter your token."
-            pendingPRs = []
-            reviewedPRs = []
+            vm.errorMessage = "GitHub returned 401. Please re-enter your token."
+            vm.pendingPRs = []
+            vm.reviewedPRs = []
             showReauthSheet = true
         } catch GitHubError.missingToken {
-            errorMessage = "No GitHub token stored. Add one to continue."
+            vm.errorMessage = "No GitHub token stored. Add one to continue."
             showReauthSheet = true
         } catch GitHubError.http(let status, _) {
-            errorMessage = "GitHub error \(status)."
+            vm.errorMessage = "GitHub error \(status)."
         } catch GitHubError.decoding(let detail) {
-            errorMessage = "Failed to decode GitHub response: \(detail)"
+            vm.errorMessage = "Failed to decode GitHub response: \(detail)"
         } catch GitHubError.transport(let detail) {
-            errorMessage = "Network error: \(detail)"
+            vm.errorMessage = "Network error: \(detail)"
         } catch {
-            errorMessage = "Unexpected error: \(error.localizedDescription)"
+            vm.errorMessage = "Unexpected error: \(error.localizedDescription)"
         }
     }
 }

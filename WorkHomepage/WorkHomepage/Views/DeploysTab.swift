@@ -15,23 +15,20 @@ import SwiftUI
 import Foundation
 
 struct DeploysTab: View {
-    /// Bumped by SidebarView's toolbar Refresh button. Defaulted to 0 so the
-    /// existing `DeploysTab()` call site in SidebarView continues to compile;
-    /// when SidebarView is rewired to pass `refreshTick`, this tab will pick
-    /// up changes via `.onChange` like ReviewsTab.
+    /// Persistent data container owned by SidebarView. Survives tab switches
+    /// so the loaded service cards don't reset to "Click Refresh" on return.
+    @Bindable var vm: DeploysViewModel
+    /// Bumped by SidebarView's toolbar Refresh button.
     let refreshTick: Int
 
-    init(refreshTick: Int = 0) {
+    init(vm: DeploysViewModel, refreshTick: Int = 0) {
+        self.vm = vm
         self.refreshTick = refreshTick
     }
 
-    @State private var serviceStates: [String: ServiceCardState] = [:]
-    @State private var globalError: String?
-    @State private var hasRefreshedOnce: Bool = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let globalError {
+            if let globalError = vm.globalError {
                 ErrorBanner(message: globalError)
             }
             content
@@ -41,14 +38,19 @@ struct DeploysTab: View {
         .onChange(of: refreshTick) { _, _ in
             Task { await refresh() }
         }
+        .task {
+            if !vm.hasRefreshedOnce {
+                await refresh()
+            }
+        }
     }
 
     @ViewBuilder
     private var content: some View {
-        if !hasRefreshedOnce {
+        if !vm.hasRefreshedOnce {
             VStack {
                 Spacer()
-                Text("Click Refresh to load deployments.")
+                Text("Loading deployments…")
                     .font(.title3)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -57,8 +59,8 @@ struct DeploysTab: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(DeploymentsConfig.services, id: \.self) { service in
-                        let state = serviceStates[service] ?? .loading
+                    ForEach(sortedServices(), id: \.self) { service in
+                        let state = vm.serviceStates[service] ?? .loading
                         DeployCard(service: service, state: state)
                     }
                 }
@@ -67,20 +69,51 @@ struct DeploysTab: View {
         }
     }
 
+    /// Sort services by most-recent deploy time across all envs, descending.
+    /// Services still loading / errored / with no recent deploys get sorted to
+    /// the bottom in the original config order so they don't shuffle while
+    /// other cards are still resolving.
+    private func sortedServices() -> [String] {
+        let services = DeploymentsConfig.services
+        let indexed = services.enumerated().map { (offset: $0.offset, service: $0.element) }
+        return indexed.sorted { a, b in
+            let ta = latestDeployTime(for: a.service)
+            let tb = latestDeployTime(for: b.service)
+            switch (ta, tb) {
+            case let (.some(da), .some(db)):
+                if da != db { return da > db }
+                return a.offset < b.offset
+            case (.some, .none): return true
+            case (.none, .some): return false
+            case (.none, .none): return a.offset < b.offset
+            }
+        }.map(\.service)
+    }
+
+    /// Latest deploy timestamp across all envs for a service, or nil when the
+    /// service has no loaded deployments yet.
+    private func latestDeployTime(for service: String) -> Date? {
+        guard let state = vm.serviceStates[service] else { return nil }
+        if case .loaded(let deployments) = state, !deployments.isEmpty {
+            return deployments.map(\.createdAt).max()
+        }
+        return nil
+    }
+
     @MainActor
     private func refresh() async {
-        globalError = nil
-        hasRefreshedOnce = true
+        vm.globalError = nil
+        vm.hasRefreshedOnce = true
 
         // Reset all to loading immediately so skeletons appear.
-        var initial: [String: ServiceCardState] = [:]
+        var initial: [String: DeployServiceCardState] = [:]
         for service in DeploymentsConfig.services {
             initial[service] = .loading
         }
-        serviceStates = initial
+        vm.serviceStates = initial
 
         // Fire all fetches concurrently. Each card fills independently.
-        await withTaskGroup(of: (String, ServiceCardState).self) { group in
+        await withTaskGroup(of: (String, DeployServiceCardState).self) { group in
             for service in DeploymentsConfig.services {
                 group.addTask {
                     let result = await fetchOne(service: service)
@@ -88,16 +121,16 @@ struct DeploysTab: View {
                 }
             }
             for await (service, state) in group {
-                serviceStates[service] = state
+                vm.serviceStates[service] = state
                 if case .unauthorized = state {
-                    globalError = "GitHub returned 401. Please re-enter your token."
+                    vm.globalError = "GitHub returned 401. Please re-enter your token."
                 }
             }
         }
     }
 
     /// Fetches workflow runs for one service and reduces them into a card state.
-    private func fetchOne(service: String) async -> ServiceCardState {
+    private func fetchOne(service: String) async -> DeployServiceCardState {
         let repo = DeploymentsConfig.serviceToRepo(service)
         let client = GitHubClient()
         do {
@@ -146,20 +179,11 @@ struct DeploysTab: View {
     }
 }
 
-// MARK: - Card state
-
-private enum ServiceCardState {
-    case loading
-    case loaded([Deployment])
-    case unauthorized
-    case error(String)
-}
-
 // MARK: - Subviews
 
 private struct DeployCard: View {
     let service: String
-    let state: ServiceCardState
+    let state: DeployServiceCardState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

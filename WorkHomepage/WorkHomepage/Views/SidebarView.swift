@@ -40,6 +40,13 @@ struct SidebarView: View {
     /// orchestrator-driven sheet, so racing them is harmless.
     @State private var showReviewSheet: Bool = false
 
+    /// Per-tab data containers. Held here (not in the tab views) so loaded
+    /// state survives sidebar switches — SwiftUI tears down a tab's view tree
+    /// on selection change, so any @State inside the tab would reset to zero.
+    @State private var reviewsVM = ReviewsViewModel()
+    @State private var myPRsVM = MyPRsViewModel()
+    @State private var deploysVM = DeploysViewModel()
+
     var body: some View {
         NavigationSplitView {
             List(AppTab.allCases, selection: $selection) { tab in
@@ -84,13 +91,13 @@ struct SidebarView: View {
     private var detail: some View {
         switch selection {
         case .reviews:
-            ReviewsTab(refreshTick: refreshTick)
+            ReviewsTab(vm: reviewsVM, refreshTick: refreshTick)
         case .myPRs:
-            MyPRsTab()
+            MyPRsTab(vm: myPRsVM, refreshTick: refreshTick)
         case .sessions:
             SessionsTab()
         case .deploys:
-            DeploysTab()
+            DeploysTab(vm: deploysVM, refreshTick: refreshTick)
         }
     }
 }
