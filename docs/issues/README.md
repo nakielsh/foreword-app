@@ -26,6 +26,14 @@ No tracker configured — issues live as files here. When a tracker comes online
 | 16 | MenuBarExtra | AFK | 01, 07 |
 | 17 | Disk usage + per-repo evict | AFK | 06, 07 |
 | 18 | **Cleanup + README/CLAUDE.md rewrite** | **HITL** | 02, 03, 04, 05 |
+| 19 | Theme tracer (Botanical Garden palette + fonts + appearance toggle) | AFK | — |
+| 20 | Theme rollout to remaining views | AFK | 19 |
+| 21 | Avatar tracer (Reviews PR card author) | AFK | 19 |
+| 22 | Avatar rollout (MyPRs reviewers + Review modal) | AFK | 21 |
+| 23 | Custom Review Prompt Template | AFK | 19 |
+| 24 | Pre-Review Summary tracer | AFK | 19 |
+| 25 | Pre-Review Summary concurrency pool + retry | AFK | 24 |
+| 26 | Jira badge | AFK | 19 |
 
 ## Suggested order
 
@@ -33,3 +41,4 @@ No tracker configured — issues live as files here. When a tracker comes online
 2. Tracer: 07 (HITL — design-review pipeline before piling features on).
 3. Polish + features (most can run in parallel after 07): 08 → 09; 10 → (11, 12); 13; 14; 15; 16; 17.
 4. Final cleanup: 18 (HITL — confirm before deleting legacy files).
+5. PRD addendum: 19 → (20, 21, 23, 24, 26 in parallel) → (22 after 21, 25 after 24).
