@@ -1127,8 +1127,12 @@
         headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' }
       });
       if (!res.ok) {
-        if (res.status === 401) { forgetToken(); throw new Error('Token expired.'); }
-        throw new Error(`GitHub API error: ${res.status}`);
+        const body = await res.text().catch(() => '');
+        console.error(`[ghFetch] ${res.status} ${path}`, body);
+        if (res.status === 401) throw new Error('Token unauthorized (401). Click "Forget token" and re-paste.');
+        if (res.status === 403) throw new Error(`Forbidden (403) — likely rate-limited or missing scope. ${path}`);
+        if (res.status === 404) throw new Error(`Not found (404): ${path}`);
+        throw new Error(`GitHub API error ${res.status}: ${path}`);
       }
       return res.json();
     }
@@ -1141,11 +1145,16 @@
         body: JSON.stringify({ query, variables })
       });
       if (!res.ok) {
-        if (res.status === 401) { forgetToken(); throw new Error('Token expired.'); }
-        throw new Error(`GraphQL error: ${res.status}`);
+        const body = await res.text().catch(() => '');
+        console.error(`[ghGraphQL] ${res.status}`, body);
+        if (res.status === 401) throw new Error('Token unauthorized (401). Click "Forget token" and re-paste.');
+        throw new Error(`GraphQL error ${res.status}`);
       }
       const json = await res.json();
-      if (json.errors) throw new Error(json.errors[0].message);
+      if (json.errors) {
+        console.error('[ghGraphQL] errors', json.errors);
+        throw new Error(json.errors[0].message);
+      }
       return json.data;
     }
 
@@ -1195,10 +1204,19 @@
     }
 
     function loadTab(tab) {
-      if (tab === 'reviews' && !reviewsLoaded) loadReviews();
-      else if (tab === 'my-prs' && !myPRsLoaded) loadMyPRs();
-      else if (tab === 'claude' && !claudeLoaded) loadClaudeSessions();
-      else if (tab === 'deployments' && !deploymentsLoaded) loadDeployments();
+      if (tab === 'reviews') {
+        if (!reviewsLoaded) loadReviews();
+        else renderReviews();
+      } else if (tab === 'my-prs') {
+        if (!myPRsLoaded) loadMyPRs();
+        else renderMyPRs();
+      } else if (tab === 'claude') {
+        if (!claudeLoaded) loadClaudeSessions();
+        else renderClaudeSessions();
+      } else if (tab === 'deployments') {
+        if (!deploymentsLoaded) loadDeployments();
+        else renderDeployments();
+      }
     }
 
     /* ============ REVIEWS TAB ============ */
@@ -1888,6 +1906,14 @@
         </div>
         ${envsHtml}
       `;
+    }
+
+    function renderDeployments() {
+      const grid = document.getElementById('deploy-grid');
+      grid.innerHTML = '';
+      const sorted = [...deployments].sort((a, b) => latestDeployTime(b) - latestDeployTime(a));
+      for (const d of sorted) insertDeployCardSorted(grid, d);
+      renderDeployStats();
     }
 
     function renderDeployStats() {
