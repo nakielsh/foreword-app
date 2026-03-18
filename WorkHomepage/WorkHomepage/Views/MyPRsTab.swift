@@ -80,20 +80,20 @@ struct MyPRsTab: View {
             let drafts = vm.rows.filter { $0.pr.draft }.count
 
             HStack(spacing: 12) {
-                StatChip(dotColor: .green, value: withApprovals, label: "with approvals")
-                StatChip(dotColor: .red, value: changesReq, label: "changes requested")
+                StatChip(dotColor: .accentFern, value: withApprovals, label: "with approvals")
+                StatChip(dotColor: .accentTerracotta, value: changesReq, label: "changes requested")
                 if awaitingReply > 0 {
-                    StatChip(dotColor: .orange, value: awaitingReply, label: "awaiting your reply")
+                    StatChip(dotColor: .accentMarigold, value: awaitingReply, label: "awaiting your reply")
                 }
                 if drafts > 0 {
-                    StatChip(dotColor: .gray, value: drafts, label: "drafts")
+                    StatChip(dotColor: .accentGray, value: drafts, label: "drafts")
                 }
                 StatChip(dotColor: nil, value: vm.rows.count, label: "total")
                 Spacer()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background(Color.gray.opacity(0.05))
+            .background(Color.bgSurface)
         }
     }
 
@@ -117,6 +117,7 @@ struct MyPRsTab: View {
                 }
                 .padding()
             }
+            .background(Color.bgDeep)
         }
     }
 
@@ -209,29 +210,30 @@ private struct MyPRCard: View {
                 // Top row: repo + draft + age
                 HStack(spacing: 8) {
                     Text(pr.repoFullName)
-                        .font(.caption.weight(.semibold))
+                        .font(Font.appBody(size: 11, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.gray.opacity(0.18)))
+                        .background(Capsule().fill(Color.borderSubtle))
                     Spacer()
                     if pr.draft {
                         Text("Draft")
-                            .font(.caption2.weight(.semibold))
+                            .font(Font.appBody(size: 10, weight: .semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.gray.opacity(0.25)))
-                            .foregroundStyle(.secondary)
+                            .background(Capsule().fill(Color.accentGray.opacity(0.18)))
+                            .foregroundStyle(Color.accentGray)
                     }
                     Text(timeAgo(pr.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textMuted)
                 }
 
                 // Title + number
                 Text("#\(pr.number)  \(pr.title)")
-                    .font(.headline)
+                    .font(Font.display(size: 14))
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Color.textPrimary)
 
                 // Reviewer badges
                 if !state.reviewers.isEmpty {
@@ -247,38 +249,38 @@ private struct MyPRCard: View {
                     if !state.reviewers.isEmpty {
                         let approved = state.reviewers.filter { $0.status == .approved }.count
                         Text("\(approved)/\(state.reviewers.count) approved")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textSecondary)
                     } else {
                         Text("No reviewers")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textMuted)
                     }
 
                     if state.unresolved.awaitingYou > 0 {
                         Label("\(state.unresolved.awaitingYou) awaiting you",
                               systemImage: "exclamationmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.accentMarigold)
                     } else if state.totalThreads > 0 {
                         Label("All resolved", systemImage: "checkmark.circle")
-                            .font(.caption)
-                            .foregroundStyle(.green)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.accentFern)
                     }
 
                     if state.unresolved.awaitingOthers > 0 {
                         Label("\(state.unresolved.awaitingOthers) replied",
                               systemImage: "arrowshape.turn.up.left")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textSecondary)
                     }
 
                     Spacer()
 
                     if state.totalComments > 0 {
                         Label("\(state.totalComments)", systemImage: "bubble.left")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 }
             }
@@ -297,33 +299,33 @@ private struct MyPRCard: View {
     }
 
     private func cardBackground(for row: MyPRRow) -> Color {
-        if row.pr.draft { return Color.gray.opacity(0.06) }
+        if row.pr.draft { return Color.accentGray.opacity(0.05) }
         let reviewers = row.reviewState.reviewers
         if reviewers.contains(where: { $0.status == .changesRequested }) {
-            return Color.red.opacity(0.06)
+            return Color.accentTerracotta.opacity(0.05)
         }
         if row.reviewState.unresolved.awaitingYou > 0 {
-            return Color.orange.opacity(0.06)
+            return Color.accentMarigold.opacity(0.05)
         }
         if !reviewers.isEmpty && reviewers.allSatisfy({ $0.status == .approved }) {
-            return Color.green.opacity(0.06)
+            return Color.accentFern.opacity(0.05)
         }
-        return Color.gray.opacity(0.06)
+        return Color.bgCard
     }
 
     private func cardStroke(for row: MyPRRow) -> Color {
-        if row.pr.draft { return Color.gray.opacity(0.18) }
+        if row.pr.draft { return Color.borderSubtle }
         let reviewers = row.reviewState.reviewers
         if reviewers.contains(where: { $0.status == .changesRequested }) {
-            return Color.red.opacity(0.35)
+            return Color.accentTerracotta.opacity(0.30)
         }
         if row.reviewState.unresolved.awaitingYou > 0 {
-            return Color.orange.opacity(0.35)
+            return Color.accentMarigold.opacity(0.30)
         }
         if !reviewers.isEmpty && reviewers.allSatisfy({ $0.status == .approved }) {
-            return Color.green.opacity(0.35)
+            return Color.accentFern.opacity(0.30)
         }
-        return Color.gray.opacity(0.18)
+        return Color.borderSubtle
     }
 
     private func timeAgo(_ date: Date) -> String {
@@ -349,27 +351,27 @@ private struct ReviewerBadge: View {
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
             Text(reviewer.login)
-                .font(.caption2)
+                .font(Font.appBody(size: 10))
             if reviewer.reRequested {
                 Text("↻")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.orange)
+                    .font(Font.appBody(size: 10, weight: .bold))
+                    .foregroundStyle(Color.accentMarigold)
             }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(Capsule().fill(Color.gray.opacity(0.12)))
+        .background(Capsule().fill(Color.borderSubtle))
         .help(tooltip)
     }
 
     private var dotColor: Color {
         switch reviewer.status {
-        case .approved: return .green
-        case .changesRequested: return .red
-        case .commented: return .blue
-        case .dismissed: return .gray
-        case .pending: return .yellow
-        case .reRequested: return .orange
+        case .approved: return .accentFern
+        case .changesRequested: return .accentTerracotta
+        case .commented: return .accentGray
+        case .dismissed: return .accentGray
+        case .pending: return .accentMarigold
+        case .reRequested: return .accentMarigold
         }
     }
 
@@ -392,10 +394,11 @@ private struct StatChip: View {
                 Circle().fill(dotColor).frame(width: 8, height: 8)
             }
             Text("\(value)")
-                .font(.subheadline.weight(.semibold))
+                .font(Font.appBody(size: 13, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
             Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textSecondary)
         }
     }
 }
@@ -409,8 +412,8 @@ private struct EmptyHint: View {
         VStack {
             Spacer()
             Text(text)
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 15))
+                .foregroundStyle(Color.textMuted)
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -422,13 +425,14 @@ private struct ErrorBanner: View {
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentTerracotta)
             Text(message)
-                .font(.callout)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textPrimary)
             Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.12))
+        .background(Color.accentTerracotta.opacity(0.12))
     }
 }

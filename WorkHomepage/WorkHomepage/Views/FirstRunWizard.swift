@@ -87,9 +87,10 @@ struct FirstRunWizard: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Welcome").font(.title).bold()
+            Text("Welcome").font(Font.display(size: 24, weight: .bold))
             Text("Walk through the one-time setup. Each section is skippable; you can come back from Settings.")
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textSecondary)
         }
     }
 
@@ -108,13 +109,15 @@ struct FirstRunWizard: View {
                     }
                 case .foundFromGh:
                     HStack(spacing: 6) {
-                        Circle().fill(Color.green).frame(width: 8, height: 8)
+                        Circle().fill(Color.accentFern).frame(width: 8, height: 8)
                         Text("Token loaded from gh and saved to Keychain.")
-                            .foregroundStyle(.secondary)
+                            .font(Font.appBody(size: 13))
+                            .foregroundStyle(Color.textSecondary)
                     }
                 case .missingGh:
                     Text("Could not auto-fetch. Paste a token below.")
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 13))
+                        .foregroundStyle(Color.textMuted)
                 }
                 SecureField("ghp_… or github_pat_…", text: $ghToken)
                     .textFieldStyle(.roundedBorder)
@@ -148,13 +151,13 @@ struct FirstRunWizard: View {
             EmptyView()
         case .ok:
             HStack(spacing: 6) {
-                Circle().fill(Color.green).frame(width: 8, height: 8)
-                Text("OK").foregroundStyle(.secondary)
+                Circle().fill(Color.accentFern).frame(width: 8, height: 8)
+                Text("OK").font(Font.appBody(size: 13)).foregroundStyle(Color.textSecondary)
             }
         case .failed(let msg):
             HStack(spacing: 6) {
-                Circle().fill(Color.red).frame(width: 8, height: 8)
-                Text(msg).foregroundStyle(.secondary).lineLimit(2)
+                Circle().fill(Color.accentTerracotta).frame(width: 8, height: 8)
+                Text(msg).font(Font.appBody(size: 13)).foregroundStyle(Color.textSecondary).lineLimit(2)
             }
         }
     }
@@ -185,13 +188,13 @@ struct FirstRunWizard: View {
             return "not found"
         }()
         return HStack {
-            Circle().fill(ok ? Color.green : Color.red).frame(width: 10, height: 10)
+            Circle().fill(ok ? Color.accentFern : Color.accentTerracotta).frame(width: 10, height: 10)
             Text(tool.rawValue)
                 .frame(width: 60, alignment: .leading)
                 .font(.body.monospaced())
             Text(pathString)
                 .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
@@ -204,7 +207,8 @@ struct FirstRunWizard: View {
             sectionHeader("4. Project key prefixes", skipBinding: $skipPrefixes)
             if !skipPrefixes {
                 Text("Comma-separated. Empty == accept any [A-Z]+-\\d+.")
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
                 TextField("JWT, ABC, XYZ", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
             }
@@ -238,7 +242,7 @@ struct FirstRunWizard: View {
 
     private func sectionHeader(_ title: String, skipBinding: Binding<Bool>) -> some View {
         HStack {
-            Text(title).font(.headline)
+            Text(title).font(Font.display(size: 14, weight: .bold))
             Spacer()
             Toggle("Skip", isOn: skipBinding).toggleStyle(.checkbox)
         }

@@ -154,11 +154,11 @@ private struct ActiveReviewPill: View {
 
     private var stateColor: Color {
         switch orchestrator.current?.state {
-        case "running":   return .blue
-        case "completed": return .green
-        case "failed":    return .red
-        case "timeout":   return .orange
-        default:          return .gray
+        case "running":   return .accentFern
+        case "completed": return .accentFern
+        case "failed":    return .accentTerracotta
+        case "timeout":   return .accentMarigold
+        default:          return .accentGray
         }
     }
 }
@@ -174,14 +174,14 @@ private struct InFlightIndicator: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "gearshape.2")
-                .font(.caption)
+                .font(Font.appBody(size: 11))
             Text("\(orchestrator.running.count)/\(AppSettings.concurrencyCap) · queued \(orchestrator.queued.count)")
-                .font(.caption.weight(.semibold).monospacedDigit())
+                .font(Font.mono(size: 11))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Capsule().fill(Color.blue.opacity(0.10)))
-        .foregroundStyle(.blue)
+        .background(Capsule().fill(Color.accentFern.opacity(0.10)))
+        .foregroundStyle(Color.accentFern)
         .help("\(orchestrator.running.count) running, \(orchestrator.queued.count) queued · cap \(AppSettings.concurrencyCap)")
     }
 }

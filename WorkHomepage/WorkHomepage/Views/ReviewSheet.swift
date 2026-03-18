@@ -94,7 +94,7 @@ struct ReviewSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             header
                 .padding()
-                .background(Color.gray.opacity(0.06))
+                .background(Color.bgSurface)
 
             Divider()
 
@@ -141,9 +141,10 @@ struct ReviewSheet: View {
     private func launcherToast(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentMarigold)
             Text(message)
-                .font(.callout)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textPrimary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -153,7 +154,7 @@ struct ReviewSheet: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange.opacity(0.5), lineWidth: 1)
+                .stroke(Color.accentMarigold.opacity(0.5), lineWidth: 1)
         )
         .shadow(radius: 4)
     }
@@ -212,14 +213,14 @@ struct ReviewSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text(displayedReview?.repoFullName ?? "—")
-                    .font(.caption.weight(.semibold))
+                    .font(Font.appBody(size: 11, weight: .semibold))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.gray.opacity(0.18)))
+                    .background(Capsule().fill(Color.borderSubtle))
                 if let n = displayedReview?.prNumber {
                     Text("#\(n)")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
                 }
                 if isViewingHistorical {
                     historicalIndicator
@@ -229,15 +230,16 @@ struct ReviewSheet: View {
             }
             if let review = displayedReview {
                 Text("branch: \(review.headBranch)  ·  sha: \(review.headSha.prefix(8))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Font.mono(size: 11))
+                    .foregroundStyle(Color.textMuted)
                     .textSelection(.enabled)
 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     verdictBadge(review: review)
                     if let summary = review.summary, !summary.isEmpty {
                         Text(summary)
-                            .font(.title3)
+                            .font(Font.display(size: 15))
+                            .foregroundStyle(Color.textPrimary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -262,19 +264,19 @@ struct ReviewSheet: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.caption2)
                 Text("History")
-                    .font(.caption.weight(.semibold))
+                    .font(Font.appBody(size: 11, weight: .semibold))
                 if orchestrator.current != nil {
                     Text("·")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 10))
+                        .foregroundStyle(Color.textMuted)
                     Text("Back to current")
-                        .font(.caption2.weight(.semibold))
+                        .font(Font.appBody(size: 10, weight: .semibold))
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(Color.purple.opacity(0.15)))
-            .foregroundStyle(.purple)
+            .background(Capsule().fill(Color.accentGray.opacity(0.15)))
+            .foregroundStyle(Color.textSecondary)
         }
         .buttonStyle(.plain)
         .help("Viewing a historical review. Click to return to the current run.")
@@ -285,19 +287,19 @@ struct ReviewSheet: View {
         let state = displayedReview?.state ?? "idle"
         let (label, color): (String, Color) = {
             switch state {
-            case "queued": return ("Queued", .gray)
-            case "running": return ("Running", .blue)
-            case "completed": return ("Completed", .green)
-            case "failed": return ("Failed", .red)
-            case "timeout": return ("Timed out", .orange)
-            case "cancelled": return ("Cancelled", .gray)
-            default: return ("Idle", .gray)
+            case "queued": return ("Queued", .accentGray)
+            case "running": return ("Running", .accentFern)
+            case "completed": return ("Completed", .accentFern)
+            case "failed": return ("Failed", .accentTerracotta)
+            case "timeout": return ("Timed out", .accentMarigold)
+            case "cancelled": return ("Cancelled", .accentGray)
+            default: return ("Idle", .accentGray)
             }
         }()
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(Font.appBody(size: 11, weight: .semibold))
                 .foregroundStyle(color)
         }
         .padding(.horizontal, 8)
@@ -361,22 +363,22 @@ struct ReviewSheet: View {
         }
     }
 
-    /// Verdict capsule — colored per PRD Q4b: approve→green, request_changes
-    /// →red, comment→orange. Anything else (or nil) renders as a muted
+    /// Verdict capsule — colored per PRD Q4b: approve→fern, request_changes
+    /// →terracotta, comment→marigold. Anything else (or nil) renders as a muted
     /// "No verdict" pill so the user still sees the slot.
     @ViewBuilder
     private func verdictBadge(review: Review) -> some View {
         let (label, color): (String, Color) = {
             switch (review.verdict ?? "").lowercased() {
-            case "approve":         return ("Approve", .green)
-            case "request_changes": return ("Request changes", .red)
-            case "comment":         return ("Comment", .orange)
-            case "":                return ("No verdict", .gray)
-            default:                return (review.verdict ?? "Unknown", .gray)
+            case "approve":         return ("Approve", Color.accentFern)
+            case "request_changes": return ("Request changes", Color.accentTerracotta)
+            case "comment":         return ("Comment", Color.accentMarigold)
+            case "":                return ("No verdict", Color.accentGray)
+            default:                return (review.verdict ?? "Unknown", Color.accentGray)
             }
         }()
         Text(label)
-            .font(.callout.weight(.semibold))
+            .font(Font.appBody(size: 13, weight: .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -394,13 +396,14 @@ struct ReviewSheet: View {
         if let notes = jiraAlignmentNotes(for: review), !notes.isEmpty {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "link")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.textMuted)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Jira alignment")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.textMuted)
                     Text(notes)
-                        .font(.callout)
+                        .font(Font.appBody(size: 13))
+                        .foregroundStyle(Color.textPrimary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -408,11 +411,11 @@ struct ReviewSheet: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.gray.opacity(0.05))
+                    .fill(Color.bgCard)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                    .stroke(Color.borderSubtle, lineWidth: 1)
             )
         }
     }
@@ -441,8 +444,8 @@ struct ReviewSheet: View {
             VStack {
                 Spacer()
                 Text(rejection)
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.accentMarigold)
                     .padding()
                 Spacer()
             }
@@ -490,8 +493,8 @@ struct ReviewSheet: View {
             Spacer()
             ProgressView()
             Text("Queued — waiting for a slot to open up.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textMuted)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -505,18 +508,19 @@ struct ReviewSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "stop.circle.fill")
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Color.accentGray)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Cancelled")
-                        .font(.subheadline.weight(.semibold))
+                        .font(Font.appBody(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
                     Text(review.errorMessage ?? "Review was cancelled.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textMuted)
                 }
                 Spacer()
             }
             .padding()
-            .background(Color.gray.opacity(0.08))
+            .background(Color.bgSurface)
 
             Divider()
 
@@ -620,8 +624,8 @@ struct ReviewSheet: View {
                 .help("\(counts.dismissed) dismissed finding\(counts.dismissed == 1 ? "" : "s")")
             Spacer()
             Text(filterSummary(counts: counts))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
         }
     }
 
@@ -686,13 +690,14 @@ struct ReviewSheet: View {
                 HStack(spacing: 8) {
                     Circle().fill(color).frame(width: 10, height: 10)
                     Text(severityDisplayName(section.severity))
-                        .font(.headline)
+                        .font(Font.display(size: 14, weight: .bold))
+                        .foregroundStyle(Color.textPrimary)
                     Text("\(section.items.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.textSecondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
-                        .background(Capsule().fill(Color.gray.opacity(0.15)))
+                        .background(Capsule().fill(Color.borderSubtle))
                     Spacer()
                 }
             }
@@ -714,12 +719,12 @@ struct ReviewSheet: View {
 
     private func severityColor(_ key: String) -> Color {
         switch key {
-        case "blocker": return .red
-        case "major":   return .orange
-        case "minor":   return .yellow
-        case "nit":     return .blue
-        case "praise":  return .green
-        default:        return .gray
+        case "blocker":         return .accentTerracotta
+        case "major":           return .accentMarigold
+        case "minor":           return .accentFern
+        case "nit":             return .accentGray
+        case "praise":          return .accentFern
+        default:                return .accentGray
         }
     }
 
@@ -732,18 +737,19 @@ struct ReviewSheet: View {
             if allCount == 0 && (review.verdict ?? "").lowercased() == "approve" {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.accentFern)
                     Text("No issues — clean review")
-                        .font(.callout.weight(.semibold))
+                        .font(Font.appBody(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.textPrimary)
                 }
             } else if allCount == 0 {
                 Text("No findings.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
             } else {
                 Text("No findings match the current filters.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
             }
         }
         .padding(.vertical, 8)
@@ -770,7 +776,7 @@ struct ReviewSheet: View {
                 }
                 .padding(.vertical, 4)
             }
-            .font(.callout.weight(.semibold))
+            .font(Font.appBody(size: 13, weight: .semibold))
         }
     }
 
@@ -808,21 +814,21 @@ struct ReviewSheet: View {
                 Spacer()
                 if isCurrent {
                     Text("Showing")
-                        .font(.caption2.weight(.semibold))
+                        .font(Font.appBody(size: 10, weight: .semibold))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-                        .foregroundStyle(.tint)
+                        .background(Capsule().fill(Color.accentFern.opacity(0.18)))
+                        .foregroundStyle(Color.accentFern)
                 }
             }
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isCurrent ? Color.accentColor.opacity(0.08) : Color.gray.opacity(0.04))
+                    .fill(isCurrent ? Color.accentFern.opacity(0.06) : Color.bgCard)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isCurrent ? Color.accentColor.opacity(0.4) : Color.gray.opacity(0.18),
+                    .stroke(isCurrent ? Color.accentFern.opacity(0.30) : Color.borderSubtle,
                             lineWidth: 1)
             )
             .contentShape(Rectangle())
@@ -846,14 +852,14 @@ struct ReviewSheet: View {
     private func historyVerdictPill(entry: Review) -> some View {
         let (label, color): (String, Color) = {
             switch (entry.verdict ?? "").lowercased() {
-            case "approve":         return ("approve", .green)
-            case "request_changes": return ("changes", .red)
-            case "comment":         return ("comment", .orange)
-            default:                return ("—", .gray)
+            case "approve":         return ("approve", Color.accentFern)
+            case "request_changes": return ("changes", Color.accentTerracotta)
+            case "comment":         return ("comment", Color.accentMarigold)
+            default:                return ("—", Color.accentGray)
             }
         }()
         Text(label)
-            .font(.caption2.weight(.semibold))
+            .font(Font.appBody(size: 10, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.16)))
@@ -864,15 +870,15 @@ struct ReviewSheet: View {
     private func historyStatePill(entry: Review) -> some View {
         let color: Color = {
             switch entry.state {
-            case "completed":           return .green
-            case "running", "queued":   return .blue
-            case "failed", "timeout":   return .orange
-            case "cancelled":           return .gray
-            default:                    return .gray
+            case "completed":           return .accentFern
+            case "running", "queued":   return .accentFern
+            case "failed", "timeout":   return .accentMarigold
+            case "cancelled":           return .accentGray
+            default:                    return .accentGray
             }
         }()
         Text(entry.state)
-            .font(.caption2.weight(.semibold))
+            .font(Font.appBody(size: 10, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
             .background(Capsule().fill(color.opacity(0.16)))
@@ -898,10 +904,10 @@ struct ReviewSheet: View {
             .frame(minHeight: 120, maxHeight: 240)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.gray.opacity(0.05))
+                    .fill(Color.bgSurface)
             )
         }
-        .font(.callout.weight(.semibold))
+        .font(Font.appBody(size: 13, weight: .semibold))
     }
 
     @ViewBuilder
@@ -929,8 +935,8 @@ struct ReviewSheet: View {
     private func rawResultView(review: Review) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Raw structured result")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11, weight: .semibold))
+                .foregroundStyle(Color.textMuted)
                 .padding(.horizontal)
                 .padding(.top, 8)
             ScrollView {
@@ -941,7 +947,7 @@ struct ReviewSheet: View {
                     .padding(.horizontal)
                     .padding(.bottom, 8)
             }
-            .background(Color.gray.opacity(0.05))
+            .background(Color.bgSurface)
         }
     }
 
@@ -949,34 +955,36 @@ struct ReviewSheet: View {
     private func decodeWarningView(message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentMarigold)
             Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
             Spacer()
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.08))
+        .background(Color.accentMarigold.opacity(0.08))
     }
 
     @ViewBuilder
     private func errorView(review: Review) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentTerracotta)
             VStack(alignment: .leading, spacing: 4) {
                 Text(review.state == "timeout" ? "Timed out" : "Failed")
-                    .font(.subheadline.weight(.semibold))
+                    .font(Font.appBody(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.textPrimary)
                 Text(review.errorMessage ?? "(no error message captured)")
-                    .font(.caption)
+                    .font(Font.appBody(size: 11))
+                    .foregroundStyle(Color.textMuted)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Spacer()
         }
         .padding()
-        .background(Color.orange.opacity(0.08))
+        .background(Color.accentTerracotta.opacity(0.08))
     }
 }
 
@@ -1002,7 +1010,7 @@ private struct FindingRow: View {
                     .fill(severityColor)
                     .frame(width: 8, height: 8)
                 Text(finding.severity)
-                    .font(.caption.weight(.semibold))
+                    .font(Font.appBody(size: 11, weight: .semibold))
                     .foregroundStyle(severityColor)
                     .textCase(.uppercase)
                 Spacer()
@@ -1011,13 +1019,14 @@ private struct FindingRow: View {
             }
 
             Text(finding.title)
-                .font(.body.weight(.semibold))
+                .font(Font.display(size: 13, weight: .bold))
+                .foregroundStyle(Color.textPrimary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(fileLineLabel)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textMuted)
                 .textSelection(.enabled)
 
             if !finding.message.isEmpty {
@@ -1036,7 +1045,7 @@ private struct FindingRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                .stroke(Color.borderSubtle, lineWidth: 1)
         )
         .opacity(finding.state == FindingState.dismissed ? 0.55 : 1.0)
         // Make the whole card area hit-testable, not just the text glyphs,
@@ -1094,8 +1103,8 @@ private struct FindingRow: View {
     private func suggestionView(_ suggestion: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Suggestion")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11, weight: .semibold))
+                .foregroundStyle(Color.textMuted)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(suggestion)
                     .font(.system(.caption, design: .monospaced))
@@ -1105,7 +1114,7 @@ private struct FindingRow: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.gray.opacity(0.12))
+                    .fill(Color.bgSurface)
             )
         }
         .padding(.top, 2)
@@ -1146,17 +1155,17 @@ private struct FindingRow: View {
 
     private var stateColor: Color {
         switch finding.state {
-        case FindingState.resolved:  return .green
-        case FindingState.dismissed: return .gray
-        default:                     return .blue
+        case FindingState.resolved:  return .accentFern
+        case FindingState.dismissed: return .accentGray
+        default:                     return .accentMarigold
         }
     }
 
     private var rowBackground: Color {
         switch finding.state {
-        case FindingState.resolved:  return Color.green.opacity(0.04)
-        case FindingState.dismissed: return Color.gray.opacity(0.04)
-        default:                     return Color.gray.opacity(0.02)
+        case FindingState.resolved:  return Color.accentFern.opacity(0.04)
+        case FindingState.dismissed: return Color.accentGray.opacity(0.04)
+        default:                     return Color.bgCard
         }
     }
 
@@ -1165,12 +1174,12 @@ private struct FindingRow: View {
     /// neutral gray dot in the row + matching gray section header.
     private var severityColor: Color {
         switch finding.severity.lowercased() {
-        case "blocker", "critical": return .red
-        case "major", "high":       return .orange
-        case "minor", "medium":     return .yellow
-        case "nit", "low", "info":  return .blue
-        case "praise":              return .green
-        default:                    return .gray
+        case "blocker", "critical": return .accentTerracotta
+        case "major", "high":       return .accentMarigold
+        case "minor", "medium":     return .accentFern
+        case "nit", "low", "info":  return .accentGray
+        case "praise":              return .accentFern
+        default:                    return .accentGray
         }
     }
 }

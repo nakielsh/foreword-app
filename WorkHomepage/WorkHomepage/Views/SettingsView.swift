@@ -107,13 +107,14 @@ struct SettingsView: View {
 
     private var gitHubSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("GitHub").font(.headline)
+            Text("GitHub").font(Font.display(size: 14, weight: .bold))
             HStack {
                 Circle()
-                    .fill(hasGitHubToken ? Color.green : Color.red)
+                    .fill(hasGitHubToken ? Color.accentFern : Color.accentTerracotta)
                     .frame(width: 10, height: 10)
                 Text(hasGitHubToken ? "Token saved in Keychain" : "No token in Keychain")
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textSecondary)
             }
             HStack {
                 Button("Re-paste token") { showRePasteTokenSheet = true }
@@ -128,7 +129,7 @@ struct SettingsView: View {
 
     private var jiraSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Jira").font(.headline)
+            Text("Jira").font(Font.display(size: 14, weight: .bold))
             TextField("Base URL (e.g. https://acme.atlassian.net)", text: $jiraBaseURL)
                 .textFieldStyle(.roundedBorder)
             TextField("Email", text: $jiraEmail)
@@ -154,8 +155,8 @@ struct SettingsView: View {
                 if jiraCacheClearing { ProgressView().controlSize(.small) }
                 if let status = jiraCacheStatus {
                     Text(status)
-                        .foregroundStyle(.secondary)
-                        .font(.callout)
+                        .foregroundStyle(Color.textSecondary)
+                        .font(Font.appBody(size: 13))
                 }
                 Spacer()
             }
@@ -181,13 +182,13 @@ struct SettingsView: View {
             EmptyView()
         case .ok:
             HStack(spacing: 6) {
-                Circle().fill(Color.green).frame(width: 8, height: 8)
-                Text("Connection OK").foregroundStyle(.secondary)
+                Circle().fill(Color.accentFern).frame(width: 8, height: 8)
+                Text("Connection OK").font(Font.appBody(size: 13)).foregroundStyle(Color.textSecondary)
             }
         case .failed(let msg):
             HStack(spacing: 6) {
-                Circle().fill(Color.red).frame(width: 8, height: 8)
-                Text(msg).foregroundStyle(.secondary).lineLimit(2)
+                Circle().fill(Color.accentTerracotta).frame(width: 8, height: 8)
+                Text(msg).font(Font.appBody(size: 13)).foregroundStyle(Color.textSecondary).lineLimit(2)
             }
         }
     }
@@ -195,7 +196,7 @@ struct SettingsView: View {
     private var toolsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Tools").font(.headline)
+                Text("Tools").font(Font.display(size: 14, weight: .bold))
                 Spacer()
                 Button("Re-detect all") {
                     toolStatus = BinaryResolver.validate()
@@ -219,14 +220,14 @@ struct SettingsView: View {
         }()
         return HStack {
             Circle()
-                .fill(isFound ? Color.green : Color.red)
+                .fill(isFound ? Color.accentFern : Color.accentTerracotta)
                 .frame(width: 10, height: 10)
             Text(tool.rawValue)
                 .frame(width: 60, alignment: .leading)
                 .font(.body.monospaced())
             Text(pathString)
                 .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
@@ -242,7 +243,7 @@ struct SettingsView: View {
 
     private var behaviorSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Behavior").font(.headline)
+            Text("Behavior").font(Font.display(size: 14, weight: .bold))
             HStack {
                 Text("Concurrency cap")
                 Spacer()
@@ -253,7 +254,8 @@ struct SettingsView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Project key prefixes (comma-separated, leave empty to accept any)")
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
                 TextField("JWT, ABC, XYZ", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
             }
@@ -268,7 +270,7 @@ struct SettingsView: View {
     /// matching macOS system-settings UX conventions.
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Appearance").font(.headline)
+            Text("Appearance").font(Font.display(size: 14, weight: .bold))
             Picker("Color scheme", selection: $appearanceRaw) {
                 ForEach(Appearance.allCases) { option in
                     Text(option.label).tag(option.rawValue)
@@ -277,8 +279,8 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             Text("System follows your macOS appearance setting. Light and Dark override it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
         }
     }
 
@@ -301,7 +303,7 @@ struct SettingsView: View {
     private var storageSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Storage").font(.headline)
+                Text("Storage").font(Font.display(size: 14, weight: .bold))
                 Spacer()
                 Button("Refresh sizes") {
                     Task { await refreshDiskUsage() }
@@ -320,8 +322,8 @@ struct SettingsView: View {
                     .font(.body.monospaced())
                     .textSelection(.enabled)
                 Text("(bare clones + worktrees)")
-                    .foregroundStyle(.secondary)
-                    .font(.callout)
+                    .foregroundStyle(Color.textMuted)
+                    .font(Font.appBody(size: 13))
                 Spacer()
             }
 
@@ -335,8 +337,8 @@ struct SettingsView: View {
                 Text("SwiftData store")
                     .frame(width: 130, alignment: .leading)
                 Text(storeDirectoryURL().path)
-                    .font(.callout.monospaced())
-                    .foregroundStyle(.secondary)
+                    .font(Font.mono(size: 12))
+                    .foregroundStyle(Color.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
@@ -391,7 +393,8 @@ struct SettingsView: View {
         if perRepoUsage.isEmpty {
             HStack {
                 Text(isComputingSizes ? "Computing sizes…" : "No repo caches on disk yet.")
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
                 Spacer()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -410,8 +413,8 @@ struct SettingsView: View {
                     Text("")
                         .frame(width: 70, alignment: .trailing)
                 }
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 12, weight: .semibold))
+                .foregroundStyle(Color.textMuted)
                 .padding(.vertical, 4)
 
                 Divider()
