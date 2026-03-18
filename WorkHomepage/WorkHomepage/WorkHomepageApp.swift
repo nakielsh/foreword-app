@@ -22,6 +22,14 @@ struct WorkHomepageApp: App {
     @State private var showFirstRunWizard: Bool = false
     @State private var didBootstrap: Bool = false
 
+    /// Slice 19 — appearance preference read reactively from UserDefaults so
+    /// `.preferredColorScheme` re-evaluates whenever the Settings picker changes.
+    @AppStorage(AppSettings.appearanceKey) private var appearanceRaw: String = Appearance.system.rawValue
+
+    private var appearance: Appearance {
+        Appearance(rawValue: appearanceRaw) ?? .system
+    }
+
     /// Single SwiftData container backing every `@Environment(\.modelContext)`
     /// in the app. Created lazily in `init` so a misconfigured container
     /// crashes loud at launch rather than later. Failures fall back to an
@@ -59,6 +67,7 @@ struct WorkHomepageApp: App {
         WindowGroup(id: MenuBarWindowID.main) {
             SidebarView()
                 .frame(minWidth: 800, minHeight: 500)
+                .preferredColorScheme(appearance.colorScheme)
                 .task {
                     guard !didBootstrap else { return }
                     didBootstrap = true
