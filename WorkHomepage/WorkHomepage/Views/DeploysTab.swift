@@ -51,8 +51,8 @@ struct DeploysTab: View {
             VStack {
                 Spacer()
                 Text("Loading deployments…")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 15))
+                    .foregroundStyle(Color.textMuted)
                 Spacer()
             }
             .frame(maxWidth: .infinity)
@@ -66,6 +66,7 @@ struct DeploysTab: View {
                 }
                 .padding()
             }
+            .background(Color.bgDeep)
         }
     }
 
@@ -188,14 +189,19 @@ private struct DeployCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(DeploymentsConfig.serviceDisplayName(service))
-                .font(.headline)
+                .font(Font.display(size: 14))
+                .foregroundStyle(Color.textPrimary)
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.gray.opacity(0.08))
+                .fill(Color.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.borderSubtle, lineWidth: 1)
         )
     }
 
@@ -207,14 +213,14 @@ private struct DeployCard: View {
                 ProgressView()
                     .scaleEffect(0.6)
                 Text("Loading runs…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
             }
         case .loaded(let deployments):
             if deployments.isEmpty {
                 Text("No recent deployments found")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
             } else {
                 let sorted = deployments.sorted { lhs, rhs in
                     envOrder(lhs.env) < envOrder(rhs.env)
@@ -225,12 +231,12 @@ private struct DeployCard: View {
             }
         case .unauthorized:
             Text("401 — re-auth required")
-                .font(.subheadline)
-                .foregroundStyle(.orange)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.accentTerracotta)
         case .error(let msg):
             Text(msg)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textMuted)
         }
     }
 
@@ -250,36 +256,37 @@ private struct DeployRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(deployment.env.uppercased())
-                .font(.caption.bold())
+                .font(Font.appBody(size: 11, weight: .bold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
                 .background(envColor.opacity(0.18))
                 .foregroundStyle(envColor)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             Text(deployment.version)
-                .font(.subheadline.monospaced())
+                .font(Font.mono(size: 13))
+                .foregroundStyle(Color.textPrimary)
             Text(deployment.isSnapshot ? "snapshot" : "release")
-                .font(.caption2)
+                .font(Font.appBody(size: 10))
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(Color.gray.opacity(0.15))
+                .background(Color.borderSubtle)
                 .clipShape(Capsule())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.textSecondary)
             Spacer()
             Text(relativeTime(from: deployment.createdAt))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textSecondary)
             Link("View run", destination: deployment.htmlURL)
-                .font(.caption)
+                .font(Font.appBody(size: 11))
         }
     }
 
     private var envColor: Color {
         switch deployment.env {
-        case "prod": return .green
-        case "staging": return .blue
-        case "dev": return .orange
-        default: return .gray
+        case "prod": return .accentFern
+        case "staging": return .accentMarigold
+        case "dev": return .accentMarigold
+        default: return .accentGray
         }
     }
 
@@ -295,13 +302,14 @@ private struct ErrorBanner: View {
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentTerracotta)
             Text(message)
-                .font(.callout)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textPrimary)
             Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.12))
+        .background(Color.accentTerracotta.opacity(0.12))
     }
 }

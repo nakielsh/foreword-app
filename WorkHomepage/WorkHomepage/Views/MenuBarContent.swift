@@ -39,7 +39,7 @@ struct MenuBarLabel: View {
             Image(systemName: "eye.fill")
             if counts.awaitingReviews > 0 || counts.inFlightReviews > 0 {
                 Text(labelText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(Font.mono(size: 12))
             }
         }
     }

@@ -38,10 +38,11 @@ struct TokenPromptSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(reason.headline)
-                .font(.title2)
-                .bold()
+                .font(Font.display(size: 20, weight: .bold))
+                .foregroundStyle(Color.textPrimary)
             Text(reason.detail)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textSecondary)
 
             SecureField("ghp_… or github_pat_…", text: $token)
                 .textFieldStyle(.roundedBorder)

@@ -50,11 +50,11 @@ struct SessionsTab: View {
             let cliCount = sessions.filter { $0.entrypoint == "cli" }.count
             let vscodeCount = sessions.count - cliCount
 
-            StatChip(label: "CLI", value: cliCount, accent: .purple)
+            StatChip(label: "CLI", value: cliCount, accent: .accentFern)
             if vscodeCount > 0 {
-                StatChip(label: "VS Code", value: vscodeCount, accent: .blue)
+                StatChip(label: "VS Code", value: vscodeCount, accent: .accentMarigold)
             }
-            StatChip(label: "total", value: sessions.count, accent: .secondary)
+            StatChip(label: "total", value: sessions.count, accent: .textMuted)
 
             Spacer()
 
@@ -68,6 +68,7 @@ struct SessionsTab: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .background(Color.bgSurface)
     }
 
     // MARK: - Content
@@ -88,6 +89,7 @@ struct SessionsTab: View {
                 }
                 .padding()
             }
+            .background(Color.bgDeep)
         }
     }
 
@@ -113,8 +115,8 @@ private struct SessionCard: View {
             cwdRow
             if let context = displayContext {
                 Text(context)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textPrimary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(3)
             }
@@ -124,7 +126,11 @@ private struct SessionCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.gray.opacity(0.08))
+                .fill(Color.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.borderSubtle, lineWidth: 1)
         )
     }
 
@@ -142,8 +148,8 @@ private struct SessionCard: View {
             EntrypointBadge(isVscode: isVscode)
             Spacer()
             Text("running \(durationSince(epochMs: session.startedAt))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textSecondary)
         }
     }
 
@@ -169,14 +175,16 @@ private struct SessionCard: View {
         HStack(spacing: 12) {
             HStack(spacing: 4) {
                 Text("PID")
-                    .foregroundStyle(.secondary)
+                    .font(Font.appBody(size: 11))
+                    .foregroundStyle(Color.textMuted)
                 Text("\(session.pid)")
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Font.mono(size: 11))
+                    .foregroundStyle(Color.textSecondary)
             }
             Text("Started \(formatStart(epochMs: session.startedAt))")
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
         }
-        .font(.caption)
     }
 }
 
@@ -190,14 +198,18 @@ private struct EntrypointBadge: View {
             Image(systemName: isVscode ? "chevron.left.forwardslash.chevron.right" : "terminal")
                 .imageScale(.small)
             Text(isVscode ? "VS Code" : "Terminal")
-                .font(.caption)
+                .font(Font.appBody(size: 11))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(
-            Capsule().fill((isVscode ? Color.blue : Color.purple).opacity(0.15))
+            Capsule().fill(badgeColor(isVscode: isVscode).opacity(0.15))
         )
-        .foregroundStyle(isVscode ? Color.blue : Color.purple)
+        .foregroundStyle(badgeColor(isVscode: isVscode))
+    }
+
+    private func badgeColor(isVscode: Bool) -> Color {
+        isVscode ? Color.accentMarigold : Color.accentFern
     }
 }
 
@@ -212,15 +224,16 @@ private struct StatChip: View {
                 .fill(accent)
                 .frame(width: 6, height: 6)
             Text("\(value)")
-                .font(.callout.bold())
+                .font(Font.appBody(size: 13, weight: .bold))
+                .foregroundStyle(Color.textPrimary)
             Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textSecondary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .background(
-            Capsule().fill(Color.gray.opacity(0.1))
+            Capsule().fill(Color.borderSubtle)
         )
     }
 }
@@ -230,11 +243,11 @@ private struct EmptyState: View {
         VStack(spacing: 6) {
             Spacer()
             Text("No sessions found")
-                .font(.title3)
-                .foregroundStyle(.secondary)
+                .font(Font.appBody(size: 15))
+                .foregroundStyle(Color.textMuted)
             Text("Start a Claude Code session, then click Refresh.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
+                .font(Font.appBody(size: 13))
+                .foregroundStyle(Color.textMuted)
             Spacer()
         }
         .frame(maxWidth: .infinity)
