@@ -27,6 +27,8 @@
 import SwiftUI
 import struct Foundation.Date
 
+// swiftlint:disable file_length
+
 struct ReviewsTab: View {
     /// Persistent data container owned by SidebarView. Keeping the loaded
     /// pending/reviewed PRs here means tab switches don't clear the list.
@@ -330,7 +332,7 @@ struct ReviewsTab: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color.gray.opacity(0.04))
+        .background(Color.bgSurface)
     }
 
     // MARK: - Stats bar
@@ -340,13 +342,13 @@ struct ReviewsTab: View {
         if vm.hasFetchedOnce {
             let derived = derivedStats()
             HStack(spacing: 12) {
-                StatChip(dotColor: .orange, value: derived.awaiting, label: "awaiting")
-                StatChip(dotColor: .green, value: derived.withApprovals, label: "with approvals")
+                StatChip(dotColor: .accentMarigold, value: derived.awaiting, label: "awaiting")
+                StatChip(dotColor: .accentFern, value: derived.withApprovals, label: "with approvals")
                 if derived.drafts > 0 {
-                    StatChip(dotColor: .gray, value: derived.drafts, label: "drafts")
+                    StatChip(dotColor: .accentGray, value: derived.drafts, label: "drafts")
                 }
                 if showDismissed && derived.dismissed > 0 {
-                    StatChip(dotColor: .red, value: derived.dismissed, label: "dismissed")
+                    StatChip(dotColor: .accentTerracotta, value: derived.dismissed, label: "dismissed")
                 }
                 StatChip(
                     dotColor: nil,
@@ -357,7 +359,7 @@ struct ReviewsTab: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
-            .background(Color.gray.opacity(0.05))
+            .background(Color.bgSurface)
         }
     }
 
@@ -378,6 +380,7 @@ struct ReviewsTab: View {
                 }
                 .padding()
             }
+            .background(Color.bgDeep)
         }
     }
 
@@ -392,13 +395,13 @@ struct ReviewsTab: View {
                 if let reviewError {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Color.accentTerracotta)
                         Text(reviewError)
-                            .font(.caption)
+                            .font(Font.appBody(size: 11))
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.10))
+                    .background(Color.accentTerracotta.opacity(0.10))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 ForEach(visible) { pr in
@@ -432,7 +435,7 @@ struct ReviewsTab: View {
         let approved = reviewed.filter { $0.myLastReviewState == .approved }
 
         if !changesReq.isEmpty {
-            SubSection(title: "Changes Requested", count: changesReq.count, accent: .red) {
+            SubSection(title: "Changes Requested", count: changesReq.count, accent: .accentTerracotta) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(changesReq) { pr in
                         reviewedRow(pr: pr)
@@ -441,7 +444,7 @@ struct ReviewsTab: View {
             }
         }
         if !commented.isEmpty {
-            SubSection(title: "My Comments", count: commented.count, accent: .orange) {
+            SubSection(title: "My Comments", count: commented.count, accent: .accentMarigold) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(commented) { pr in
                         reviewedRow(pr: pr)
@@ -450,7 +453,7 @@ struct ReviewsTab: View {
             }
         }
         if !approved.isEmpty {
-            SubSection(title: "Already Approved", count: approved.count, accent: .green) {
+            SubSection(title: "Already Approved", count: approved.count, accent: .accentFern) {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(approved) { pr in
                         reviewedRow(pr: pr)
@@ -663,47 +666,48 @@ private struct PendingPRCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(pr.repoFullName)
-                        .font(.caption.weight(.semibold))
+                        .font(Font.appBody(size: 11, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.gray.opacity(0.18)))
+                        .background(Capsule().fill(Color.borderSubtle))
                     Spacer()
                     if pr.isDismissed {
-                        TagPill(text: "Dismissed", color: .red)
+                        TagPill(text: "Dismissed", color: .accentTerracotta)
                     }
                     if pr.isDraft {
-                        TagPill(text: "Draft", color: .gray)
+                        TagPill(text: "Draft", color: .accentGray)
                     }
                     if let prior = pr.myPriorReviewState, !pr.isDismissed {
                         ReReviewTag(state: prior)
                     }
                     Text(timeAgo(pr.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textMuted)
                 }
                 Text("#\(pr.number)  \(pr.title)")
-                    .font(.headline)
+                    .font(Font.display(size: 14))
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Color.textPrimary)
                 HStack(spacing: 12) {
                     Text("@\(pr.authorLogin)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textSecondary)
                     Spacer()
                     if pr.approvalCount == 0 && pr.changesRequestedCount == 0 {
                         Text("No approvals")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textMuted)
                     } else {
                         if pr.approvalCount > 0 {
                             Label("\(pr.approvalCount)", systemImage: "checkmark")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
+                                .font(Font.appBody(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.accentFern)
                         }
                         if pr.changesRequestedCount > 0 {
                             Label("\(pr.changesRequestedCount)", systemImage: "xmark")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.red)
+                                .font(Font.appBody(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.accentTerracotta)
                         }
                     }
                 }
@@ -723,18 +727,18 @@ private struct PendingPRCard: View {
     }
 
     private var cardBackground: Color {
-        if pr.isDismissed { return Color.red.opacity(0.06) }
-        if pr.changesRequestedCount > 0 { return Color.red.opacity(0.05) }
-        if pr.approvalCount > 0 { return Color.green.opacity(0.05) }
-        if pr.isDraft { return Color.gray.opacity(0.05) }
-        return Color.gray.opacity(0.06)
+        if pr.isDismissed { return Color.accentTerracotta.opacity(0.06) }
+        if pr.changesRequestedCount > 0 { return Color.accentTerracotta.opacity(0.05) }
+        if pr.approvalCount > 0 { return Color.accentFern.opacity(0.05) }
+        if pr.isDraft { return Color.accentGray.opacity(0.05) }
+        return Color.bgCard
     }
 
     private var cardStroke: Color {
-        if pr.isDismissed { return Color.red.opacity(0.4) }
-        if pr.changesRequestedCount > 0 { return Color.red.opacity(0.3) }
-        if pr.approvalCount > 0 { return Color.green.opacity(0.3) }
-        return Color.gray.opacity(0.18)
+        if pr.isDismissed { return Color.accentTerracotta.opacity(0.40) }
+        if pr.changesRequestedCount > 0 { return Color.accentTerracotta.opacity(0.30) }
+        if pr.approvalCount > 0 { return Color.accentFern.opacity(0.30) }
+        return Color.borderSubtle
     }
 }
 
@@ -748,42 +752,43 @@ private struct ReviewedPRCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(pr.repoFullName)
-                        .font(.caption.weight(.semibold))
+                        .font(Font.appBody(size: 11, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .background(Capsule().fill(Color.gray.opacity(0.18)))
+                        .background(Capsule().fill(Color.borderSubtle))
                     Spacer()
                     ReReviewTag(state: pr.myLastReviewState)
                     Text(timeAgo(pr.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textMuted)
                 }
                 Text("#\(pr.number)  \(pr.title)")
-                    .font(.headline)
+                    .font(Font.display(size: 14))
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Color.textPrimary)
                 HStack(spacing: 12) {
                     Text("@\(pr.authorLogin)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textSecondary)
                     Spacer()
                     if pr.approvalCount > 0 {
                         Label("\(pr.approvalCount)", systemImage: "checkmark")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.green)
+                            .font(Font.appBody(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.accentFern)
                     }
                     if pr.changesRequestedCount > 0 {
                         Label("\(pr.changesRequestedCount)", systemImage: "xmark")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.red)
+                            .font(Font.appBody(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.accentTerracotta)
                     }
                 }
                 if pr.newCommitsSinceReview > 0 {
                     NewCommitsBadge(count: pr.newCommitsSinceReview)
                 } else if pr.myLastReviewSubmittedAt != nil {
                     Text("No changes since your review")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Font.appBody(size: 11))
+                        .foregroundStyle(Color.textSecondary)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -802,19 +807,19 @@ private struct ReviewedPRCard: View {
 
     private var cardBackground: Color {
         switch pr.myLastReviewState {
-        case .changesRequested: return Color.red.opacity(0.05)
-        case .approved: return Color.green.opacity(0.05)
-        case .commented: return Color.orange.opacity(0.04)
-        default: return Color.gray.opacity(0.06)
+        case .changesRequested: return Color.accentTerracotta.opacity(0.05)
+        case .approved:         return Color.accentFern.opacity(0.05)
+        case .commented:        return Color.accentMarigold.opacity(0.04)
+        default:                return Color.bgCard
         }
     }
 
     private var cardStroke: Color {
         switch pr.myLastReviewState {
-        case .changesRequested: return Color.red.opacity(0.3)
-        case .approved: return Color.green.opacity(0.3)
-        case .commented: return Color.orange.opacity(0.3)
-        default: return Color.gray.opacity(0.18)
+        case .changesRequested: return Color.accentTerracotta.opacity(0.30)
+        case .approved:         return Color.accentFern.opacity(0.30)
+        case .commented:        return Color.accentMarigold.opacity(0.30)
+        default:                return Color.borderSubtle
         }
     }
 }
@@ -850,11 +855,11 @@ private struct ReReviewTag: View {
 
     private var color: Color {
         switch state {
-        case .approved: return .green
-        case .changesRequested: return .red
-        case .commented: return .orange
-        case .dismissed: return .red
-        case .pending: return .gray
+        case .approved:          return .accentFern
+        case .changesRequested:  return .accentTerracotta
+        case .commented:         return .accentMarigold
+        case .dismissed:         return .accentTerracotta
+        case .pending:           return .accentGray
         }
     }
 
@@ -877,12 +882,12 @@ private struct NewCommitsBadge: View {
         HStack(spacing: 4) {
             Image(systemName: "exclamationmark.triangle.fill")
             Text("\(count) new commit\(count == 1 ? "" : "s") since your review")
-                .font(.caption.weight(.medium))
+                .font(Font.appBody(size: 11, weight: .medium))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(Capsule().fill(Color.orange.opacity(0.18)))
-        .foregroundStyle(.orange)
+        .background(Capsule().fill(Color.accentMarigold.opacity(0.18)))
+        .foregroundStyle(Color.accentMarigold)
     }
 }
 
@@ -970,14 +975,14 @@ private struct ErrorBanner: View {
     var body: some View {
         HStack {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.accentTerracotta)
             Text(message)
-                .font(.callout)
+                .font(Font.appBody(size: 13))
             Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.12))
+        .background(Color.accentTerracotta.opacity(0.12))
     }
 }
 
@@ -1018,7 +1023,7 @@ private struct CleanupToast: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                .stroke(Color.borderSubtle, lineWidth: 1)
         )
     }
 }
@@ -1130,15 +1135,15 @@ private struct LatestVerdictBadge: View {
 
     private var color: Color {
         switch review.state {
-        case "running", "queued":      return .blue
-        case "failed", "timeout":      return .orange
-        case "cancelled":              return .gray
+        case "running", "queued":      return .accentFern
+        case "failed", "timeout":      return .accentMarigold
+        case "cancelled":              return .accentGray
         default:
             switch (review.verdict ?? "").lowercased() {
-            case "approve":         return .green
-            case "request_changes": return .red
-            case "comment":         return .orange
-            default:                return .gray
+            case "approve":         return .accentFern
+            case "request_changes": return .accentTerracotta
+            case "comment":         return .accentMarigold
+            default:                return .accentGray
             }
         }
     }

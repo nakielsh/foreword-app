@@ -3,11 +3,44 @@
 //  WorkHomepage
 //
 //  Non-secret app settings backed by UserDefaults.
-//  Concurrency cap (review queue width) and project key prefixes (for the
-//  TicketKeyExtractor in slice 10).
+//  Concurrency cap (review queue width), project key prefixes (slice 10),
+//  and appearance / color-scheme selection (slice 19).
 //
 
 import Foundation
+import SwiftUI
+
+// MARK: - Appearance
+
+/// Light / dark / system appearance choice. Persisted to UserDefaults under
+/// `settings.appearance`. Default `.system` (follow macOS system setting).
+enum Appearance: String, CaseIterable, Identifiable {
+    case light
+    case dark
+    case system
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        case .system: return "System"
+        }
+    }
+
+    /// Maps to the `preferredColorScheme` modifier's type. `.system` returns
+    /// `nil` which tells SwiftUI to follow the OS setting.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light:  return .light
+        case .dark:   return .dark
+        case .system: return nil
+        }
+    }
+}
+
+// MARK: - AppSettings
 
 enum AppSettings {
 
@@ -15,6 +48,7 @@ enum AppSettings {
 
     static let concurrencyCapKey = "settings.concurrencyCap"
     static let projectKeyPrefixesKey = "settings.projectKeyPrefixes"
+    static let appearanceKey = "settings.appearance"
 
     // MARK: - Limits
 
@@ -61,5 +95,25 @@ enum AppSettings {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         defaults.set(cleaned, forKey: projectKeyPrefixesKey)
+    }
+
+    // MARK: - Appearance
+
+    /// Current appearance preference, defaulting to `.system`.
+    static var appearance: Appearance {
+        get { appearance(defaults: .standard) }
+        set { setAppearance(newValue, defaults: .standard) }
+    }
+
+    static func appearance(defaults: UserDefaults) -> Appearance {
+        guard let raw = defaults.string(forKey: appearanceKey),
+              let value = Appearance(rawValue: raw) else {
+            return .system
+        }
+        return value
+    }
+
+    static func setAppearance(_ value: Appearance, defaults: UserDefaults) {
+        defaults.set(value.rawValue, forKey: appearanceKey)
     }
 }

@@ -30,6 +30,9 @@ struct SettingsView: View {
     @State private var concurrencyCap: Int = AppSettings.concurrencyCapDefault
     @State private var prefixesText: String = ""
 
+    // Appearance (slice 19)
+    @AppStorage(AppSettings.appearanceKey) private var appearanceRaw: String = Appearance.system.rawValue
+
     // Sheets
     @State private var showRePasteTokenSheet: Bool = false
     @State private var showWizardSheet: Bool = false
@@ -66,6 +69,8 @@ struct SettingsView: View {
                 toolsSection
                 Divider()
                 behaviorSection
+                Divider()
+                appearanceSection
                 Divider()
                 storageSection
                 Divider()
@@ -252,6 +257,28 @@ struct SettingsView: View {
                 TextField("JWT, ABC, XYZ", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
             }
+        }
+    }
+
+    // MARK: - Appearance section (slice 19)
+
+    /// Picker bound directly to `@AppStorage(appearanceKey)` via a two-way
+    /// binding on the raw string. This means the live app window
+    /// re-evaluates `.preferredColorScheme` immediately without a Save click,
+    /// matching macOS system-settings UX conventions.
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Appearance").font(.headline)
+            Picker("Color scheme", selection: $appearanceRaw) {
+                ForEach(Appearance.allCases) { option in
+                    Text(option.label).tag(option.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            Text("System follows your macOS appearance setting. Light and Dark override it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
