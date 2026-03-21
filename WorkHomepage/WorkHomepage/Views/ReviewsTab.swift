@@ -690,9 +690,17 @@ private struct PendingPRCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundStyle(Color.textPrimary)
                 HStack(spacing: 12) {
-                    Text("@\(pr.authorLogin)")
-                        .font(Font.appBody(size: 11))
-                        .foregroundStyle(Color.textSecondary)
+                    HStack(spacing: 6) {
+                        ReviewerAvatarView(
+                            login: pr.authorLogin,
+                            avatarURL: nil,
+                            role: .author,
+                            size: 24
+                        )
+                        Text("@\(pr.authorLogin)")
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textSecondary)
+                    }
                     Spacer()
                     if pr.approvalCount == 0 && pr.changesRequestedCount == 0 {
                         Text("No approvals")
@@ -768,9 +776,17 @@ private struct ReviewedPRCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .foregroundStyle(Color.textPrimary)
                 HStack(spacing: 12) {
-                    Text("@\(pr.authorLogin)")
-                        .font(Font.appBody(size: 11))
-                        .foregroundStyle(Color.textSecondary)
+                    HStack(spacing: 6) {
+                        ReviewerAvatarView(
+                            login: pr.authorLogin,
+                            avatarURL: nil,
+                            role: .author,
+                            size: 24
+                        )
+                        Text("@\(pr.authorLogin)")
+                            .font(Font.appBody(size: 11))
+                            .foregroundStyle(Color.textSecondary)
+                    }
                     Spacer()
                     if pr.approvalCount > 0 {
                         Label("\(pr.approvalCount)", systemImage: "checkmark")
