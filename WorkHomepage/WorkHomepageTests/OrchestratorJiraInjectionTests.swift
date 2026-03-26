@@ -103,8 +103,10 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
         XCTAssertTrue(prompt.hasPrefix("Jira: null\n"), "prompt should open with `Jira: null` when no ticket")
         XCTAssertFalse(prompt.contains("Title:"), "no Title line when there's no ticket")
         XCTAssertFalse(prompt.contains("Description:"), "no Description block when there's no ticket")
+        // Slice 23: body is now template-driven; the alignment clause in the
+        // default template is the with-Jira variant. The sentinel we verify is
+        // that the PR meta variables are interpolated correctly.
         XCTAssertTrue(prompt.contains("You are reviewing PR #7 in Ala-com/foo, branch main."))
-        XCTAssertTrue(prompt.contains("no Jira context provided this run"))
     }
 
     // MARK: - renderJiraBlock unit-shape
