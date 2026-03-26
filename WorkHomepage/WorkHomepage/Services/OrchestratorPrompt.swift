@@ -7,6 +7,9 @@
 //  ticket carries an attached `parent`, we render a different shape that
 //  surfaces "subtask of X" up top and includes the parent's description
 //  underneath. No-parent and no-Jira shapes are unchanged from slice 10.
+//  Slice 23 — PR-body block is now driven by the user-editable
+//  `ReviewPromptStore` template, interpolated via `PromptInterpolator`.
+//  The schema directive is auto-appended when absent from the rendered body.
 //
 //  Pulled out of `ReviewOrchestrator` so it can be unit-tested without
 //  spinning up the orchestrator (which is `@MainActor` and owns SwiftData
@@ -43,21 +46,68 @@ import Foundation
 
 enum OrchestratorPrompt {
 
+    /// Substring that must be present in the rendered body. When a custom
+    /// template omits it, `build` appends the canonical form automatically.
+    static let schemaDirective = "Return JSON conformant to the provided schema"
+
+    /// Full canonical schema directive appended when absent.
+    private static let schemaDirectiveBlock = "\nReturn JSON conformant to the provided schema. Findings must reference real file paths and line numbers from the changed files."
+
     /// Build the full prompt for one review run.
     ///
     /// `jira` is nil when no ticket key was extracted from the branch,
     /// the credentials weren't configured, the fetch failed, or the
     /// ticket wasn't found. In all of those cases the prompt opens with
     /// `Jira: null` so the model knows context is unavailable.
+    ///
+    /// Slice 23: the PR-body block is now sourced from `ReviewPromptStore`
+    /// and interpolated with the four PR-level variables. The schema
+    /// directive is auto-appended when absent.
     static func build(
         repo: String,
         prNumber: Int,
         branch: String,
         sha: String,
-        jira: JiraTicket?
+        jira: JiraTicket?,
+        store: ReviewPromptStore = ReviewPromptStore()
     ) -> String {
         let jiraBlock = renderJiraBlock(jira)
-        let body = renderPRBody(repo: repo, prNumber: prNumber, branch: branch, sha: sha, hasJira: jira != nil)
+        let template = store.current()
+        let vars: [String: String] = [
+            "repo": repo,
+            "prNumber": String(prNumber),
+            "branch": branch,
+            "sha": sha
+        ]
+        var body = PromptInterpolator.interpolate(template, vars: vars)
+        if !body.contains(schemaDirective) {
+            body += schemaDirectiveBlock
+        }
+        return jiraBlock + "\n" + body
+    }
+
+    /// Build the full prompt using an explicit template string (no store lookup).
+    /// Used by `SettingsView` to render the live preview without persisting to
+    /// `UserDefaults`.
+    static func build(
+        repo: String,
+        prNumber: Int,
+        branch: String,
+        sha: String,
+        jira: JiraTicket?,
+        template: String
+    ) -> String {
+        let jiraBlock = renderJiraBlock(jira)
+        let vars: [String: String] = [
+            "repo": repo,
+            "prNumber": String(prNumber),
+            "branch": branch,
+            "sha": sha
+        ]
+        var body = PromptInterpolator.interpolate(template, vars: vars)
+        if !body.contains(schemaDirective) {
+            body += schemaDirectiveBlock
+        }
         return jiraBlock + "\n" + body
     }
 
@@ -110,25 +160,4 @@ enum OrchestratorPrompt {
         return block
     }
 
-    private static func renderPRBody(
-        repo: String,
-        prNumber: Int,
-        branch: String,
-        sha: String,
-        hasJira: Bool
-    ) -> String {
-        let alignmentClause = hasJira
-            ? "ticket alignment (verify the diff matches the Jira description above)"
-            : "ticket alignment (no Jira context provided this run)"
-
-        return """
-        You are reviewing PR #\(prNumber) in \(repo), branch \(branch).
-
-        Use `gh pr view \(prNumber) --repo \(repo)` and `gh pr diff \(prNumber) --repo \(repo)` to fetch PR details and the diff. Use `git log`, `git blame`, and file reads in the current working directory to understand context. The current directory IS the PR head checked out at SHA \(sha).
-
-        Review the changes for correctness, \(alignmentClause), and code quality.
-
-        Return JSON conformant to the provided schema. Findings must reference real file paths and line numbers from the changed files.
-        """
-    }
 }

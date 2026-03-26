@@ -33,6 +33,9 @@ struct SettingsView: View {
     // Appearance (slice 19)
     @AppStorage(AppSettings.appearanceKey) private var appearanceRaw: String = Appearance.system.rawValue
 
+    // Review Prompt Template (slice 23)
+    @State private var reviewPromptText: String = ReviewPromptStore.defaultTemplate
+
     // Sheets
     @State private var showRePasteTokenSheet: Bool = false
     @State private var showWizardSheet: Bool = false
@@ -71,6 +74,8 @@ struct SettingsView: View {
                 behaviorSection
                 Divider()
                 appearanceSection
+                Divider()
+                reviewPromptSection
                 Divider()
                 storageSection
                 Divider()
@@ -281,6 +286,105 @@ struct SettingsView: View {
             Text("System follows your macOS appearance setting. Light and Dark override it.")
                 .font(Font.appBody(size: 11))
                 .foregroundStyle(Color.textMuted)
+        }
+    }
+
+    // MARK: - Review Prompt section (slice 23)
+
+    /// Editable PR-body template with live preview and unknown-variable warning.
+    private var reviewPromptSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Review Prompt").font(Font.display(size: 14, weight: .bold))
+
+            // Editor
+            TextEditor(text: $reviewPromptText)
+                .font(Font.mono(size: 13))
+                .frame(minHeight: 250)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(Color.borderSubtle.opacity(0.4), lineWidth: 1)
+                )
+
+            // Variables footer
+            Text("Variables: {{repo}}, {{prNumber}}, {{branch}}, {{sha}}")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+
+            // Schema directive note
+            Text("Schema directive auto-appended if missing.")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+
+            // Unknown variable warning
+            let unknownVars = PromptInterpolator.unknownVariables(
+                in: reviewPromptText,
+                knownKeys: ReviewPromptStore.knownVariableKeys
+            )
+            if !unknownVars.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(unknownVars, id: \.self) { name in
+                        Text("Unknown variable: {{\(name)}}")
+                            .font(Font.appBody(size: 12))
+                            .foregroundStyle(Color.accentMarigold)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.accentMarigold.opacity(0.15))
+                .cornerRadius(6)
+            }
+
+            // Reset button
+            HStack {
+                Button("Reset to default") {
+                    ReviewPromptStore().reset()
+                    reviewPromptText = ReviewPromptStore.defaultTemplate
+                }
+                Spacer()
+            }
+
+            // Live preview
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Preview").font(Font.appBody(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.textMuted)
+                let stubTicket = JiraTicket(
+                    key: "JWT-1",
+                    summary: "Stub ticket",
+                    description: "Stub description for preview.",
+                    status: "In Progress",
+                    issueType: "Story",
+                    priority: "Medium",
+                    parentKey: nil
+                )
+                let previewText = OrchestratorPrompt.build(
+                    repo: "Ala-com/foo",
+                    prNumber: 123,
+                    branch: "feature/JWT-1",
+                    sha: "abc1234",
+                    jira: stubTicket,
+                    template: reviewPromptText
+                )
+                ScrollView {
+                    Text(previewText)
+                        .font(Font.mono(size: 11))
+                        .foregroundStyle(Color.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                }
+                .frame(minHeight: 180)
+                .background(Color.bgSurface)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.borderSubtle.opacity(0.4), lineWidth: 1)
+                )
+            }
+        }
+        .onAppear {
+            reviewPromptText = ReviewPromptStore().current()
+        }
+        .onChange(of: reviewPromptText) { _, newValue in
+            ReviewPromptStore().setCurrent(newValue)
         }
     }
 
@@ -554,6 +658,7 @@ struct SettingsView: View {
         toolStatus = BinaryResolver.validate()
         concurrencyCap = AppSettings.concurrencyCap
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
+        reviewPromptText = ReviewPromptStore().current()
     }
 
     private func save() {

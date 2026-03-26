@@ -49,6 +49,8 @@ enum AppSettings {
     static let concurrencyCapKey = "settings.concurrencyCap"
     static let projectKeyPrefixesKey = "settings.projectKeyPrefixes"
     static let appearanceKey = "settings.appearance"
+    /// Shares the same UserDefaults key as `ReviewPromptStore` — no duplication.
+    static let reviewPromptTemplateKey = ReviewPromptStore.defaultsKey
 
     // MARK: - Limits
 
@@ -115,5 +117,22 @@ enum AppSettings {
 
     static func setAppearance(_ value: Appearance, defaults: UserDefaults) {
         defaults.set(value.rawValue, forKey: appearanceKey)
+    }
+
+    // MARK: - Review Prompt Template
+
+    /// User-editable PR-body template. Delegates to `ReviewPromptStore` so
+    /// there is exactly one storage key shared between the two access points.
+    static var reviewPromptTemplate: String {
+        get { reviewPromptTemplate(defaults: .standard) }
+        set { setReviewPromptTemplate(newValue, defaults: .standard) }
+    }
+
+    static func reviewPromptTemplate(defaults: UserDefaults) -> String {
+        ReviewPromptStore(defaults: defaults).current()
+    }
+
+    static func setReviewPromptTemplate(_ value: String, defaults: UserDefaults) {
+        ReviewPromptStore(defaults: defaults).setCurrent(value)
     }
 }
