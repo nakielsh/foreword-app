@@ -25,6 +25,7 @@
 //
 
 import SwiftUI
+import SwiftData
 import struct Foundation.Date
 
 // swiftlint:disable file_length
@@ -405,16 +406,20 @@ struct ReviewsTab: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 ForEach(visible) { pr in
-                    HStack(alignment: .top, spacing: 8) {
-                        PendingPRCard(pr: pr)
-                        VStack(alignment: .trailing, spacing: 4) {
-                            reviewButton(
-                                for: pr.repoFullName,
-                                prNumber: pr.number,
-                                prTitle: pr.title
-                            )
-                            latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .top, spacing: 8) {
+                            PendingPRCard(pr: pr)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                reviewButton(
+                                    for: pr.repoFullName,
+                                    prNumber: pr.number,
+                                    prTitle: pr.title
+                                )
+                                latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+                            }
                         }
+                        SummarizeView(repo: pr.repoFullName, prNumber: pr.number)
+                            .padding(.horizontal, 4)
                     }
                     .contextMenu {
                         Button("Evict review state") {
@@ -468,16 +473,20 @@ struct ReviewsTab: View {
     /// PR identity comes from `ReviewedPR` instead of `PendingReviewPR`.
     @ViewBuilder
     fileprivate func reviewedRow(pr: ReviewedPR) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            ReviewedPRCard(pr: pr)
-            VStack(alignment: .trailing, spacing: 4) {
-                reviewButton(
-                    for: pr.repoFullName,
-                    prNumber: pr.number,
-                    prTitle: pr.title
-                )
-                latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                ReviewedPRCard(pr: pr)
+                VStack(alignment: .trailing, spacing: 4) {
+                    reviewButton(
+                        for: pr.repoFullName,
+                        prNumber: pr.number,
+                        prTitle: pr.title
+                    )
+                    latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
+                }
             }
+            SummarizeView(repo: pr.repoFullName, prNumber: pr.number)
+                .padding(.horizontal, 4)
         }
         .contextMenu {
             Button("Evict review state") {
@@ -626,12 +635,15 @@ struct ReviewsTab: View {
             // 3. Slice 15 — sweep tracked PRs that no longer appear in either
             // open-PR set. `prKey` shape matches what `ReviewOrchestrator`
             // writes ("<org>/<repo>#<number>").
+            // Slice 24 — also pass the summaryStore so Pre-Review Summary rows
+            // are evicted alongside Review rows when a PR closes.
             var openKeys: Set<String> = []
             openKeys.reserveCapacity(p.count + r.count)
             for pr in p { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
             for pr in r { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
             let store = ReviewStore(context: modelContext)
-            let detector = ClosedPRDetector(store: store)
+            let summaryStore = PreReviewSummaryStore(context: modelContext)
+            let detector = ClosedPRDetector(store: store, summaryStore: summaryStore)
             let cleaned = detector.cleanupClosedPRs(openPRKeys: openKeys)
             if cleaned > 0 {
                 showCleanupNotice("Cleaned up \(cleaned) closed PR\(cleaned == 1 ? "" : "s")")
@@ -1167,5 +1179,235 @@ private struct LatestVerdictBadge: View {
     private var tooltip: String {
         let sha = String(review.headSha.prefix(7))
         return "Latest review for sha \(sha) — \(review.state)"
+    }
+}
+
+// MARK: - Summarize view (slice 24)
+
+/// Inline summary widget rendered under a PR card title. Handles three states:
+///   - Cached: renders the 3-bullet block immediately (no network).
+///   - Idle (no cache): renders a "Summarize" button.
+///   - Running: spinner + streaming preview while claude is working.
+///
+/// On `.result` the row is persisted via `PreReviewSummaryStore` and the UI
+/// transitions to the cached bullet display. On `.error` the message is shown
+/// inline; no retry button (slice 25 owns that).
+///
+/// `headSha` is fetched on demand via `GitHubClient.fetchPRBranchInfo` when
+/// the user taps "Summarize", matching the same lazy pattern as `startReview`.
+/// Neither `PendingReviewPR` nor `ReviewedPR` carries a headSha in the search
+/// payload, so a separate REST call is unavoidable.
+struct SummarizeView: View {
+    let repo: String
+    let prNumber: Int
+
+    @Environment(\.modelContext) private var modelContext
+
+    // MARK: - Internal state
+
+    /// Lifecycle of the summarize action for this specific card.
+    private enum State {
+        case idle
+        case fetchingSHA
+        case running(preview: String)
+        case done
+        case failed(message: String)
+    }
+
+    @SwiftUI.State private var state: State = .idle
+    @SwiftUI.State private var cachedSummary: PreReviewSummary?
+
+    private let client = GitHubClient()
+
+    var body: some View {
+        Group {
+            if let summary = cachedSummary {
+                SummaryBullets(summary: summary)
+            } else {
+                switch state {
+                case .idle:
+                    idleButton
+                case .fetchingSHA:
+                    fetchingSHAView
+                case .running(let preview):
+                    runningView(preview: preview)
+                case .done:
+                    // `cachedSummary` should be non-nil by now; this is the
+                    // transitional frame between `done` and the cache re-query.
+                    EmptyView()
+                case .failed(let message):
+                    failedView(message: message)
+                }
+            }
+        }
+        .onAppear {
+            // On first appear, query the cache. We do this here (not at init)
+            // so we don't hit the ModelContext before the environment is ready.
+            reloadCache(headSha: nil)
+        }
+    }
+
+    // MARK: - Sub-views
+
+    private var idleButton: some View {
+        Button {
+            Task { @MainActor in
+                await runSummarize()
+            }
+        } label: {
+            Text("Summarize")
+                .font(Font.appBody(size: 12, weight: .semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Color.accentFern)
+                .foregroundStyle(Color.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .help("Generate a 3-bullet TL;DR for this PR")
+    }
+
+    private var fetchingSHAView: some View {
+        HStack(spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            Text("Fetching…")
+                .font(Font.appBody(size: 12))
+                .foregroundStyle(Color.textMuted)
+        }
+    }
+
+    private func runningView(preview: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            ProgressView()
+                .controlSize(.mini)
+            if preview.isEmpty {
+                Text("Summarizing…")
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
+            } else {
+                Text(preview)
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
+                    .lineLimit(3)
+            }
+        }
+    }
+
+    private func failedView(message: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.accentTerracotta)
+            Text(message)
+                .font(Font.appBody(size: 12))
+                .foregroundStyle(Color.accentTerracotta)
+                .lineLimit(3)
+        }
+    }
+
+    // MARK: - Action
+
+    @MainActor
+    private func runSummarize() async {
+        state = .fetchingSHA
+
+        // 1. Fetch the head SHA for this PR.
+        let headSha: String
+        do {
+            let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
+            headSha = info.headSha
+        } catch {
+            state = .failed(message: "Could not fetch PR info: \(error.localizedDescription)")
+            return
+        }
+
+        // 2. Check cache again now that we have the SHA.
+        let summaryStore = PreReviewSummaryStore(context: modelContext)
+        if let cached = summaryStore.existing(prKey: "\(repo)#\(prNumber)", headSha: headSha) {
+            cachedSummary = cached
+            state = .done
+            return
+        }
+
+        // 3. Run the summary.
+        state = .running(preview: "")
+        var partialText = ""
+
+        let stream = PreReviewSummaryRunner.summarize(
+            repo: repo,
+            prNumber: prNumber,
+            headSha: headSha
+        )
+
+        for await event in stream {
+            switch event {
+            case .delta(_, let text):
+                partialText += text
+                state = .running(preview: partialText)
+            case .result(let what, let why, let risk):
+                let summary = PreReviewSummary(
+                    prKey: "\(repo)#\(prNumber)",
+                    headSha: headSha,
+                    what: what,
+                    why: why,
+                    risk: risk,
+                    generatedAt: Date()
+                )
+                summaryStore.save(summary)
+                cachedSummary = summary
+                state = .done
+            case .error(let message):
+                state = .failed(message: message)
+            }
+        }
+
+        // If the stream finished without a terminal event (process exited
+        // cleanly but emitted nothing), surface a generic error.
+        if case .running = state {
+            state = .failed(message: "claude exited without producing a summary.")
+        }
+    }
+
+    // MARK: - Cache helpers
+
+    /// Refresh `cachedSummary` from the store. When `headSha` is nil, we
+    /// cannot do a SHA-keyed lookup, so we skip (the button path handles the
+    /// lazy SHA fetch on demand).
+    private func reloadCache(headSha: String?) {
+        guard let headSha else { return }
+        let summaryStore = PreReviewSummaryStore(context: modelContext)
+        cachedSummary = summaryStore.existing(
+            prKey: "\(repo)#\(prNumber)",
+            headSha: headSha
+        )
+    }
+}
+
+// MARK: - Summary bullets (slice 24)
+
+/// Renders the three-bullet What/Why/Risk block for a cached `PreReviewSummary`.
+/// Each line is: bold label + regular value, 4pt vertical spacing.
+private struct SummaryBullets: View {
+    let summary: PreReviewSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            bulletLine(label: "What", value: summary.what)
+            bulletLine(label: "Why", value: summary.why)
+            bulletLine(label: "Risk", value: summary.risk)
+        }
+    }
+
+    private func bulletLine(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text("\(label):")
+                .font(Font.appBody(size: 12, weight: .semibold))
+                .foregroundStyle(Color.textPrimary)
+            Text(value)
+                .font(Font.appBody(size: 12))
+                .foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

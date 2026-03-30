@@ -3,6 +3,7 @@
 //  WorkHomepage
 //
 //  Slice 15 — PR close → drop reviews + worktree.
+//  Slice 24 — Also drop Pre-Review Summary rows on PR close.
 //
 //  The Reviews-tab refresh fans out two GitHub queries (`review-requested:@me`
 //  and `reviewed-by:@me`). Both filter to `is:open`, so any PR that was
@@ -16,6 +17,9 @@
 //  For each cleanup-set entry we evict the worktree (preserving the bare
 //  clone — bare clones are repo-scoped and shared across PRs) and drop the
 //  Review + Finding rows for that PR.
+//
+//  Slice 24 adds `summaryStore` — when non-nil, `dropForPR` is also called on
+//  it so Pre-Review Summary rows are evicted alongside Review rows.
 //
 //  The orchestrator owns running reviews, so we defensively skip any prKey
 //  whose latest review is in `running` state. Yanking state out from under a
@@ -37,6 +41,9 @@ struct ClosedPRDetector {
     /// (the input) and `dropForPR` (the destructive output).
     let store: ReviewStore
 
+    /// Slice 24: optional Pre-Review Summary store to also clean up on PR close.
+    let summaryStore: PreReviewSummaryStore?
+
     /// Worktree eviction. Production injects `WorktreeManager.evict`; tests
     /// inject a recorder. Throwing is tolerated — a failed evict logs and
     /// proceeds with the SwiftData drop so the UI doesn't get stuck showing
@@ -49,10 +56,12 @@ struct ClosedPRDetector {
 
     init(
         store: ReviewStore,
+        summaryStore: PreReviewSummaryStore? = nil,
         evictor: @escaping (String, Int) throws -> Void = WorktreeManager.evict,
         isRunning: ((String) -> Bool)? = nil
     ) {
         self.store = store
+        self.summaryStore = summaryStore
         self.evictor = evictor
         // Default running-state predicate: latest review row for this PR
         // exists and is `state == "running"`. Wrapped here so the closure
@@ -85,6 +94,8 @@ struct ClosedPRDetector {
                 // disk-usage screen (slice 17) can clean.
             }
             store.dropForPR(prKey: key)
+            // Slice 24: also evict any Pre-Review Summary rows for this PR.
+            summaryStore?.dropForPR(key)
             cleaned += 1
         }
         return cleaned
