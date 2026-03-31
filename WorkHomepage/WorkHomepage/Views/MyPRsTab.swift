@@ -207,13 +207,14 @@ private struct MyPRCard: View {
 
         Link(destination: pr.htmlURL) {
             VStack(alignment: .leading, spacing: 8) {
-                // Top row: repo + draft + age
+                // Top row: repo + jira badge + draft + age
                 HStack(spacing: 8) {
                     Text(pr.repoFullName)
                         .font(Font.appBody(size: 11, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.borderSubtle))
+                    JiraBadgeView(branchName: pr.branchRef)
                     Spacer()
                     if pr.draft {
                         Text("Draft")

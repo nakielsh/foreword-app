@@ -73,6 +73,11 @@ struct PendingReviewPR: Identifiable, Hashable {
     /// being re-requested. Used for the "↻ Approved/Changes/Commented"
     /// re-review tag on the card.
     let myPriorReviewState: PullRequestReviewState?
+    /// Head branch ref (e.g. `feature/JWT-123`). Nil when not available in the
+    /// search payload — the GitHub issues search endpoint does not include
+    /// `head.ref`, so this is populated only when a separate PR fetch provides it.
+    /// `JiraBadgeView` renders `EmptyView` when nil.
+    let branchRef: String?
 }
 
 // MARK: - Reviewed-by-me PRs
@@ -101,6 +106,10 @@ struct ReviewedPR: Identifiable, Hashable {
     /// after `myLastReviewSubmittedAt`. Zero when no review timestamp is
     /// known (we treat unknown as "no new changes" — index.html parity).
     let newCommitsSinceReview: Int
+    /// Head branch ref (e.g. `feature/JWT-123`). Nil when not available in the
+    /// search payload — the GitHub issues search endpoint does not include
+    /// `head.ref`. `JiraBadgeView` renders `EmptyView` when nil.
+    let branchRef: String?
 }
 
 // MARK: - REST decode shapes (shared with tests + sidecar)

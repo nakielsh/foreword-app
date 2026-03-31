@@ -712,6 +712,7 @@ private struct PendingPRCard: View {
                         Text("@\(pr.authorLogin)")
                             .font(Font.appBody(size: 11))
                             .foregroundStyle(Color.textSecondary)
+                        JiraBadgeView(branchName: pr.branchRef)
                     }
                     Spacer()
                     if pr.approvalCount == 0 && pr.changesRequestedCount == 0 {
@@ -798,6 +799,7 @@ private struct ReviewedPRCard: View {
                         Text("@\(pr.authorLogin)")
                             .font(Font.appBody(size: 11))
                             .foregroundStyle(Color.textSecondary)
+                        JiraBadgeView(branchName: pr.branchRef)
                     }
                     Spacer()
                     if pr.approvalCount > 0 {

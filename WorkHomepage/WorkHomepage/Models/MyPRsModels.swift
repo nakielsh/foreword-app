@@ -21,6 +21,10 @@ struct AuthoredPR: Codable, Identifiable, Hashable {
     let repositoryURL: URL
     let draft: Bool
     let createdAt: Date
+    /// Head branch ref (e.g. `feature/JWT-123`). Not present in the GitHub
+    /// issues search payload (`/search/issues`), so always nil when decoded
+    /// from there. `JiraBadgeView` renders `EmptyView` when nil.
+    let branchRef: String?
 
     struct User: Codable, Hashable {
         let login: String
@@ -35,6 +39,41 @@ struct AuthoredPR: Codable, Identifiable, Hashable {
         case repositoryURL = "repository_url"
         case draft
         case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        number = try c.decode(Int.self, forKey: .number)
+        title = try c.decode(String.self, forKey: .title)
+        htmlURL = try c.decode(URL.self, forKey: .htmlURL)
+        user = try c.decode(User.self, forKey: .user)
+        repositoryURL = try c.decode(URL.self, forKey: .repositoryURL)
+        draft = try c.decode(Bool.self, forKey: .draft)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        branchRef = nil
+    }
+
+    init(
+        id: Int,
+        number: Int,
+        title: String,
+        htmlURL: URL,
+        user: User,
+        repositoryURL: URL,
+        draft: Bool,
+        createdAt: Date,
+        branchRef: String? = nil
+    ) {
+        self.id = id
+        self.number = number
+        self.title = title
+        self.htmlURL = htmlURL
+        self.user = user
+        self.repositoryURL = repositoryURL
+        self.draft = draft
+        self.createdAt = createdAt
+        self.branchRef = branchRef
     }
 
     /// "<org>/<repo>" parsed from the tail of `repositoryURL`.

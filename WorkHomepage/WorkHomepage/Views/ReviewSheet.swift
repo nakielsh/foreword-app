@@ -222,6 +222,7 @@ struct ReviewSheet: View {
                         .font(Font.appBody(size: 11, weight: .semibold))
                         .foregroundStyle(Color.textSecondary)
                 }
+                JiraBadgeView(branchName: displayedReview?.headBranch)
                 if isViewingHistorical {
                     historicalIndicator
                 }

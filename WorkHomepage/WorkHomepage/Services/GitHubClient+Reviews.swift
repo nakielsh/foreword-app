@@ -107,7 +107,8 @@ struct ReviewsAPI {
                 approvalCount: approvals,
                 changesRequestedCount: changes,
                 isDismissed: isDismissed,
-                myPriorReviewState: priorState
+                myPriorReviewState: priorState,
+                branchRef: nil
             ))
         }
         return out
@@ -151,7 +152,8 @@ struct ReviewsAPI {
                 changesRequestedCount: changes,
                 myLastReviewState: myState,
                 myLastReviewSubmittedAt: mySubmitted,
-                newCommitsSinceReview: newCommits
+                newCommitsSinceReview: newCommits,
+                branchRef: nil
             ))
         }
         return out
