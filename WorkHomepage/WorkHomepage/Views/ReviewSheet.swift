@@ -230,10 +230,21 @@ struct ReviewSheet: View {
                 stateBadge
             }
             if let review = displayedReview {
-                Text("branch: \(review.headBranch)  ·  sha: \(review.headSha.prefix(8))")
-                    .font(Font.mono(size: 11))
-                    .foregroundStyle(Color.textMuted)
-                    .textSelection(.enabled)
+                HStack(spacing: 8) {
+                    // Author avatar — the Review model does not persist authorLogin or
+                    // authorAvatarURL, so we use an empty login and nil URL; the
+                    // MonogramRenderer shows a neutral placeholder circle.
+                    ReviewerAvatarView(
+                        login: "",
+                        avatarURL: nil,
+                        role: .author,
+                        size: 24
+                    )
+                    Text("branch: \(review.headBranch)  ·  sha: \(review.headSha.prefix(8))")
+                        .font(Font.mono(size: 11))
+                        .foregroundStyle(Color.textMuted)
+                        .textSelection(.enabled)
+                }
 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     verdictBadge(review: review)

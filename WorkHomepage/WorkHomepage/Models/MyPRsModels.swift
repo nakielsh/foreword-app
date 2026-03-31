@@ -28,6 +28,14 @@ struct AuthoredPR: Codable, Identifiable, Hashable {
 
     struct User: Codable, Hashable {
         let login: String
+        /// GitHub avatar URL. Present in REST search payloads as `avatar_url`.
+        /// Nil when the field is absent (e.g. fixtures that predate slice 22).
+        let avatarURL: URL?
+
+        enum CodingKeys: String, CodingKey {
+            case login
+            case avatarURL = "avatar_url"
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -115,6 +123,9 @@ struct ReviewerEntry: Hashable, Identifiable {
     /// This is independent from `status` so the UI can stack a "↻" mark on top
     /// of the underlying status (matching `index.html`).
     let reRequested: Bool
+    /// GitHub avatar URL for this reviewer. Nil when not returned by the
+    /// GraphQL query (e.g. Team reviewers or pre-slice-22 fixtures).
+    let avatarURL: URL?
 
     var id: String { login }
 }

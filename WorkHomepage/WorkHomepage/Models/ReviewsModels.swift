@@ -78,6 +78,9 @@ struct PendingReviewPR: Identifiable, Hashable {
     /// `head.ref`, so this is populated only when a separate PR fetch provides it.
     /// `JiraBadgeView` renders `EmptyView` when nil.
     let branchRef: String?
+    /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
+    /// the `/search/issues` payload. Nil when not available.
+    let authorAvatarURL: String?
 }
 
 // MARK: - Reviewed-by-me PRs
@@ -110,6 +113,9 @@ struct ReviewedPR: Identifiable, Hashable {
     /// search payload — the GitHub issues search endpoint does not include
     /// `head.ref`. `JiraBadgeView` renders `EmptyView` when nil.
     let branchRef: String?
+    /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
+    /// the `/search/issues` payload. Nil when not available.
+    let authorAvatarURL: String?
 }
 
 // MARK: - REST decode shapes (shared with tests + sidecar)
@@ -176,6 +182,13 @@ struct ReviewsSearchPR: Decodable, Identifiable, Hashable {
 
     struct User: Decodable, Hashable {
         let login: String
+        /// GitHub avatar URL. Present in REST search payloads as `avatar_url`.
+        let avatarURL: String?
+
+        enum CodingKeys: String, CodingKey {
+            case login
+            case avatarURL = "avatar_url"
+        }
     }
 
     enum CodingKeys: String, CodingKey {

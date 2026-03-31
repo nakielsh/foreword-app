@@ -155,11 +155,12 @@ struct MyPRsAPI {
         query($owner:String!,$name:String!,$number:Int!) {
           repository(owner:$owner,name:$name) {
             pullRequest(number:$number) {
+              headRefName
               reviewRequests(first:20) {
                 nodes {
                   requestedReviewer {
                     __typename
-                    ... on User { login }
+                    ... on User { login avatarUrl }
                     ... on Team { name }
                   }
                 }
@@ -167,7 +168,10 @@ struct MyPRsAPI {
               latestReviews(first:50) {
                 nodes {
                   state
-                  author { login }
+                  author {
+                    login
+                    ... on User { avatarUrl }
+                  }
                 }
               }
               reviewThreads(first:100) {
@@ -212,31 +216,58 @@ struct MyPRsAPI {
         for node in payload.latestReviews?.nodes ?? [] {
             guard let login = node.author?.login else { continue }
             let status = mapReviewState(node.state)
+            let avatarURL = node.author?.avatarUrl.flatMap { URL(string: $0) }
             if byLogin[login] == nil { order.append(login) }
-            byLogin[login] = ReviewerEntryBuilder(login: login, status: status, reRequested: false)
+            byLogin[login] = ReviewerEntryBuilder(
+                login: login,
+                status: status,
+                reRequested: false,
+                avatarURL: avatarURL
+            )
         }
 
         for node in payload.reviewRequests?.nodes ?? [] {
             guard let reviewer = node.requestedReviewer else { continue }
             let login: String?
+            let avatarURL: URL?
             switch reviewer {
-            case .user(let login_): login = login_
-            case .team(let name): login = name
-            case .unknown: login = nil
+            case .user(let login_, let url):
+                login = login_
+                avatarURL = url.flatMap { URL(string: $0) }
+            case .team(let name):
+                login = name
+                avatarURL = nil
+            case .unknown:
+                login = nil
+                avatarURL = nil
             }
             guard let login, !login.isEmpty else { continue }
             if var existing = byLogin[login] {
                 existing.reRequested = true
+                // Prefer the avatar from reviewRequests if latestReviews didn't carry one.
+                if existing.avatarURL == nil, let url = avatarURL {
+                    existing.avatarURL = url
+                }
                 byLogin[login] = existing
             } else {
                 order.append(login)
-                byLogin[login] = ReviewerEntryBuilder(login: login, status: .pending, reRequested: false)
+                byLogin[login] = ReviewerEntryBuilder(
+                    login: login,
+                    status: .pending,
+                    reRequested: false,
+                    avatarURL: avatarURL
+                )
             }
         }
 
         let entries = order.compactMap { login -> ReviewerEntry? in
             guard let b = byLogin[login] else { return nil }
-            return ReviewerEntry(login: b.login, status: b.status, reRequested: b.reRequested)
+            return ReviewerEntry(
+                login: b.login,
+                status: b.status,
+                reRequested: b.reRequested,
+                avatarURL: b.avatarURL
+            )
         }
 
         let threads = payload.reviewThreads?.nodes ?? []
@@ -366,6 +397,15 @@ struct PRReviewStatePayload: Decodable {
 
     struct Author: Decodable {
         let login: String
+        /// Present on `User` actor fragments (`... on User { avatarUrl }`).
+        /// Nil for non-User actors (bots, teams) or when the fragment is absent.
+        let avatarUrl: String?
+
+        /// Convenience init for tests that only need `login`.
+        init(login: String, avatarUrl: String? = nil) {
+            self.login = login
+            self.avatarUrl = avatarUrl
+        }
     }
 
     struct ReviewThreads: Decodable {
@@ -388,7 +428,8 @@ struct PRReviewStatePayload: Decodable {
 /// Discriminated `RequestedReviewer` (`User` or `Team`). GitHub returns either
 /// shape depending on `__typename`.
 enum RequestedReviewer: Decodable, Hashable {
-    case user(login: String)
+    /// A GitHub user reviewer. `avatarUrl` comes from the `... on User { avatarUrl }` fragment.
+    case user(login: String, avatarUrl: String?)
     case team(name: String)
     case unknown
 
@@ -396,6 +437,7 @@ enum RequestedReviewer: Decodable, Hashable {
         case typename = "__typename"
         case login
         case name
+        case avatarUrl
     }
 
     init(from decoder: Decoder) throws {
@@ -404,7 +446,8 @@ enum RequestedReviewer: Decodable, Hashable {
         switch type {
         case "User":
             let login = try c.decodeIfPresent(String.self, forKey: .login) ?? ""
-            self = .user(login: login)
+            let avatarUrl = try c.decodeIfPresent(String.self, forKey: .avatarUrl)
+            self = .user(login: login, avatarUrl: avatarUrl)
         case "Team":
             let name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
             self = .team(name: name)
@@ -434,4 +477,5 @@ private struct ReviewerEntryBuilder {
     let login: String
     var status: ReviewerStatus
     var reRequested: Bool
+    var avatarURL: URL?
 }
