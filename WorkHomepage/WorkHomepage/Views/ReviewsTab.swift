@@ -705,7 +705,7 @@ private struct PendingPRCard: View {
                     HStack(spacing: 6) {
                         ReviewerAvatarView(
                             login: pr.authorLogin,
-                            avatarURL: nil,
+                            avatarURL: URL(string: pr.authorAvatarURL ?? ""),
                             role: .author,
                             size: 24
                         )
@@ -792,7 +792,7 @@ private struct ReviewedPRCard: View {
                     HStack(spacing: 6) {
                         ReviewerAvatarView(
                             login: pr.authorLogin,
-                            avatarURL: nil,
+                            avatarURL: URL(string: pr.authorAvatarURL ?? ""),
                             role: .author,
                             size: 24
                         )

@@ -108,7 +108,8 @@ struct ReviewsAPI {
                 changesRequestedCount: changes,
                 isDismissed: isDismissed,
                 myPriorReviewState: priorState,
-                branchRef: nil
+                branchRef: nil,
+                authorAvatarURL: pr.user.avatarURL
             ))
         }
         return out
@@ -153,7 +154,8 @@ struct ReviewsAPI {
                 myLastReviewState: myState,
                 myLastReviewSubmittedAt: mySubmitted,
                 newCommitsSinceReview: newCommits,
-                branchRef: nil
+                branchRef: nil,
+                authorAvatarURL: pr.user.avatarURL
             ))
         }
         return out

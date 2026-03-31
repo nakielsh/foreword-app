@@ -229,18 +229,26 @@ private struct MyPRCard: View {
                         .foregroundStyle(Color.textMuted)
                 }
 
-                // Title + number
-                Text("#\(pr.number)  \(pr.title)")
-                    .font(Font.display(size: 14))
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foregroundStyle(Color.textPrimary)
+                // Author avatar + title + number
+                HStack(alignment: .center, spacing: 8) {
+                    ReviewerAvatarView(
+                        login: pr.user.login,
+                        avatarURL: pr.user.avatarURL,
+                        role: .author,
+                        size: 24
+                    )
+                    Text("#\(pr.number)  \(pr.title)")
+                        .font(Font.display(size: 14))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(Color.textPrimary)
+                }
 
-                // Reviewer badges
+                // Reviewer inline rows: [avatar] @login [status pill]
                 if !state.reviewers.isEmpty {
-                    HStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         ForEach(state.reviewers) { reviewer in
-                            ReviewerBadge(reviewer: reviewer)
+                            ReviewerRow(reviewer: reviewer)
                         }
                     }
                 }
@@ -341,9 +349,30 @@ private struct MyPRCard: View {
     }
 }
 
-// MARK: - Reviewer badge
+// MARK: - Reviewer inline row: [avatar] @login [status pill]
 
-private struct ReviewerBadge: View {
+private struct ReviewerRow: View {
+    let reviewer: ReviewerEntry
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ReviewerAvatarView(
+                login: reviewer.login,
+                avatarURL: reviewer.avatarURL,
+                role: .reviewer(status: reviewer.status),
+                size: 24
+            )
+            Text("@\(reviewer.login)")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textSecondary)
+            StatusPill(reviewer: reviewer)
+        }
+    }
+}
+
+// MARK: - Status pill
+
+private struct StatusPill: View {
     let reviewer: ReviewerEntry
 
     var body: some View {
@@ -351,8 +380,9 @@ private struct ReviewerBadge: View {
             Circle()
                 .fill(dotColor)
                 .frame(width: 6, height: 6)
-            Text(reviewer.login)
-                .font(Font.appBody(size: 10))
+            Text(reviewer.status.label)
+                .font(Font.appBody(size: 10, weight: .semibold))
+                .foregroundStyle(dotColor)
             if reviewer.reRequested {
                 Text("↻")
                     .font(Font.appBody(size: 10, weight: .bold))
@@ -361,24 +391,18 @@ private struct ReviewerBadge: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
-        .background(Capsule().fill(Color.borderSubtle))
-        .help(tooltip)
+        .background(Capsule().fill(dotColor.opacity(0.12)))
     }
 
     private var dotColor: Color {
         switch reviewer.status {
-        case .approved: return .accentFern
-        case .changesRequested: return .accentTerracotta
-        case .commented: return .accentGray
-        case .dismissed: return .accentGray
-        case .pending: return .accentMarigold
-        case .reRequested: return .accentMarigold
+        case .approved:          return .accentFern
+        case .changesRequested:  return .accentTerracotta
+        case .commented:         return .accentGray
+        case .dismissed:         return .accentGray
+        case .pending:           return .accentMarigold
+        case .reRequested:       return .accentMarigold
         }
-    }
-
-    private var tooltip: String {
-        let base = "\(reviewer.login): \(reviewer.status.label)"
-        return reviewer.reRequested ? "\(base) · re-review requested" : base
     }
 }
 

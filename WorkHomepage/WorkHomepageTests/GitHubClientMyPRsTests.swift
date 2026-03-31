@@ -44,7 +44,10 @@ final class GitHubClientMyPRsTests: XCTestCase {
               "number": 9,
               "title": "Wire deploy badges",
               "html_url": "https://github.com/Ala-com/foo/pull/9",
-              "user": { "login": "hubert" },
+              "user": {
+                "login": "hubert",
+                "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4"
+              },
               "repository_url": "https://api.github.com/repos/Ala-com/foo",
               "draft": true,
               "created_at": "2026-04-30T10:11:12Z"
@@ -76,6 +79,7 @@ final class GitHubClientMyPRsTests: XCTestCase {
         XCTAssertEqual(pr.title, "Wire deploy badges")
         XCTAssertTrue(pr.draft)
         XCTAssertEqual(pr.user.login, "hubert")
+        XCTAssertEqual(pr.user.avatarURL, URL(string: "https://avatars.githubusercontent.com/u/12345?v=4"))
         XCTAssertEqual(pr.repoFullName, "Ala-com/foo")
     }
 
@@ -137,17 +141,39 @@ final class GitHubClientMyPRsTests: XCTestCase {
           "data": {
             "repository": {
               "pullRequest": {
+                "headRefName": "feature/PROJ-42-widget",
                 "reviewRequests": {
                   "nodes": [
-                    { "requestedReviewer": { "__typename": "User", "login": "dave" } },
+                    {
+                      "requestedReviewer": {
+                        "__typename": "User",
+                        "login": "dave",
+                        "avatarUrl": "https://avatars.githubusercontent.com/u/99?v=4"
+                      }
+                    },
                     { "requestedReviewer": { "__typename": "Team", "name": "frontend" } }
                   ]
                 },
                 "latestReviews": {
                   "nodes": [
-                    { "state": "APPROVED",          "author": { "login": "alice" } },
-                    { "state": "CHANGES_REQUESTED", "author": { "login": "bob"   } },
-                    { "state": "COMMENTED",         "author": { "login": "dave"  } }
+                    {
+                      "state": "APPROVED",
+                      "author": {
+                        "login": "alice",
+                        "avatarUrl": "https://avatars.githubusercontent.com/u/1?v=4"
+                      }
+                    },
+                    {
+                      "state": "CHANGES_REQUESTED",
+                      "author": {
+                        "login": "bob",
+                        "avatarUrl": "https://avatars.githubusercontent.com/u/2?v=4"
+                      }
+                    },
+                    {
+                      "state": "COMMENTED",
+                      "author": { "login": "dave" }
+                    }
                   ]
                 },
                 "reviewThreads": {
@@ -217,6 +243,21 @@ final class GitHubClientMyPRsTests: XCTestCase {
         XCTAssertEqual(byLogin["dave"]?.reRequested, true,
                        "dave reviewed AND was re-requested -> reRequested=true")
         XCTAssertEqual(byLogin["frontend"]?.status, .pending)
+
+        // Avatar URLs from latestReviews.author.avatarUrl.
+        XCTAssertEqual(byLogin["alice"]?.avatarURL,
+                       URL(string: "https://avatars.githubusercontent.com/u/1?v=4"),
+                       "alice's avatar from latestReviews fragment")
+        XCTAssertEqual(byLogin["bob"]?.avatarURL,
+                       URL(string: "https://avatars.githubusercontent.com/u/2?v=4"),
+                       "bob's avatar from latestReviews fragment")
+        // dave has no avatarUrl in latestReviews but has one in reviewRequests.
+        XCTAssertEqual(byLogin["dave"]?.avatarURL,
+                       URL(string: "https://avatars.githubusercontent.com/u/99?v=4"),
+                       "dave's avatar filled from reviewRequests when latestReviews has none")
+        // Teams never have an avatarURL.
+        XCTAssertNil(byLogin["frontend"]?.avatarURL,
+                     "Team reviewers have no avatar URL")
 
         XCTAssertEqual(state.totalThreads, 3)
         XCTAssertEqual(state.totalComments, 2 + 4 + 1)
@@ -294,6 +335,74 @@ final class GitHubClientMyPRsTests: XCTestCase {
         } catch {
             XCTFail("wrong error \(error)")
         }
+    }
+
+    // MARK: - Slice 22: avatar URL plumbing
+
+    /// When `avatarUrl` is absent from both `latestReviews` and `reviewRequests`,
+    /// `ReviewerEntry.avatarURL` must be nil — no crash, no forced unwrap.
+    func testReviewerEntryAvatarURLIsNilWhenMissing() async throws {
+        let body = """
+        {
+          "data": {
+            "repository": {
+              "pullRequest": {
+                "headRefName": "fix/nothing",
+                "reviewRequests": {
+                  "nodes": [
+                    { "requestedReviewer": { "__typename": "User", "login": "carol" } }
+                  ]
+                },
+                "latestReviews": {
+                  "nodes": [
+                    { "state": "COMMENTED", "author": { "login": "carol" } }
+                  ]
+                },
+                "reviewThreads": { "totalCount": 0, "nodes": [] }
+              }
+            }
+          }
+        }
+        """
+        StubURLProtocol.responder = { req in
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let api = MyPRsAPI(session: makeSession(), tokenProvider: { "tok" }, onUnauthorized: {})
+        let state = try await api.fetchPRReviewState(repo: "Ala-com/bar", number: 5, currentUser: "viewer")
+        let carol = state.reviewers.first(where: { $0.login == "carol" })
+        XCTAssertNotNil(carol)
+        XCTAssertNil(carol?.avatarURL,
+                     "avatarURL must be nil when avatarUrl is absent from both fragments")
+    }
+
+    /// When an authored PR fixture lacks `avatar_url`, `AuthoredPR.User.avatarURL` is nil.
+    func testAuthoredPRUserAvatarURLIsNilWhenMissing() async throws {
+        let body = """
+        {
+          "items": [
+            {
+              "id": 7,
+              "number": 3,
+              "title": "No avatar here",
+              "html_url": "https://github.com/Ala-com/bar/pull/3",
+              "user": { "login": "oldbot" },
+              "repository_url": "https://api.github.com/repos/Ala-com/bar",
+              "draft": false,
+              "created_at": "2025-01-01T00:00:00Z"
+            }
+          ]
+        }
+        """
+        StubURLProtocol.responder = { req in
+            let response = HTTPURLResponse(url: req.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            return (response, body.data(using: .utf8)!)
+        }
+        let api = MyPRsAPI(session: makeSession(), tokenProvider: { "tok" }, onUnauthorized: {})
+        let prs = try await api.fetchAuthoredPRs()
+        XCTAssertEqual(prs.count, 1)
+        XCTAssertNil(prs[0].user.avatarURL,
+                     "avatarURL must be nil when avatar_url is absent from the payload")
     }
 
     // MARK: - Pure derivation: viewer flip changes classification
