@@ -69,6 +69,10 @@ struct ReviewsTab: View {
     /// card can disable itself while another review is running and so the
     /// modal sheet can pull live state.
     @State private var orchestrator = ReviewOrchestrator.shared
+
+    /// Slice 25 — Pre-Review Summary orchestrator. Shared across all PR cards
+    /// so they participate in the same concurrency pool.
+    @State private var summaryOrchestrator = PreReviewSummaryOrchestrator.shared
     /// SwiftData context borrowed for the orchestrator's `ReviewStore`. We
     /// pull it from the environment in `body` and cache it the first time
     /// `startReview` runs.
@@ -101,6 +105,10 @@ struct ReviewsTab: View {
             Task { await refresh() }
         }
         .task {
+            // Slice 25: wire the summary orchestrator's store to the live
+            // model context. Idempotent — safe on every task execution.
+            summaryOrchestrator.configure(context: modelContext)
+
             // Auto-fetch the first time the tab is shown. The vm survives
             // tab switches, so subsequent appearances skip the fetch and
             // just re-display the cached PRs.
@@ -418,7 +426,7 @@ struct ReviewsTab: View {
                                 latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
                             }
                         }
-                        SummarizeView(repo: pr.repoFullName, prNumber: pr.number)
+                        SummarizeView(repo: pr.repoFullName, prNumber: pr.number, orchestrator: summaryOrchestrator)
                             .padding(.horizontal, 4)
                     }
                     .contextMenu {
@@ -485,7 +493,7 @@ struct ReviewsTab: View {
                     latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
                 }
             }
-            SummarizeView(repo: pr.repoFullName, prNumber: pr.number)
+            SummarizeView(repo: pr.repoFullName, prNumber: pr.number, orchestrator: summaryOrchestrator)
                 .padding(.horizontal, 4)
         }
         .contextMenu {
@@ -1184,68 +1192,90 @@ private struct LatestVerdictBadge: View {
     }
 }
 
-// MARK: - Summarize view (slice 24)
+// MARK: - Summarize view (slice 24 + 25)
 
-/// Inline summary widget rendered under a PR card title. Handles three states:
-///   - Cached: renders the 3-bullet block immediately (no network).
-///   - Idle (no cache): renders a "Summarize" button.
-///   - Running: spinner + streaming preview while claude is working.
+/// Inline summary widget rendered under a PR card title. Delegates all
+/// lifecycle management to `PreReviewSummaryOrchestrator` (slice 25).
 ///
-/// On `.result` the row is persisted via `PreReviewSummaryStore` and the UI
-/// transitions to the cached bullet display. On `.error` the message is shown
-/// inline; no retry button (slice 25 owns that).
+/// State mapping:
+///   - No active run + no cache → "Summarize" button (`.idle`).
+///   - `.fetchingSHA` → spinner during the head-SHA REST call.
+///   - `.queued(ahead: N)` → "Queued (N ahead)" text.
+///   - `.running` → spinner.
+///   - `.cached(display)` → 3-bullet block.
+///   - `.failed(message)` → red error text + "Retry" button.
 ///
-/// `headSha` is fetched on demand via `GitHubClient.fetchPRBranchInfo` when
-/// the user taps "Summarize", matching the same lazy pattern as `startReview`.
-/// Neither `PendingReviewPR` nor `ReviewedPR` carries a headSha in the search
-/// payload, so a separate REST call is unavoidable.
+/// The `headSha` is fetched on demand (lazy) via `GitHubClient` when the user
+/// taps "Summarize", matching the same pattern as `startReview`. The SHA is
+/// then handed to `orchestrator.start(...)`.
 struct SummarizeView: View {
     let repo: String
     let prNumber: Int
+    /// Slice 25: injected by the parent tab so all PR cards share the pool.
+    let orchestrator: PreReviewSummaryOrchestrator
 
-    @Environment(\.modelContext) private var modelContext
+    // MARK: - Per-card state
 
-    // MARK: - Internal state
+    /// The `SummaryRunID` for the in-flight or terminal run on this card.
+    /// Nil means no run has been started since the view appeared.
+    @SwiftUI.State private var runID: SummaryRunID?
 
-    /// Lifecycle of the summarize action for this specific card.
-    private enum State {
-        case idle
-        case fetchingSHA
-        case running(preview: String)
-        case done
-        case failed(message: String)
-    }
-
-    @SwiftUI.State private var state: State = .idle
-    @SwiftUI.State private var cachedSummary: PreReviewSummary?
+    /// True while fetching the head SHA before handing off to the orchestrator.
+    @SwiftUI.State private var isFetchingSHA: Bool = false
 
     private let client = GitHubClient()
 
-    var body: some View {
-        Group {
-            if let summary = cachedSummary {
-                SummaryBullets(summary: summary)
-            } else {
-                switch state {
-                case .idle:
-                    idleButton
-                case .fetchingSHA:
-                    fetchingSHAView
-                case .running(let preview):
-                    runningView(preview: preview)
-                case .done:
-                    // `cachedSummary` should be non-nil by now; this is the
-                    // transitional frame between `done` and the cache re-query.
-                    EmptyView()
-                case .failed(let message):
-                    failedView(message: message)
-                }
-            }
+    // MARK: - Computed view state
+
+    /// Map the orchestrator state (+ local fetchingSHA flag) into a single
+    /// render decision.
+    private var displayState: DisplayState {
+        if isFetchingSHA { return .fetchingSHA }
+        guard let id = runID else { return .idle }
+        switch orchestrator.state(id) {
+        case .idle:
+            return .idle
+        case .queued(let ahead):
+            return .queued(ahead: ahead)
+        case .running:
+            return .running
+        case .cached(let display):
+            return .cached(display)
+        case .failed(let message):
+            return .failed(message: message)
         }
-        .onAppear {
-            // On first appear, query the cache. We do this here (not at init)
-            // so we don't hit the ModelContext before the environment is ready.
-            reloadCache(headSha: nil)
+    }
+
+    private enum DisplayState {
+        case idle
+        case fetchingSHA
+        case queued(ahead: Int)
+        case running
+        case cached(PreReviewSummaryDisplay)
+        case failed(message: String)
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        /// Re-evaluate whenever orchestrator.states changes so the card
+        /// reflects the latest run state without needing a local @State mirror.
+        let _ = orchestrator.states
+        Group {
+            switch displayState {
+            case .idle:
+                idleButton
+            case .fetchingSHA:
+                fetchingSHAView
+            case .queued(let ahead):
+                queuedView(ahead: ahead)
+            case .running:
+                runningView
+            case .cached(let display):
+                SummaryBullets(display: display)
+            case .failed(let message):
+                failedView(message: message)
+            }
         }
     }
 
@@ -1254,7 +1284,7 @@ struct SummarizeView: View {
     private var idleButton: some View {
         Button {
             Task { @MainActor in
-                await runSummarize()
+                await kickOff()
             }
         } label: {
             Text("Summarize")
@@ -1279,20 +1309,24 @@ struct SummarizeView: View {
         }
     }
 
-    private func runningView(preview: String) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+    private func queuedView(ahead: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "clock")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+            Text("Queued (\(ahead) ahead)")
+                .font(Font.appBody(size: 12))
+                .foregroundStyle(Color.textMuted)
+        }
+    }
+
+    private var runningView: some View {
+        HStack(spacing: 6) {
             ProgressView()
                 .controlSize(.mini)
-            if preview.isEmpty {
-                Text("Summarizing…")
-                    .font(Font.appBody(size: 12))
-                    .foregroundStyle(Color.textMuted)
-            } else {
-                Text(preview)
-                    .font(Font.appBody(size: 12))
-                    .foregroundStyle(Color.textMuted)
-                    .lineLimit(3)
-            }
+            Text("Summarizing…")
+                .font(Font.appBody(size: 12))
+                .foregroundStyle(Color.textMuted)
         }
     }
 
@@ -1305,99 +1339,72 @@ struct SummarizeView: View {
                 .font(Font.appBody(size: 12))
                 .foregroundStyle(Color.accentTerracotta)
                 .lineLimit(3)
+            // Slice 25: Retry button — starts a fresh orchestrator run.
+            Button {
+                Task { @MainActor in
+                    await kickOff()
+                }
+            } label: {
+                Text("Retry")
+                    .font(Font.appBody(size: 12, weight: .semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.accentTerracotta.opacity(0.15))
+                    .foregroundStyle(Color.accentTerracotta)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            }
+            .buttonStyle(.plain)
+            .help("Retry the summary for this PR")
         }
     }
 
     // MARK: - Action
 
+    /// Fetch the head SHA then hand off to the orchestrator. If fetching the
+    /// SHA fails we surface a `.failed` state locally via a no-op orchestrator
+    /// run ID with a pre-set failed state — we synthesise the failure state by
+    /// creating a UUID and directly publishing the error into orchestrator.states.
     @MainActor
-    private func runSummarize() async {
-        state = .fetchingSHA
+    private func kickOff() async {
+        isFetchingSHA = true
+        defer { isFetchingSHA = false }
 
-        // 1. Fetch the head SHA for this PR.
         let headSha: String
         do {
             let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
             headSha = info.headSha
         } catch {
-            state = .failed(message: "Could not fetch PR info: \(error.localizedDescription)")
+            // Publish the SHA-fetch failure as a failed run so the card
+            // shows the retry button via the same orchestrator.states path.
+            runID = orchestrator.synthesizeFailure(
+                message: "Could not fetch PR info: \(error.localizedDescription)"
+            )
             return
         }
 
-        // 2. Check cache again now that we have the SHA.
-        let summaryStore = PreReviewSummaryStore(context: modelContext)
-        if let cached = summaryStore.existing(prKey: "\(repo)#\(prNumber)", headSha: headSha) {
-            cachedSummary = cached
-            state = .done
-            return
-        }
-
-        // 3. Run the summary.
-        state = .running(preview: "")
-        var partialText = ""
-
-        let stream = PreReviewSummaryRunner.summarize(
+        let prKey = "\(repo)#\(prNumber)"
+        let id = orchestrator.start(
             repo: repo,
             prNumber: prNumber,
+            prKey: prKey,
             headSha: headSha
         )
-
-        for await event in stream {
-            switch event {
-            case .delta(_, let text):
-                partialText += text
-                state = .running(preview: partialText)
-            case .result(let what, let why, let risk):
-                let summary = PreReviewSummary(
-                    prKey: "\(repo)#\(prNumber)",
-                    headSha: headSha,
-                    what: what,
-                    why: why,
-                    risk: risk,
-                    generatedAt: Date()
-                )
-                summaryStore.save(summary)
-                cachedSummary = summary
-                state = .done
-            case .error(let message):
-                state = .failed(message: message)
-            }
-        }
-
-        // If the stream finished without a terminal event (process exited
-        // cleanly but emitted nothing), surface a generic error.
-        if case .running = state {
-            state = .failed(message: "claude exited without producing a summary.")
-        }
-    }
-
-    // MARK: - Cache helpers
-
-    /// Refresh `cachedSummary` from the store. When `headSha` is nil, we
-    /// cannot do a SHA-keyed lookup, so we skip (the button path handles the
-    /// lazy SHA fetch on demand).
-    private func reloadCache(headSha: String?) {
-        guard let headSha else { return }
-        let summaryStore = PreReviewSummaryStore(context: modelContext)
-        cachedSummary = summaryStore.existing(
-            prKey: "\(repo)#\(prNumber)",
-            headSha: headSha
-        )
+        runID = id
     }
 }
 
-// MARK: - Summary bullets (slice 24)
+// MARK: - Summary bullets (slice 24 + 25)
 
-/// Renders the three-bullet What/Why/Risk block for a cached `PreReviewSummary`.
+/// Renders the three-bullet What/Why/Risk block from `PreReviewSummaryDisplay`.
 /// Each line is: bold label + regular value, 4pt vertical spacing.
 private struct SummaryBullets: View {
-    let summary: PreReviewSummary
+    let display: PreReviewSummaryDisplay
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            bulletLine(label: "What", value: summary.what)
-            bulletLine(label: "Why", value: summary.why)
-            bulletLine(label: "Risk", value: summary.risk)
+            bulletLine(label: "What", value: display.what)
+            bulletLine(label: "Why", value: display.why)
+            bulletLine(label: "Risk", value: display.risk)
         }
     }
 
