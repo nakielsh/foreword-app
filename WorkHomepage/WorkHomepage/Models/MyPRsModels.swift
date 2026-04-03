@@ -147,11 +147,17 @@ struct PRReviewState: Hashable {
     let unresolved: UnresolvedThreads
     let totalThreads: Int
     let totalComments: Int
+    /// Head branch ref decoded from the GraphQL `headRefName` field
+    /// (e.g. `feature/JWT-123`). Nil when not returned by the query.
+    /// Piped into `AuthoredPR.branchRef` after assembly so `JiraBadgeView`
+    /// can render on My PRs cards without a separate REST round-trip.
+    let branchRef: String?
 
     static let empty = PRReviewState(
         reviewers: [],
         unresolved: .zero,
         totalThreads: 0,
-        totalComments: 0
+        totalComments: 0,
+        branchRef: nil
     )
 }

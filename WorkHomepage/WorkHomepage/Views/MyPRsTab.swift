@@ -143,6 +143,9 @@ struct MyPRsTab: View {
 
             // 3. Fan-out for review state. Failures per-PR degrade to .empty so
             //    one bad PR does not blank the whole list (matches index.html).
+            //    `PRReviewState.branchRef` carries `headRefName` from the
+            //    GraphQL payload (already requested by the query) — copy it into
+            //    `AuthoredPR.branchRef` so `JiraBadgeView` can render on cards.
             let assembled = await withTaskGroup(of: (Int, MyPRRow).self) { group in
                 for (index, pr) in prs.enumerated() {
                     group.addTask {
@@ -156,7 +159,20 @@ struct MyPRsTab: View {
                         } catch {
                             state = .empty
                         }
-                        return (index, MyPRRow(pr: pr, reviewState: state))
+                        // Construct an updated AuthoredPR with branchRef populated
+                        // from the GraphQL headRefName so JiraBadgeView renders.
+                        let enrichedPR = AuthoredPR(
+                            id: pr.id,
+                            number: pr.number,
+                            title: pr.title,
+                            htmlURL: pr.htmlURL,
+                            user: pr.user,
+                            repositoryURL: pr.repositoryURL,
+                            draft: pr.draft,
+                            createdAt: pr.createdAt,
+                            branchRef: state.branchRef
+                        )
+                        return (index, MyPRRow(pr: enrichedPR, reviewState: state))
                     }
                 }
                 var collected: [(Int, MyPRRow)] = []

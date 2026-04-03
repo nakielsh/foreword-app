@@ -284,7 +284,8 @@ struct MyPRsAPI {
             reviewers: entries,
             unresolved: UnresolvedThreads(awaitingYou: awaitingMe, awaitingOthers: withMyReply),
             totalThreads: totalThreads,
-            totalComments: totalComments
+            totalComments: totalComments,
+            branchRef: payload.headRefName
         )
     }
 
@@ -376,9 +377,26 @@ struct PRReviewStateRoot: Decodable {
 
 /// Decoded payload for the `pullRequest` field of `fetchPRReviewState`.
 struct PRReviewStatePayload: Decodable {
+    /// Head branch name from `headRefName` (e.g. `feature/JWT-123`).
+    /// Nil when the field is absent in the response.
+    let headRefName: String?
     let reviewRequests: ReviewRequests?
     let latestReviews: LatestReviews?
     let reviewThreads: ReviewThreads?
+
+    /// Memberwise init for tests. `headRefName` defaults to nil so existing
+    /// test call sites that pre-date this field don't need to change.
+    init(
+        headRefName: String? = nil,
+        reviewRequests: ReviewRequests?,
+        latestReviews: LatestReviews?,
+        reviewThreads: ReviewThreads?
+    ) {
+        self.headRefName = headRefName
+        self.reviewRequests = reviewRequests
+        self.latestReviews = latestReviews
+        self.reviewThreads = reviewThreads
+    }
 
     struct ReviewRequests: Decodable {
         let nodes: [Node]
