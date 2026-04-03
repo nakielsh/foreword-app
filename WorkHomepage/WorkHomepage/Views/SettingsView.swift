@@ -30,6 +30,9 @@ struct SettingsView: View {
     @State private var concurrencyCap: Int = AppSettings.concurrencyCapDefault
     @State private var prefixesText: String = ""
 
+    // Pre-Review Summary (slice 25)
+    @State private var summaryConcurrencyCap: Int = AppSettings.summaryConcurrencyCapDefault
+
     // Appearance (slice 19)
     @AppStorage(AppSettings.appearanceKey) private var appearanceRaw: String = Appearance.system.rawValue
 
@@ -76,6 +79,8 @@ struct SettingsView: View {
                 appearanceSection
                 Divider()
                 reviewPromptSection
+                Divider()
+                preReviewSummarySection
                 Divider()
                 storageSection
                 Divider()
@@ -388,6 +393,30 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Pre-Review Summary section (slice 25)
+
+    /// Stepper controlling how many `PreReviewSummaryRunner` invocations may
+    /// run concurrently. Independent of the Review concurrency cap.
+    private var preReviewSummarySection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Pre-Review Summary").font(Font.display(size: 14, weight: .bold))
+            HStack {
+                Text("Concurrent summaries")
+                Spacer()
+                Stepper(
+                    value: $summaryConcurrencyCap,
+                    in: AppSettings.summaryConcurrencyCapMin...AppSettings.summaryConcurrencyCapMax
+                ) {
+                    Text("\(summaryConcurrencyCap)").frame(width: 30, alignment: .trailing)
+                }
+                .frame(width: 140)
+            }
+            Text("Maximum simultaneous Claude summary calls. Default \(AppSettings.summaryConcurrencyCapDefault). Independent of the Review concurrency cap.")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+        }
+    }
+
     private var wizardSection: some View {
         HStack {
             Spacer()
@@ -659,6 +688,7 @@ struct SettingsView: View {
         concurrencyCap = AppSettings.concurrencyCap
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
         reviewPromptText = ReviewPromptStore().current()
+        summaryConcurrencyCap = AppSettings.summaryConcurrencyCap
     }
 
     private func save() {
@@ -666,6 +696,7 @@ struct SettingsView: View {
         JiraConfig.setEmail(jiraEmail)
         JiraConfig.setToken(jiraToken)
         AppSettings.concurrencyCap = concurrencyCap
+        AppSettings.summaryConcurrencyCap = summaryConcurrencyCap
         let parts = prefixesText
             .split(whereSeparator: { $0 == "," })
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }

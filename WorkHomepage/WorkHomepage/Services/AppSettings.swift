@@ -51,12 +51,17 @@ enum AppSettings {
     static let appearanceKey = "settings.appearance"
     /// Shares the same UserDefaults key as `ReviewPromptStore` — no duplication.
     static let reviewPromptTemplateKey = ReviewPromptStore.defaultsKey
+    static let summaryConcurrencyCapKey = "settings.summaryConcurrencyCap"
 
     // MARK: - Limits
 
     static let concurrencyCapDefault: Int = 3
     static let concurrencyCapMin: Int = 1
     static let concurrencyCapMax: Int = 10
+
+    static let summaryConcurrencyCapDefault: Int = 5
+    static let summaryConcurrencyCapMin: Int = 1
+    static let summaryConcurrencyCapMax: Int = 10
 
     // MARK: - Concurrency cap
 
@@ -78,6 +83,29 @@ enum AppSettings {
 
     static func clampCap(_ value: Int) -> Int {
         min(max(value, concurrencyCapMin), concurrencyCapMax)
+    }
+
+    // MARK: - Summary concurrency cap
+
+    /// Maximum number of `PreReviewSummaryRunner` invocations that can run
+    /// concurrently. Separate from `concurrencyCap` (the Review pool).
+    /// Default 5, range [1, 10].
+    static var summaryConcurrencyCap: Int {
+        get { summaryConcurrencyCap(defaults: .standard) }
+        set { setSummaryConcurrencyCap(newValue, defaults: .standard) }
+    }
+
+    static func summaryConcurrencyCap(defaults: UserDefaults) -> Int {
+        let raw = defaults.object(forKey: summaryConcurrencyCapKey) as? Int ?? summaryConcurrencyCapDefault
+        return clampSummaryCap(raw)
+    }
+
+    static func setSummaryConcurrencyCap(_ value: Int, defaults: UserDefaults) {
+        defaults.set(clampSummaryCap(value), forKey: summaryConcurrencyCapKey)
+    }
+
+    static func clampSummaryCap(_ value: Int) -> Int {
+        min(max(value, summaryConcurrencyCapMin), summaryConcurrencyCapMax)
     }
 
     // MARK: - Project key prefixes
