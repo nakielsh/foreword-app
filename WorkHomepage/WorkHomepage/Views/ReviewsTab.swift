@@ -636,8 +636,95 @@ struct ReviewsTab: View {
             async let pending = client.fetchPendingReviewPRs(currentUser: login)
             async let reviewed = client.fetchReviewedByMePRs(currentUser: login)
             let (p, r) = try await (pending, reviewed)
-            vm.pendingPRs = p
-            vm.reviewedPRs = r
+
+            // 3. Parallel per-PR branch fetch to populate branchRef so
+            //    JiraBadgeView renders on cards. Individual failures leave
+            //    branchRef nil (one bad PR does not discard the whole list).
+            let enrichedPending: [PendingReviewPR] = await withTaskGroup(
+                of: (Int, PendingReviewPR).self
+            ) { group in
+                for (index, pr) in p.enumerated() {
+                    group.addTask {
+                        var branchRef: String? = nil
+                        do {
+                            let info = try await PRBranchAPI.default().fetchPRBranchInfo(
+                                repo: pr.repoFullName,
+                                number: pr.number
+                            )
+                            branchRef = info.headBranch
+                        } catch {
+                            // Leave branchRef nil — badge just won't render for this PR.
+                        }
+                        let enriched = PendingReviewPR(
+                            id: pr.id,
+                            number: pr.number,
+                            title: pr.title,
+                            htmlURL: pr.htmlURL,
+                            authorLogin: pr.authorLogin,
+                            repoFullName: pr.repoFullName,
+                            createdAt: pr.createdAt,
+                            isDraft: pr.isDraft,
+                            approvalCount: pr.approvalCount,
+                            changesRequestedCount: pr.changesRequestedCount,
+                            isDismissed: pr.isDismissed,
+                            myPriorReviewState: pr.myPriorReviewState,
+                            branchRef: branchRef,
+                            authorAvatarURL: pr.authorAvatarURL
+                        )
+                        return (index, enriched)
+                    }
+                }
+                var collected: [(Int, PendingReviewPR)] = []
+                for await result in group {
+                    collected.append(result)
+                }
+                return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
+            }
+
+            let enrichedReviewed: [ReviewedPR] = await withTaskGroup(
+                of: (Int, ReviewedPR).self
+            ) { group in
+                for (index, pr) in r.enumerated() {
+                    group.addTask {
+                        var branchRef: String? = nil
+                        do {
+                            let info = try await PRBranchAPI.default().fetchPRBranchInfo(
+                                repo: pr.repoFullName,
+                                number: pr.number
+                            )
+                            branchRef = info.headBranch
+                        } catch {
+                            // Leave branchRef nil — badge just won't render for this PR.
+                        }
+                        let enriched = ReviewedPR(
+                            id: pr.id,
+                            number: pr.number,
+                            title: pr.title,
+                            htmlURL: pr.htmlURL,
+                            authorLogin: pr.authorLogin,
+                            repoFullName: pr.repoFullName,
+                            createdAt: pr.createdAt,
+                            isDraft: pr.isDraft,
+                            approvalCount: pr.approvalCount,
+                            changesRequestedCount: pr.changesRequestedCount,
+                            myLastReviewState: pr.myLastReviewState,
+                            myLastReviewSubmittedAt: pr.myLastReviewSubmittedAt,
+                            newCommitsSinceReview: pr.newCommitsSinceReview,
+                            branchRef: branchRef,
+                            authorAvatarURL: pr.authorAvatarURL
+                        )
+                        return (index, enriched)
+                    }
+                }
+                var collected: [(Int, ReviewedPR)] = []
+                for await result in group {
+                    collected.append(result)
+                }
+                return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
+            }
+
+            vm.pendingPRs = enrichedPending
+            vm.reviewedPRs = enrichedReviewed
             vm.hasFetchedOnce = true
 
             // 3. Slice 15 — sweep tracked PRs that no longer appear in either
