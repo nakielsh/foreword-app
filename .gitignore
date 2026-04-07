@@ -6,3 +6,7 @@ xcuserdata/
 DerivedData/
 build/
 .DS_Store
+
+# Claude Code agent infra (worktrees, local settings)
+.claude/
+.claire/
