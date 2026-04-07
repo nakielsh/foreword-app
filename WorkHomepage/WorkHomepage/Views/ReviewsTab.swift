@@ -311,6 +311,34 @@ struct ReviewsTab: View {
         orchestrator.queued.firstIndex(where: { $0.id == review.id }) ?? 0
     }
 
+    // MARK: - Non-throwing fetch helpers (used inside withTaskGroup tasks)
+
+    /// Fetches branch info, swallowing errors. Nil means "not available".
+    private static func safeFetchBranchInfo(repo: String, number: Int) async -> PRBranchInfo? {
+        do {
+            return try await PRBranchAPI.default().fetchPRBranchInfo(repo: repo, number: number)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Fetches GraphQL reviewer state, swallowing errors. Nil means "not available".
+    private static func safeFetchReviewState(
+        repo: String,
+        number: Int,
+        currentUser: String
+    ) async -> PRReviewState? {
+        do {
+            return try await GitHubClient().fetchPRReviewState(
+                repo: repo,
+                number: number,
+                currentUser: currentUser
+            )
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Filter bar
 
     @ViewBuilder
@@ -637,24 +665,23 @@ struct ReviewsTab: View {
             async let reviewed = client.fetchReviewedByMePRs(currentUser: login)
             let (p, r) = try await (pending, reviewed)
 
-            // 3. Parallel per-PR branch fetch to populate branchRef so
-            //    JiraBadgeView renders on cards. Individual failures leave
-            //    branchRef nil (one bad PR does not discard the whole list).
+            // 3. Parallel per-PR branch fetch + reviewer-state fetch to populate
+            //    branchRef (JiraBadgeView) and reviewerEntries (facepile).
+            //    Both sub-fetches are fired concurrently inside each task via
+            //    async let. Individual failures leave the affected field at its
+            //    default — one bad PR does not discard the whole list.
             let enrichedPending: [PendingReviewPR] = await withTaskGroup(
                 of: (Int, PendingReviewPR).self
             ) { group in
                 for (index, pr) in p.enumerated() {
                     group.addTask {
-                        var branchRef: String? = nil
-                        do {
-                            let info = try await PRBranchAPI.default().fetchPRBranchInfo(
-                                repo: pr.repoFullName,
-                                number: pr.number
-                            )
-                            branchRef = info.headBranch
-                        } catch {
-                            // Leave branchRef nil — badge just won't render for this PR.
-                        }
+                        async let branchFetch = Self.safeFetchBranchInfo(
+                            repo: pr.repoFullName, number: pr.number
+                        )
+                        async let reviewFetch = Self.safeFetchReviewState(
+                            repo: pr.repoFullName, number: pr.number, currentUser: login
+                        )
+                        let (branchInfo, reviewState) = await (branchFetch, reviewFetch)
                         let enriched = PendingReviewPR(
                             id: pr.id,
                             number: pr.number,
@@ -668,8 +695,9 @@ struct ReviewsTab: View {
                             changesRequestedCount: pr.changesRequestedCount,
                             isDismissed: pr.isDismissed,
                             myPriorReviewState: pr.myPriorReviewState,
-                            branchRef: branchRef,
-                            authorAvatarURL: pr.authorAvatarURL
+                            branchRef: branchInfo?.headBranch,
+                            authorAvatarURL: pr.authorAvatarURL,
+                            reviewerEntries: reviewState?.reviewers ?? []
                         )
                         return (index, enriched)
                     }
@@ -686,16 +714,13 @@ struct ReviewsTab: View {
             ) { group in
                 for (index, pr) in r.enumerated() {
                     group.addTask {
-                        var branchRef: String? = nil
-                        do {
-                            let info = try await PRBranchAPI.default().fetchPRBranchInfo(
-                                repo: pr.repoFullName,
-                                number: pr.number
-                            )
-                            branchRef = info.headBranch
-                        } catch {
-                            // Leave branchRef nil — badge just won't render for this PR.
-                        }
+                        async let branchFetch = Self.safeFetchBranchInfo(
+                            repo: pr.repoFullName, number: pr.number
+                        )
+                        async let reviewFetch = Self.safeFetchReviewState(
+                            repo: pr.repoFullName, number: pr.number, currentUser: login
+                        )
+                        let (branchInfo, reviewState) = await (branchFetch, reviewFetch)
                         let enriched = ReviewedPR(
                             id: pr.id,
                             number: pr.number,
@@ -710,8 +735,9 @@ struct ReviewsTab: View {
                             myLastReviewState: pr.myLastReviewState,
                             myLastReviewSubmittedAt: pr.myLastReviewSubmittedAt,
                             newCommitsSinceReview: pr.newCommitsSinceReview,
-                            branchRef: branchRef,
-                            authorAvatarURL: pr.authorAvatarURL
+                            branchRef: branchInfo?.headBranch,
+                            authorAvatarURL: pr.authorAvatarURL,
+                            reviewerEntries: reviewState?.reviewers ?? []
                         )
                         return (index, enriched)
                     }
@@ -816,14 +842,22 @@ private struct PendingPRCard: View {
                             .foregroundStyle(Color.textMuted)
                     } else {
                         if pr.approvalCount > 0 {
-                            Label("\(pr.approvalCount)", systemImage: "checkmark")
-                                .font(Font.appBody(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.accentFern)
+                            ReviewerFacepile(
+                                entries: pr.reviewerEntries,
+                                status: .approved,
+                                count: pr.approvalCount,
+                                ringColor: .accentFern,
+                                glyph: "checkmark"
+                            )
                         }
                         if pr.changesRequestedCount > 0 {
-                            Label("\(pr.changesRequestedCount)", systemImage: "xmark")
-                                .font(Font.appBody(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.accentTerracotta)
+                            ReviewerFacepile(
+                                entries: pr.reviewerEntries,
+                                status: .changesRequested,
+                                count: pr.changesRequestedCount,
+                                ringColor: .accentTerracotta,
+                                glyph: "xmark"
+                            )
                         }
                     }
                 }
@@ -898,14 +932,22 @@ private struct ReviewedPRCard: View {
                     }
                     Spacer()
                     if pr.approvalCount > 0 {
-                        Label("\(pr.approvalCount)", systemImage: "checkmark")
-                            .font(Font.appBody(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.accentFern)
+                        ReviewerFacepile(
+                            entries: pr.reviewerEntries,
+                            status: .approved,
+                            count: pr.approvalCount,
+                            ringColor: .accentFern,
+                            glyph: "checkmark"
+                        )
                     }
                     if pr.changesRequestedCount > 0 {
-                        Label("\(pr.changesRequestedCount)", systemImage: "xmark")
-                            .font(Font.appBody(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.accentTerracotta)
+                        ReviewerFacepile(
+                            entries: pr.reviewerEntries,
+                            status: .changesRequested,
+                            count: pr.changesRequestedCount,
+                            ringColor: .accentTerracotta,
+                            glyph: "xmark"
+                        )
                     }
                 }
                 if pr.newCommitsSinceReview > 0 {
@@ -945,6 +987,70 @@ private struct ReviewedPRCard: View {
         case .approved:         return Color.accentFern.opacity(0.30)
         case .commented:        return Color.accentMarigold.opacity(0.30)
         default:                return Color.borderSubtle
+        }
+    }
+}
+
+// MARK: - Reviewer facepile (avatars + count glyph)
+
+/// Renders up to 3 reviewer avatars with slight overlap (facepile) followed by
+/// the status glyph and count. When `entries` is empty (fetch not yet complete
+/// or failed), falls back to count-only rendering so cards remain usable.
+///
+/// Layout: [avatar][avatar][avatar][+N] ✓ 2
+///
+/// The first 3 matching entries are shown; extras are collapsed into a "+N" pill.
+private struct ReviewerFacepile: View {
+    /// All reviewer entries for the PR (all statuses).
+    let entries: [ReviewerEntry]
+    /// The `ReviewerStatus` to filter on (`.approved` or `.changesRequested`).
+    let status: ReviewerStatus
+    /// Pre-computed count from the REST search result (used when `entries` is empty).
+    let count: Int
+    /// Ring color drawn around each avatar (1pt stroke).
+    let ringColor: Color
+    /// SF symbol for the glyph shown after the avatars.
+    let glyph: String
+
+    private static let maxAvatars = 3
+
+    private var matching: [ReviewerEntry] {
+        entries.filter { $0.status == status }
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if !matching.isEmpty {
+                facepile
+            }
+            Label("\(count)", systemImage: glyph)
+                .font(Font.appBody(size: 11, weight: .semibold))
+                .foregroundStyle(ringColor)
+        }
+    }
+
+    @ViewBuilder
+    private var facepile: some View {
+        let visible = Array(matching.prefix(Self.maxAvatars))
+        let overflow = matching.count - visible.count
+        HStack(spacing: -4) {
+            ForEach(visible) { entry in
+                ReviewerAvatarView(
+                    login: entry.login,
+                    avatarURL: entry.avatarURL,
+                    role: .reviewer(status: entry.status),
+                    size: 20,
+                    borderColor: ringColor
+                )
+            }
+            if overflow > 0 {
+                Text("+\(overflow)")
+                    .font(Font.appBody(size: 10, weight: .semibold))
+                    .foregroundStyle(ringColor)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Capsule().fill(ringColor.opacity(0.15)))
+            }
         }
     }
 }

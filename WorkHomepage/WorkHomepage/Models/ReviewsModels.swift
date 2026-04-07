@@ -81,6 +81,11 @@ struct PendingReviewPR: Identifiable, Hashable {
     /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
     /// the `/search/issues` payload. Nil when not available.
     let authorAvatarURL: String?
+    /// Per-reviewer status entries fetched via GraphQL (`fetchPRReviewState`).
+    /// Populated after the initial search result arrives; defaults to `[]` so
+    /// cards render immediately with count-only fallback until the async fetch
+    /// completes. Individual fetch failures also leave this empty.
+    let reviewerEntries: [ReviewerEntry]
 }
 
 // MARK: - Reviewed-by-me PRs
@@ -116,6 +121,11 @@ struct ReviewedPR: Identifiable, Hashable {
     /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
     /// the `/search/issues` payload. Nil when not available.
     let authorAvatarURL: String?
+    /// Per-reviewer status entries fetched via GraphQL (`fetchPRReviewState`).
+    /// Populated after the initial search result arrives; defaults to `[]` so
+    /// cards render immediately with count-only fallback until the async fetch
+    /// completes. Individual fetch failures also leave this empty.
+    let reviewerEntries: [ReviewerEntry]
 }
 
 // MARK: - REST decode shapes (shared with tests + sidecar)
