@@ -31,6 +31,9 @@ struct ReviewerAvatarView: View {
     let avatarURL: URL?
     let role: AvatarRole
     var size: CGFloat = 24
+    /// Optional ring drawn around the avatar circle. 1pt stroke.
+    /// Nil = no ring (default, back-compat).
+    var borderColor: Color? = nil
 
     @State private var image: NSImage? = nil
 
@@ -53,6 +56,11 @@ struct ReviewerAvatarView: View {
             .scaledToFill()
             .frame(width: size, height: size)
             .clipShape(Circle())
+            .overlay {
+                if let borderColor {
+                    Circle().strokeBorder(borderColor, lineWidth: 1)
+                }
+            }
             .allowsHitTesting(false)
     }
 
