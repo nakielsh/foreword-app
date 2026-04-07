@@ -93,6 +93,7 @@ struct PreReviewSummaryRunner {
             "-p", prompt,
             "--output-format", "stream-json",
             "--include-partial-messages",
+            "--verbose",
             "--json-schema", summaryJSONSchema,
             "--allowed-tools", "Bash(gh:*)"
         ]
