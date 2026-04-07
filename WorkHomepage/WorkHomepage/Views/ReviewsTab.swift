@@ -71,8 +71,9 @@ struct ReviewsTab: View {
     @State private var orchestrator = ReviewOrchestrator.shared
 
     /// Slice 25 — Pre-Review Summary orchestrator. Shared across all PR cards
-    /// so they participate in the same concurrency pool.
-    @State private var summaryOrchestrator = PreReviewSummaryOrchestrator.shared
+    /// so they participate in the same concurrency pool. Observed so
+    /// `@Published` state changes (running → cached / failed) re-render cards.
+    @ObservedObject private var summaryOrchestrator = PreReviewSummaryOrchestrator.shared
     /// SwiftData context borrowed for the orchestrator's `ReviewStore`. We
     /// pull it from the environment in `body` and cache it the first time
     /// `startReview` runs.
@@ -1405,7 +1406,9 @@ struct SummarizeView: View {
     let repo: String
     let prNumber: Int
     /// Slice 25: injected by the parent tab so all PR cards share the pool.
-    let orchestrator: PreReviewSummaryOrchestrator
+    /// Observed so the card re-renders when the orchestrator publishes state
+    /// transitions (running → cached / failed).
+    @ObservedObject var orchestrator: PreReviewSummaryOrchestrator
 
     // MARK: - Per-card state
 
