@@ -73,7 +73,7 @@ struct PreReviewSummaryRunner {
         repo: String,
         prNumber: Int,
         headSha: String,
-        timeout: Duration = .seconds(60),
+        timeout: Duration = .seconds(180),
         claudePath: URL? = nil
     ) -> AsyncStream<SummaryEvent> {
         let resolvedExe: URL
