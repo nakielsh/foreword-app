@@ -90,6 +90,7 @@ struct PreReviewSummaryRunner {
 
         let prompt = buildPrompt(repo: repo, prNumber: prNumber, headSha: headSha)
         let arguments = [
+            "--bare",
             "-p", prompt,
             "--output-format", "stream-json",
             "--include-partial-messages",
