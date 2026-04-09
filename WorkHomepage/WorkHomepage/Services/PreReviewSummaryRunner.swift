@@ -279,21 +279,33 @@ struct PreReviewSummaryRunner {
             return [.error(message: detail)]
         }
 
-        // Try to decode the structured payload. Accepts both a JSON-encoded
-        // string and an inline JSON object — matches ClaudeRunner's dual handling.
+        // Try to decode the structured payload. Order matters:
+        // 1. `structured_output` (set when --json-schema is honored)
+        // 2. `result` as inline object
+        // 3. `result` as JSON-encoded string
         let jsonString: String?
-        if let s = raw["result"] as? String {
+        if let obj = raw["structured_output"] as? [String: Any],
+           let d = try? JSONSerialization.data(withJSONObject: obj, options: []),
+           let s = String(data: d, encoding: .utf8) {
             jsonString = s
         } else if let obj = raw["result"] as? [String: Any],
                   let d = try? JSONSerialization.data(withJSONObject: obj, options: []),
                   let s = String(data: d, encoding: .utf8) {
+            jsonString = s
+        } else if let s = raw["result"] as? String, !s.isEmpty {
             jsonString = s
         } else {
             jsonString = nil
         }
 
         guard let payload = jsonString else {
-            return [.error(message: "claude returned an unrecognizable result payload")]
+            // Log the entire result event so we can see what fields claude actually emitted.
+            if let dump = try? JSONSerialization.data(withJSONObject: raw, options: [.prettyPrinted]),
+               let str = String(data: dump, encoding: .utf8) {
+                FileHandle.standardError.write(Data("[PreReviewSummary] empty/missing result payload. full event:\n\(str)\n".utf8))
+            }
+            let keys = Array(raw.keys).joined(separator: ", ")
+            return [.error(message: "claude returned no result payload. event keys: \(keys)")]
         }
 
         return decodeSummaryPayload(payload)
