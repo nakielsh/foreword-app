@@ -314,7 +314,11 @@ struct PreReviewSummaryRunner {
                 return [.result(what: schema.what, why: schema.why, risk: schema.risk)]
             }
         }
-        return [.error(message: "could not decode summary from claude's response")]
+        // Surface the raw payload (truncated) so the failure is debuggable
+        // from the card without launching Console.
+        let preview = String(json.prefix(400))
+        FileHandle.standardError.write(Data("[PreReviewSummary] decode failure. raw payload:\n\(json)\n".utf8))
+        return [.error(message: "could not decode summary. raw: \(preview)")]
     }
 
     // MARK: - Prompt
