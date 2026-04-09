@@ -89,13 +89,19 @@ struct PreReviewSummaryRunner {
         }
 
         let prompt = buildPrompt(repo: repo, prNumber: prNumber, headSha: headSha)
+        // --output-format json: single JSON array on stdout; last element is the
+        // result event with `structured_output` holding the schema-validated payload.
+        // --mcp-config '{"mcpServers":{}}': suppress user's MCP servers so
+        // unrelated tools don't trigger TCC popups during summary spawn.
+        // --disallowed-tools: defense in depth; allowed-tools is allowlist
+        // semantics, but explicit denials prevent any drift if defaults change.
         let arguments = [
             "-p", prompt,
-            "--output-format", "stream-json",
-            "--include-partial-messages",
-            "--verbose",
+            "--output-format", "json",
             "--json-schema", summaryJSONSchema,
-            "--allowed-tools", "Bash(gh:*)"
+            "--allowed-tools", "Bash(gh:*)",
+            "--disallowed-tools", "Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,TodoWrite,Task",
+            "--mcp-config", "{\"mcpServers\":{}}"
         ]
 
         return makeStream(
@@ -126,7 +132,10 @@ struct PreReviewSummaryRunner {
                 let process = Process()
                 process.executableURL = executable
                 process.arguments = arguments
-                // ADR-0002: no cwd — runs from any directory.
+                // ADR-0002: no project cwd. Use /tmp so claude has nothing in
+                // its working directory that could trigger macOS TCC popups
+                // for filesystem access.
+                process.currentDirectoryURL = URL(fileURLWithPath: "/tmp")
 
                 process.environment = ClaudeRunner.buildClaudeEnv(executable: executable)
 
@@ -161,34 +170,9 @@ struct PreReviewSummaryRunner {
                 let stdoutHandle = stdoutPipe.fileHandleForReading
                 let stderrHandle = stderrPipe.fileHandleForReading
 
-                var buffer = Data()
-                while true {
-                    let chunk: Data
-                    do {
-                        chunk = try stdoutHandle.read(upToCount: 64 * 1024) ?? Data()
-                    } catch {
-                        chunk = Data()
-                    }
-                    if chunk.isEmpty { break }
-                    buffer.append(chunk)
-                    while let nlIndex = buffer.firstIndex(of: 0x0A) {
-                        let lineData = buffer.subdata(in: 0..<nlIndex)
-                        buffer.removeSubrange(0...nlIndex)
-                        guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else {
-                            continue
-                        }
-                        for event in decodeLine(line) {
-                            continuation.yield(event)
-                        }
-                    }
-                }
-                // Trailing buffer (no-newline tail).
-                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
-                    for event in decodeLine(line) {
-                        continuation.yield(event)
-                    }
-                }
-
+                // --output-format json emits one JSON value (array) on stdout,
+                // not line-delimited. Drain the whole pipe, then decode.
+                let stdoutData = (try? stdoutHandle.readToEnd()) ?? Data()
                 process.waitUntilExit()
                 timeoutWorkItem.cancel()
 
@@ -197,11 +181,21 @@ struct PreReviewSummaryRunner {
 
                 if box.didTimeout {
                     continuation.yield(.error(message: "timeout"))
-                } else if process.terminationStatus != 0 {
+                    continuation.finish()
+                    return
+                }
+
+                if process.terminationStatus != 0 {
                     let payload = stderr.isEmpty
                         ? "claude exited with status \(process.terminationStatus)"
                         : stderr
                     continuation.yield(.error(message: payload))
+                    continuation.finish()
+                    return
+                }
+
+                for event in decodeJSONOutput(stdoutData) {
+                    continuation.yield(event)
                 }
                 continuation.finish()
             }
@@ -219,7 +213,37 @@ struct PreReviewSummaryRunner {
         }
     }
 
-    // MARK: - Line decoding
+    // MARK: - JSON-array output decoding (--output-format json)
+
+    /// Parse the entire stdout blob as a JSON array of events. The terminal
+    /// `result` event carries `structured_output` when `--json-schema` is set.
+    static func decodeJSONOutput(_ data: Data) -> [SummaryEvent] {
+        guard !data.isEmpty else {
+            return [.error(message: "claude returned empty output")]
+        }
+
+        // Try array shape first (--output-format json default).
+        if let array = try? JSONSerialization.jsonObject(with: data, options: []) as? [[String: Any]] {
+            if let resultEvent = array.last(where: { ($0["type"] as? String) == "result" }) {
+                return decodeResultEvent(resultEvent)
+            }
+            // No result event — surface what we got for debugging.
+            let types = array.compactMap { $0["type"] as? String }.joined(separator: ", ")
+            FileHandle.standardError.write(Data("[PreReviewSummary] no result event. types: \(types)\n".utf8))
+            return [.error(message: "no result event. types seen: \(types)")]
+        }
+
+        // Fallback: single object (older claude versions or different config).
+        if let obj = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+            return decodeResultEvent(obj)
+        }
+
+        let preview = String(data: data.prefix(400), encoding: .utf8) ?? "<non-utf8>"
+        FileHandle.standardError.write(Data("[PreReviewSummary] unparseable stdout. preview:\n\(preview)\n".utf8))
+        return [.error(message: "unparseable claude output. raw: \(preview)")]
+    }
+
+    // MARK: - Line decoding (legacy stream-json — kept for tests)
 
     /// Decode one stream-json line into zero or more `SummaryEvent`s. Parse
     /// failures are silently dropped — permissive contract mirrors ClaudeRunner.
