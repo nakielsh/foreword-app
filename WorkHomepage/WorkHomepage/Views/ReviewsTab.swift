@@ -1608,16 +1608,23 @@ struct SummarizeView: View {
 
 // MARK: - Summary bullets (slice 24 + 25)
 
-/// Renders the cached summary text from `PreReviewSummaryDisplay` as a single
-/// flowing block. Plain prose, soft-wrapped, no labels.
+/// Renders the cached summary as a small pill. Hover surfaces the full prose
+/// as a `.help(...)` tooltip — nothing else expands inline.
 private struct SummaryBullets: View {
     let display: PreReviewSummaryDisplay
 
     var body: some View {
-        Text(display.text)
-            .font(Font.appBody(size: 12))
-            .foregroundStyle(Color.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 4) {
+            Image(systemName: "doc.text")
+                .font(Font.appBody(size: 10, weight: .semibold))
+            Text("Summary")
+                .font(Font.appBody(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(Color.accentFern)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.accentFern.opacity(0.12)))
+        .overlay(Capsule().stroke(Color.accentFern.opacity(0.3), lineWidth: 0.5))
+        .help(display.text)
     }
 }
