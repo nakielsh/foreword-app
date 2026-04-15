@@ -83,7 +83,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
 
     /// What the fake runner emits after the gate is released.
     private enum RunOutcome: Sendable {
-        case success(what: String, why: String, risk: String)
+        case success(text: String)
         case failure(message: String)
     }
 
@@ -103,7 +103,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
             lock.lock()
             defer { lock.unlock() }
             if pendingOutcomes.isEmpty {
-                return .success(what: "w", why: "y", risk: "r")
+                return .success(text: "default summary text")
             }
             return pendingOutcomes.removeFirst()
         }
@@ -154,8 +154,8 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
                     Task {
                         await gate.wait()
                         switch outcome {
-                        case .success(let w, let y, let r):
-                            continuation.yield(.result(what: w, why: y, risk: r))
+                        case .success(let t):
+                            continuation.yield(.result(text: t))
                         case .failure(let msg):
                             continuation.yield(.error(message: msg))
                         }
@@ -218,9 +218,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         let summary = PreReviewSummary(
             prKey: "org/repo#1",
             headSha: "abc123",
-            what: "Added feature",
-            why: "User story",
-            risk: "Low risk",
+            text: "Added feature for user story; low risk.",
             generatedAt: Date()
         )
         store.save(summary)
@@ -229,9 +227,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         let id = orch.start(repo: "org/repo", prNumber: 1, prKey: "org/repo#1", headSha: "abc123")
 
         if case .cached(let display) = orch.state(id) {
-            XCTAssertEqual(display.what, "Added feature")
-            XCTAssertEqual(display.why, "User story")
-            XCTAssertEqual(display.risk, "Low risk")
+            XCTAssertEqual(display.text, "Added feature for user story; low risk.")
         } else {
             XCTFail("Expected .cached state, got \(orch.state(id))")
         }
@@ -248,9 +244,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         let summary = PreReviewSummary(
             prKey: "org/repo#2",
             headSha: "def456",
-            what: "W",
-            why: "Y",
-            risk: "R",
+            text: "Cached summary",
             generatedAt: Date()
         )
         store.save(summary)
@@ -264,10 +258,8 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         }
 
         XCTAssertEqual(received.count, 1)
-        if case .result(let w, let y, let r) = received[0] {
-            XCTAssertEqual(w, "W")
-            XCTAssertEqual(y, "Y")
-            XCTAssertEqual(r, "R")
+        if case .result(let t) = received[0] {
+            XCTAssertEqual(t, "Cached summary")
         } else {
             XCTFail("Expected .result event")
         }
@@ -411,7 +403,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         let container = try makeContainer()
         let context = ModelContext(container)
         let fake = FakeRunnerFactory()
-        fake.enqueue(.failure(message: "connection reset"), .success(what: "W", why: "Y", risk: "R"))
+        fake.enqueue(.failure(message: "connection reset"), .success(text: "Retry summary"))
 
         let orch = makeOrchestrator(factory: fake, context: context)
 
@@ -441,9 +433,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
             return false
         }
         if case .cached(let display) = orch.state(id2) {
-            XCTAssertEqual(display.what, "W")
-            XCTAssertEqual(display.why, "Y")
-            XCTAssertEqual(display.risk, "R")
+            XCTAssertEqual(display.text, "Retry summary")
         } else {
             XCTFail("Expected .cached state after retry")
         }
@@ -452,7 +442,7 @@ final class PreReviewSummaryOrchestratorTests: XCTestCase {
         let store = PreReviewSummaryStore(context: context)
         let persisted = store.existing(prKey: "r#1", headSha: "s1")
         XCTAssertNotNil(persisted)
-        XCTAssertEqual(persisted?.what, "W")
+        XCTAssertEqual(persisted?.text, "Retry summary")
     }
 
     // MARK: - Cap = 3

@@ -28,14 +28,10 @@ final class PreReviewSummary {
     /// the cache by producing a row with a new `id`.
     var headSha: String
 
-    /// One sentence: what changed.
-    var what: String
-
-    /// One sentence: why this change is happening.
-    var why: String
-
-    /// One sentence: regressions / footguns / areas to scrutinize.
-    var risk: String
+    /// Single free-form summary text. Free-form so the prompt can decide how
+    /// to organize it (sentence, paragraph, bullets) without the schema
+    /// constraining shape.
+    var text: String
 
     /// When this summary was generated.
     var generatedAt: Date
@@ -43,17 +39,13 @@ final class PreReviewSummary {
     init(
         prKey: String,
         headSha: String,
-        what: String,
-        why: String,
-        risk: String,
+        text: String,
         generatedAt: Date
     ) {
         self.id = "\(prKey)|\(headSha)"
         self.prKey = prKey
         self.headSha = headSha
-        self.what = what
-        self.why = why
-        self.risk = risk
+        self.text = text
         self.generatedAt = generatedAt
     }
 }

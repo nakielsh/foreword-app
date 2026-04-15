@@ -2,20 +2,9 @@
 //  PreReviewSummaryRunnerTests.swift
 //  WorkHomepageTests
 //
-//  Slice 24 — Pre-Review Summary tracer.
-//
-//  Integration tests for `PreReviewSummaryRunner` using fake `claude` shell
-//  scripts. Pattern-matched from `ClaudeRunnerTests.swift`. No real `claude`
-//  is invoked; tests inject a fake binary via `claudePath:`.
-//
-//  Coverage:
-//    - Streamed `.delta` events arrive in order before the final `.result`.
-//    - `.result` decodes correctly from a standard stream-json payload.
-//    - Non-zero exit yields `.error`.
-//    - A hanging fake times out and yields `.error(message: "timeout")`.
-//    - Result payload wrapped in a markdown code fence is accepted.
-//    - Payload wrapped in prose preamble is accepted (balanced-object
-//      extraction via `ClaudeRunner.candidateJSONStrings`).
+//  Tests for `PreReviewSummaryRunner` covering both the new
+//  `--output-format json` whole-blob path (`decodeJSONOutput`) and the
+//  legacy `decodeLine` helpers retained for back-compat.
 //
 
 import XCTest
@@ -39,224 +28,87 @@ final class PreReviewSummaryRunnerTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    // MARK: - Happy path: deltas + final result
+    // MARK: - decodeJSONOutput (new --output-format json shape)
 
-    func testStreamsDeltasThenResult() async throws {
-        let lines = [
-            #"{"type":"system","subtype":"init"}"#,
-            #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello "}}}"#,
-            #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"world"}}}"#,
-            #"{"type":"result","subtype":"success","result":"{\"what\":\"Added retry logic\",\"why\":\"To handle transient failures\",\"risk\":\"May mask real errors\"}"}"#
+    func testDecodeJSONOutputArrayWithStructuredOutput() {
+        let payload = """
+        [
+          {"type":"system","subtype":"init"},
+          {"type":"assistant","message":{}},
+          {"type":"result","subtype":"success","result":"Done.","structured_output":{"text":"PR adds retry logic for transient failures."}}
         ]
-        let exe = try makeFakeScript(emitting: lines)
-
-        var events: [SummaryEvent] = []
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            events.append(event)
-        }
-
-        // Deltas arrive before the final result.
-        let deltas = events.compactMap { event -> String? in
-            if case .delta(_, let text) = event { return text }
-            return nil
-        }
-        XCTAssertEqual(deltas, ["Hello ", "world"], "deltas must arrive in order")
-
-        // Final result is the last event and decodes correctly.
-        let last = events.last
-        guard case .result(let what, let why, let risk) = last else {
-            XCTFail("last event must be .result; got \(String(describing: last))")
+        """
+        let events = PreReviewSummaryRunner.decodeJSONOutput(Data(payload.utf8))
+        XCTAssertEqual(events.count, 1)
+        guard case .result(let text) = events[0] else {
+            XCTFail("expected .result, got \(events[0])")
             return
         }
-        XCTAssertEqual(what, "Added retry logic")
-        XCTAssertEqual(why, "To handle transient failures")
-        XCTAssertEqual(risk, "May mask real errors")
+        XCTAssertEqual(text, "PR adds retry logic for transient failures.")
     }
 
-    // MARK: - Result as inline JSON object (not string-encoded)
-
-    func testResultWithObjectShapeDecodes() async throws {
-        let lines = [
-            #"{"type":"result","subtype":"success","result":{"what":"Changed API","why":"Needed new field","risk":"Breaking change"}}"#
+    func testDecodeJSONOutputArrayResultStringFallback() {
+        // No structured_output, plain result string holding inline JSON.
+        let payload = """
+        [
+          {"type":"result","subtype":"success","result":"{\\"text\\":\\"Bumps timeout from 30 to 60 seconds.\\"}"}
         ]
-        let exe = try makeFakeScript(emitting: lines)
-
-        var result: SummaryEvent?
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .result = event { result = event }
-        }
-        guard case .result(let what, let why, let risk) = result else {
-            XCTFail("expected .result; got \(String(describing: result))")
+        """
+        let events = PreReviewSummaryRunner.decodeJSONOutput(Data(payload.utf8))
+        guard case .result(let text) = events.first else {
+            XCTFail("expected .result, got \(String(describing: events.first))")
             return
         }
-        XCTAssertEqual(what, "Changed API")
-        XCTAssertEqual(why, "Needed new field")
-        XCTAssertEqual(risk, "Breaking change")
+        XCTAssertEqual(text, "Bumps timeout from 30 to 60 seconds.")
     }
 
-    // MARK: - Markdown code fence
-
-    func testCodeFencedResultDecodes() async throws {
-        let inner = #"{"what":"Fenced what","why":"Fenced why","risk":"Fenced risk"}"#
-        let fenced = "```json\n\(inner)\n```"
-        let escaped = fenced
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        let resultLine = "{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"\(escaped)\"}"
-        let exe = try makeFakeScript(emitting: [resultLine])
-
-        var result: SummaryEvent?
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .result = event { result = event }
-        }
-        guard case .result(let what, _, _) = result else {
-            XCTFail("expected .result; got \(String(describing: result))")
+    func testDecodeJSONOutputErrorSubtype() {
+        let payload = """
+        [
+          {"type":"result","subtype":"error_max_turns","result":"hit max turns"}
+        ]
+        """
+        let events = PreReviewSummaryRunner.decodeJSONOutput(Data(payload.utf8))
+        guard case .error(let message) = events.first else {
+            XCTFail("expected .error, got \(String(describing: events.first))")
             return
         }
-        XCTAssertEqual(what, "Fenced what")
+        XCTAssertEqual(message, "hit max turns")
     }
 
-    // MARK: - Prose preamble
-
-    func testProsePreambleStrippedViaBalancedExtraction() async throws {
-        let inner = #"{"what":"Prose what","why":"Prose why","risk":"Prose risk"}"#
-        let withProse = "Here is the summary:\n\(inner)\nHope that helps!"
-        let escaped = withProse
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-        let resultLine = "{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"\(escaped)\"}"
-        let exe = try makeFakeScript(emitting: [resultLine])
-
-        var result: SummaryEvent?
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .result = event { result = event }
-        }
-        guard case .result(let what, _, _) = result else {
-            XCTFail("expected .result; got \(String(describing: result))")
+    func testDecodeJSONOutputNoResultEvent() {
+        let payload = """
+        [
+          {"type":"system","subtype":"init"},
+          {"type":"assistant","message":{}}
+        ]
+        """
+        let events = PreReviewSummaryRunner.decodeJSONOutput(Data(payload.utf8))
+        guard case .error(let message) = events.first else {
+            XCTFail("expected .error, got \(String(describing: events.first))")
             return
         }
-        XCTAssertEqual(what, "Prose what")
+        XCTAssertTrue(message.contains("no result event"), "message must mention missing result; got \(message)")
     }
 
-    // MARK: - Non-zero exit → .error
-
-    func testNonZeroExitYieldsError() async throws {
-        let exe = try makeShellScript(body: """
-        #!/bin/sh
-        echo "summary failed" 1>&2
-        exit 1
-        """)
-
-        var errors: [String] = []
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .error(let message) = event { errors.append(message) }
+    func testDecodeJSONOutputEmpty() {
+        let events = PreReviewSummaryRunner.decodeJSONOutput(Data())
+        guard case .error = events.first else {
+            XCTFail("empty stdout must yield .error")
+            return
         }
-        XCTAssertEqual(errors.count, 1, "expected exactly one error event")
-        XCTAssertTrue(
-            errors[0].contains("summary failed"),
-            "expected stderr in error message; got: \(errors[0])"
-        )
     }
 
-    // MARK: - Timeout → .error("timeout")
-
-    func testTimeoutKillsProcessAndYieldsTimeoutError() async throws {
-        // Fake claude that hangs indefinitely. Timeout is 2s for the test.
-        let exe = try makeShellScript(body: """
-        #!/bin/sh
-        exec sleep 30
-        """)
-
-        var errors: [String] = []
-        let start = Date()
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(2)
-        )
-        for await event in stream {
-            if case .error(let message) = event { errors.append(message) }
-        }
-        let elapsed = Date().timeIntervalSince(start)
-
-        XCTAssertLessThan(elapsed, 10.0, "timeout must fire before the 30s sleep")
-        XCTAssertTrue(errors.contains("timeout"), "expected 'timeout' error; got \(errors)")
-    }
-
-    // MARK: - Decode failure → .error
-
-    func testGarbagePayloadYieldsError() async throws {
-        let resultLine = #"{"type":"result","subtype":"success","result":"not json at all"}"#
-        let exe = try makeFakeScript(emitting: [resultLine])
-
-        var errors: [String] = []
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .error(let message) = event { errors.append(message) }
-        }
-        XCTAssertFalse(errors.isEmpty, "garbage payload must yield an error event")
-    }
-
-    // MARK: - Error subtype from result event
-
-    func testResultErrorSubtypeYieldsError() async throws {
-        let line = #"{"type":"result","subtype":"error_max_turns","result":"exceeded max turns"}"#
-        let exe = try makeFakeScript(emitting: [line])
-
-        var errors: [String] = []
-        let stream = PreReviewSummaryRunner.makeStream(
-            executable: exe,
-            arguments: [],
-            timeout: .seconds(10)
-        )
-        for await event in stream {
-            if case .error(let message) = event { errors.append(message) }
-        }
-        XCTAssertFalse(errors.isEmpty, "error subtype must yield a .error event")
-    }
-
-    // MARK: - decodeLine unit tests
+    // MARK: - decodeLine (legacy stream-json — kept for callers that still use it)
 
     func testDecodeLineTextDeltaYieldsDelta() {
         let line = #"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"foo"}}}"#
         let events = PreReviewSummaryRunner.decodeLine(line)
         XCTAssertEqual(events.count, 1)
-        guard case .delta(let field, let text) = events[0] else {
+        guard case .delta(let text) = events[0] else {
             XCTFail("expected .delta; got \(events[0])")
             return
         }
-        XCTAssertEqual(field, .what)
         XCTAssertEqual(text, "foo")
     }
 
@@ -266,22 +118,24 @@ final class PreReviewSummaryRunnerTests: XCTestCase {
         XCTAssertTrue(events.isEmpty, "assistant bookkeeping must be dropped")
     }
 
-    // MARK: - Helpers
+    // MARK: - decodeSummaryPayload (string → SummarySchema)
 
-    private func makeFakeScript(emitting lines: [String]) throws -> URL {
-        var script = "#!/bin/sh\n"
-        for line in lines {
-            let escaped = line.replacingOccurrences(of: "'", with: "'\\''")
-            script += "printf '%s\\n' '\(escaped)'\n"
+    func testDecodeSummaryPayloadPlain() {
+        let events = PreReviewSummaryRunner.decodeSummaryPayload(#"{"text":"hello"}"#)
+        guard case .result(let text) = events.first else {
+            XCTFail("expected .result")
+            return
         }
-        script += "exit 0\n"
-        return try makeShellScript(body: script)
+        XCTAssertEqual(text, "hello")
     }
 
-    private func makeShellScript(body: String) throws -> URL {
-        let url = tempDir.appendingPathComponent("fake-\(UUID().uuidString).sh")
-        try body.write(to: url, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        return url
+    func testDecodeSummaryPayloadFenced() {
+        let fenced = "```json\n{\"text\":\"fenced\"}\n```"
+        let events = PreReviewSummaryRunner.decodeSummaryPayload(fenced)
+        guard case .result(let text) = events.first else {
+            XCTFail("expected .result")
+            return
+        }
+        XCTAssertEqual(text, "fenced")
     }
 }

@@ -1608,28 +1608,16 @@ struct SummarizeView: View {
 
 // MARK: - Summary bullets (slice 24 + 25)
 
-/// Renders the three-bullet What/Why/Risk block from `PreReviewSummaryDisplay`.
-/// Each line is: bold label + regular value, 4pt vertical spacing.
+/// Renders the cached summary text from `PreReviewSummaryDisplay` as a single
+/// flowing block. Plain prose, soft-wrapped, no labels.
 private struct SummaryBullets: View {
     let display: PreReviewSummaryDisplay
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            bulletLine(label: "What", value: display.what)
-            bulletLine(label: "Why", value: display.why)
-            bulletLine(label: "Risk", value: display.risk)
-        }
-    }
-
-    private func bulletLine(label: String, value: String) -> some View {
-        HStack(alignment: .top, spacing: 4) {
-            Text("\(label):")
-                .font(Font.appBody(size: 12, weight: .semibold))
-                .foregroundStyle(Color.textPrimary)
-            Text(value)
-                .font(Font.appBody(size: 12))
-                .foregroundStyle(Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        Text(display.text)
+            .font(Font.appBody(size: 12))
+            .foregroundStyle(Color.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

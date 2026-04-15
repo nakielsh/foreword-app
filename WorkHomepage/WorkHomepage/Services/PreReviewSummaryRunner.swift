@@ -35,21 +35,15 @@ import Foundation
 /// is attributed to `.what` as a streaming preview. The split into `.what` /
 /// `.why` / `.risk` happens only on the final `.result` event once the full
 /// JSON is decoded.
-enum SummaryField {
-    case what
-    case why
-    case risk
-}
-
 /// Events emitted by `PreReviewSummaryRunner.summarize(...)`.
 enum SummaryEvent {
     /// Incremental text chunk during streaming. The UI concatenates these to
     /// show a live preview while claude is running.
-    case delta(field: SummaryField, text: String)
+    case delta(text: String)
     /// Final decoded payload. The runner emits exactly one of `.result` or
     /// `.error` as the last event in the stream; the stream finishes immediately
     /// after.
-    case result(what: String, why: String, risk: String)
+    case result(text: String)
     /// Terminal error: timeout, non-zero exit, missing binary, or JSON decode
     /// failure. The `message` is displayed inline on the card.
     case error(message: String)
@@ -275,10 +269,7 @@ struct PreReviewSummaryRunner {
                let deltaType = delta["type"] as? String,
                deltaType == "text_delta",
                let text = delta["text"] as? String {
-                // All partial text is streamed as `.what` — we cannot split the
-                // stream across fields without token-by-token parsing. The final
-                // `.result` carries the clean per-field split.
-                return [.delta(field: .what, text: text)]
+                return [.delta(text: text)]
             }
             return []
         case "content_block_start":
@@ -287,7 +278,7 @@ struct PreReviewSummaryRunner {
                blockType == "text",
                let text = block["text"] as? String,
                !text.isEmpty {
-                return [.delta(field: .what, text: text)]
+                return [.delta(text: text)]
             }
             return []
         default:
@@ -347,7 +338,7 @@ struct PreReviewSummaryRunner {
         for candidate in candidates {
             guard let data = candidate.data(using: .utf8) else { continue }
             if let schema = try? decoder.decode(SummarySchema.self, from: data) {
-                return [.result(what: schema.what, why: schema.why, risk: schema.risk)]
+                return [.result(text: schema.text)]
             }
         }
         // Surface the raw payload (truncated) so the failure is debuggable
@@ -365,28 +356,22 @@ struct PreReviewSummaryRunner {
 
         Use `gh pr view \(prNumber) --repo \(repo)` and `gh pr diff \(prNumber) --repo \(repo)` to fetch the PR and the diff. Read the PR body for any linked Jira context.
 
-        Return JSON conformant to the schema with three concise sentences:
-        - what: what changed (1 sentence)
-        - why: why this change is happening, inferred from PR body or commit messages (1 sentence)
-        - risk: regressions, footguns, or areas to scrutinize during review (1 sentence)
+        Return JSON conformant to the schema with a single field `text` containing a concise prose summary (2-4 sentences) covering what changed, why, and any risks worth scrutinizing during review.
 
-        Each field is a single sentence, no bullets, no markdown.
+        No bullets, no markdown, no headings. Plain prose.
         """
     }
 
     // MARK: - JSON Schema
 
-    /// JSON Schema passed to `claude --json-schema`. Intentionally minimal:
-    /// three required string fields, no additionalProperties constraint so
-    /// claude can include commentary keys without failing validation.
+    /// JSON Schema passed to `claude --json-schema`. Single required string
+    /// field; claude can add commentary keys without failing validation.
     static let summaryJSONSchema: String = """
     {
       "type": "object",
-      "required": ["what", "why", "risk"],
+      "required": ["text"],
       "properties": {
-        "what": {"type": "string"},
-        "why": {"type": "string"},
-        "risk": {"type": "string"}
+        "text": {"type": "string"}
       }
     }
     """
@@ -394,10 +379,7 @@ struct PreReviewSummaryRunner {
 
 // MARK: - Decode shape
 
-/// Internal decode target for the `claude --json-schema` result. Only the
-/// three required fields are decoded; any extras from claude are ignored.
+/// Internal decode target for the `claude --json-schema` result.
 private struct SummarySchema: Decodable {
-    let what: String
-    let why: String
-    let risk: String
+    let text: String
 }

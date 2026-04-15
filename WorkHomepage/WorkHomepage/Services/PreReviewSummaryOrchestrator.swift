@@ -66,9 +66,7 @@ enum SummaryRunState: Equatable {
 /// Display-oriented value extracted from `PreReviewSummary`. Equatable for
 /// `SummaryRunState` conformance without pulling in the SwiftData model.
 struct PreReviewSummaryDisplay: Equatable {
-    let what: String
-    let why: String
-    let risk: String
+    let text: String
 }
 
 // MARK: - Orchestrator
@@ -177,11 +175,7 @@ final class PreReviewSummaryOrchestrator: ObservableObject {
 
         // 1. Cache hit short-circuit.
         if let cached = liveStore?.existing(prKey: prKey, headSha: headSha) {
-            let display = PreReviewSummaryDisplay(
-                what: cached.what,
-                why: cached.why,
-                risk: cached.risk
-            )
+            let display = PreReviewSummaryDisplay(text: cached.text)
             states[id] = .cached(display)
             return id
         }
@@ -245,11 +239,7 @@ final class PreReviewSummaryOrchestrator: ObservableObject {
         guard let cached = liveStore?.existing(prKey: prKey, headSha: headSha) else {
             return nil
         }
-        return PreReviewSummaryDisplay(
-            what: cached.what,
-            why: cached.why,
-            risk: cached.risk
-        )
+        return PreReviewSummaryDisplay(text: cached.text)
     }
 
     /// Publish a `.failed` state for a synthetic ID without enqueuing a run.
@@ -270,7 +260,7 @@ final class PreReviewSummaryOrchestrator: ObservableObject {
         switch states[id] {
         case .cached(let display):
             return AsyncStream { continuation in
-                continuation.yield(.result(what: display.what, why: display.why, risk: display.risk))
+                continuation.yield(.result(text: display.text))
                 continuation.finish()
             }
         default:
@@ -340,19 +330,17 @@ final class PreReviewSummaryOrchestrator: ObservableObject {
                 // a spinner while `.running`.
                 break
 
-            case .result(let what, let why, let risk):
+            case .result(let text):
                 if let store = liveStore {
                     let summary = PreReviewSummary(
                         prKey: prKey,
                         headSha: headSha,
-                        what: what,
-                        why: why,
-                        risk: risk,
+                        text: text,
                         generatedAt: Date()
                     )
                     store.save(summary)
                 }
-                let display = PreReviewSummaryDisplay(what: what, why: why, risk: risk)
+                let display = PreReviewSummaryDisplay(text: text)
                 states[id] = .cached(display)
                 sawTerminal = true
 

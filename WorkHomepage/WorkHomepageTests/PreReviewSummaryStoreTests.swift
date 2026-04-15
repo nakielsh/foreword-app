@@ -33,16 +33,12 @@ final class PreReviewSummaryStoreTests: XCTestCase {
     private func makeSummary(
         prKey: String = "org/repo#1",
         headSha: String = "abc123",
-        what: String = "What text",
-        why: String = "Why text",
-        risk: String = "Risk text"
+        text: String = "Summary text"
     ) -> PreReviewSummary {
         PreReviewSummary(
             prKey: prKey,
             headSha: headSha,
-            what: what,
-            why: why,
-            risk: risk,
+            text: text,
             generatedAt: Date()
         )
     }
@@ -54,14 +50,12 @@ final class PreReviewSummaryStoreTests: XCTestCase {
         let context = ModelContext(container)
         let store = PreReviewSummaryStore(context: context)
 
-        let summary = makeSummary(prKey: "org/repo#42", headSha: "deadbeef", what: "W", why: "Y", risk: "R")
+        let summary = makeSummary(prKey: "org/repo#42", headSha: "deadbeef", text: "Whole summary text")
         store.save(summary)
 
         let fetched = store.existing(prKey: "org/repo#42", headSha: "deadbeef")
         XCTAssertNotNil(fetched)
-        XCTAssertEqual(fetched?.what, "W")
-        XCTAssertEqual(fetched?.why, "Y")
-        XCTAssertEqual(fetched?.risk, "R")
+        XCTAssertEqual(fetched?.text, "Whole summary text")
         XCTAssertEqual(fetched?.prKey, "org/repo#42")
         XCTAssertEqual(fetched?.headSha, "deadbeef")
     }
@@ -95,16 +89,16 @@ final class PreReviewSummaryStoreTests: XCTestCase {
         let context = ModelContext(container)
         let store = PreReviewSummaryStore(context: context)
 
-        store.save(makeSummary(prKey: "org/repo#1", headSha: "sha1", what: "First"))
-        store.save(makeSummary(prKey: "org/repo#1", headSha: "sha2", what: "Second"))
+        store.save(makeSummary(prKey: "org/repo#1", headSha: "sha1", text: "First"))
+        store.save(makeSummary(prKey: "org/repo#1", headSha: "sha2", text: "Second"))
 
         let first = store.existing(prKey: "org/repo#1", headSha: "sha1")
         let second = store.existing(prKey: "org/repo#1", headSha: "sha2")
 
         XCTAssertNotNil(first)
         XCTAssertNotNil(second)
-        XCTAssertEqual(first?.what, "First")
-        XCTAssertEqual(second?.what, "Second")
+        XCTAssertEqual(first?.text, "First")
+        XCTAssertEqual(second?.text, "Second")
 
         // Ensure they are distinct objects (different composite ids).
         XCTAssertNotEqual(first?.id, second?.id)
