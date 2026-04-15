@@ -350,6 +350,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             isDismissed: false,
             myPriorReviewState: nil,
             branchRef: nil,
+            headSha: nil,
             authorAvatarURL: nil,
             reviewerEntries: []
         )
@@ -375,6 +376,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             myLastReviewSubmittedAt: nil,
             newCommitsSinceReview: 0,
             branchRef: nil,
+            headSha: nil,
             authorAvatarURL: nil,
             reviewerEntries: []
         )

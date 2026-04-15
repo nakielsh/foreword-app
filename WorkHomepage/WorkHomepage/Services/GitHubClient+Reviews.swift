@@ -109,6 +109,7 @@ struct ReviewsAPI {
                 isDismissed: isDismissed,
                 myPriorReviewState: priorState,
                 branchRef: nil,
+                headSha: nil,
                 authorAvatarURL: pr.user.avatarURL,
                 reviewerEntries: []
             ))
@@ -156,6 +157,7 @@ struct ReviewsAPI {
                 myLastReviewSubmittedAt: mySubmitted,
                 newCommitsSinceReview: newCommits,
                 branchRef: nil,
+                headSha: nil,
                 authorAvatarURL: pr.user.avatarURL,
                 reviewerEntries: []
             ))

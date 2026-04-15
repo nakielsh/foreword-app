@@ -78,6 +78,10 @@ struct PendingReviewPR: Identifiable, Hashable {
     /// `head.ref`, so this is populated only when a separate PR fetch provides it.
     /// `JiraBadgeView` renders `EmptyView` when nil.
     let branchRef: String?
+    /// Head commit SHA. Populated by the per-PR branch-info fetch. Used by
+    /// `SummarizeView` to look up cached `PreReviewSummary` rows on appear so
+    /// the bullet block is restored across relaunches without re-running.
+    let headSha: String?
     /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
     /// the `/search/issues` payload. Nil when not available.
     let authorAvatarURL: String?
@@ -118,6 +122,10 @@ struct ReviewedPR: Identifiable, Hashable {
     /// search payload — the GitHub issues search endpoint does not include
     /// `head.ref`. `JiraBadgeView` renders `EmptyView` when nil.
     let branchRef: String?
+    /// Head commit SHA. Populated by the per-PR branch-info fetch. Used by
+    /// `SummarizeView` to look up cached `PreReviewSummary` rows on appear so
+    /// the bullet block is restored across relaunches without re-running.
+    let headSha: String?
     /// GitHub avatar URL of the PR author. Sourced from `user.avatar_url` in
     /// the `/search/issues` payload. Nil when not available.
     let authorAvatarURL: String?

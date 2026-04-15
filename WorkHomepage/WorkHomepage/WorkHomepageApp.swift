@@ -51,7 +51,9 @@ struct WorkHomepageApp: App {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
             // Fallback: in-memory store. The user's reviews won't persist
-            // across launches in this state, but the app still runs.
+            // across launches in this state, but the app still runs. Log loud
+            // so the silent persistence loss is visible in Console.
+            FileHandle.standardError.write(Data("[WorkHomepage] FATAL: on-disk SwiftData container failed to load — falling back to in-memory store. Reviews and summaries will NOT persist across launches. Error: \(error)\n".utf8))
             // swiftlint:disable:next force_try
             self.modelContainer = try! ModelContainer(
                 for: schema,

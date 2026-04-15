@@ -455,7 +455,7 @@ struct ReviewsTab: View {
                                 latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
                             }
                         }
-                        SummarizeView(repo: pr.repoFullName, prNumber: pr.number, orchestrator: summaryOrchestrator)
+                        SummarizeView(repo: pr.repoFullName, prNumber: pr.number, headSha: pr.headSha, orchestrator: summaryOrchestrator)
                             .padding(.horizontal, 4)
                     }
                     .contextMenu {
@@ -522,7 +522,7 @@ struct ReviewsTab: View {
                     latestVerdictBadge(repo: pr.repoFullName, prNumber: pr.number)
                 }
             }
-            SummarizeView(repo: pr.repoFullName, prNumber: pr.number, orchestrator: summaryOrchestrator)
+            SummarizeView(repo: pr.repoFullName, prNumber: pr.number, headSha: pr.headSha, orchestrator: summaryOrchestrator)
                 .padding(.horizontal, 4)
         }
         .contextMenu {
@@ -697,6 +697,7 @@ struct ReviewsTab: View {
                             isDismissed: pr.isDismissed,
                             myPriorReviewState: pr.myPriorReviewState,
                             branchRef: branchInfo?.headBranch,
+                            headSha: branchInfo?.headSha,
                             authorAvatarURL: pr.authorAvatarURL,
                             reviewerEntries: reviewState?.reviewers ?? []
                         )
@@ -737,6 +738,7 @@ struct ReviewsTab: View {
                             myLastReviewSubmittedAt: pr.myLastReviewSubmittedAt,
                             newCommitsSinceReview: pr.newCommitsSinceReview,
                             branchRef: branchInfo?.headBranch,
+                            headSha: branchInfo?.headSha,
                             authorAvatarURL: pr.authorAvatarURL,
                             reviewerEntries: reviewState?.reviewers ?? []
                         )
@@ -1405,6 +1407,10 @@ private struct LatestVerdictBadge: View {
 struct SummarizeView: View {
     let repo: String
     let prNumber: Int
+    /// Pre-fetched head SHA from the parent tab's branch-info fan-out. When
+    /// non-nil, the card consults the persisted cache on appear so a previous
+    /// summary is restored without clicking Summarize again.
+    let headSha: String?
     /// Slice 25: injected by the parent tab so all PR cards share the pool.
     /// Observed so the card re-renders when the orchestrator publishes state
     /// transitions (running → cached / failed).
@@ -1424,22 +1430,33 @@ struct SummarizeView: View {
     // MARK: - Computed view state
 
     /// Map the orchestrator state (+ local fetchingSHA flag) into a single
-    /// render decision.
+    /// render decision. If no run has been started but a cached summary exists
+    /// for `(prKey, headSha)`, render it directly — avoids requiring a click on
+    /// every relaunch / tab switch.
     private var displayState: DisplayState {
         if isFetchingSHA { return .fetchingSHA }
-        guard let id = runID else { return .idle }
-        switch orchestrator.state(id) {
-        case .idle:
-            return .idle
-        case .queued(let ahead):
-            return .queued(ahead: ahead)
-        case .running:
-            return .running
-        case .cached(let display):
-            return .cached(display)
-        case .failed(let message):
-            return .failed(message: message)
+        if let id = runID {
+            switch orchestrator.state(id) {
+            case .idle:
+                return .idle
+            case .queued(let ahead):
+                return .queued(ahead: ahead)
+            case .running:
+                return .running
+            case .cached(let display):
+                return .cached(display)
+            case .failed(let message):
+                return .failed(message: message)
+            }
         }
+        // No active run — try the persisted cache.
+        if let headSha {
+            let prKey = "\(repo)#\(prNumber)"
+            if let display = orchestrator.cachedDisplay(prKey: prKey, headSha: headSha) {
+                return .cached(display)
+            }
+        }
+        return .idle
     }
 
     private enum DisplayState {

@@ -238,6 +238,20 @@ final class PreReviewSummaryOrchestrator: ObservableObject {
         states[id] ?? .idle
     }
 
+    /// Read-only cache lookup. Returns the cached display for `(prKey, headSha)`
+    /// without enqueueing a run, so the card can restore the bullet block on
+    /// appear without auto-spawning claude on a cache miss.
+    func cachedDisplay(prKey: String, headSha: String) -> PreReviewSummaryDisplay? {
+        guard let cached = liveStore?.existing(prKey: prKey, headSha: headSha) else {
+            return nil
+        }
+        return PreReviewSummaryDisplay(
+            what: cached.what,
+            why: cached.why,
+            risk: cached.risk
+        )
+    }
+
     /// Publish a `.failed` state for a synthetic ID without enqueuing a run.
     /// Used by callers to surface pre-flight errors (e.g. SHA-fetch failure)
     /// through the same `states` map so the card shows the retry button.
