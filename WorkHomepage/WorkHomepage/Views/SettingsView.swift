@@ -436,9 +436,11 @@ struct SettingsView: View {
     // MARK: - Local repos section
     //
     // When a `<org>/<repo>` GitHub identifier maps onto a clone the user
-    // already owns, `WorktreeManager` creates worktrees inside that clone
-    // (`<localRepo>/.worktrees/<pr#>`) instead of inflating a fresh bare clone
-    // under `~/.work-homepage/`. The mapping comes from scanning configurable
+    // already owns, `WorktreeManager` reuses that clone's object database via
+    // `git worktree add` instead of inflating a fresh bare clone under
+    // `~/.work-homepage/`. The worktree itself still lives at
+    // `~/.work-homepage/worktrees/<repo>/<pr#>/` so IntelliJ resolves it as
+    // its own project root. The mapping comes from scanning configurable
     // search roots (default `~/src`) and reading each candidate's `origin`
     // remote. The user can also set per-repo overrides by browsing.
 
@@ -456,7 +458,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Worktrees are created inside any clone listed below at <repo>/.worktrees/<pr#>/. Repos without a local mapping fall back to a bare clone under ~/.work-homepage/.")
+            Text("For any clone listed below, worktrees reuse its object database (no extra bare clone) and live at ~/.work-homepage/worktrees/<repo>/<pr#>/. Repos without a local mapping fall back to a bare clone under ~/.work-homepage/.")
                 .font(Font.appBody(size: 11))
                 .foregroundStyle(Color.textMuted)
 

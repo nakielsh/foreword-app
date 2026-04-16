@@ -55,6 +55,34 @@ enum WorktreeError: Error, Equatable {
     case cannotEvictWhileReviewRunning(String)
 }
 
+extension WorktreeError: CustomStringConvertible {
+    /// Human-readable rendering for the review modal. Default
+    /// `\(error)` interpolation uses Swift's reflection-based dump, which
+    /// escapes embedded newlines in `stderr` payloads as literal `\n`. We
+    /// surface the captured stderr verbatim so the UI shows multi-line git
+    /// output the way the terminal would.
+    var description: String {
+        switch self {
+        case .binaryNotFound(let name):
+            return "Binary not found: \(name)"
+        case .cloneFailed(let stderr):
+            return "git clone failed:\n\(stderr)"
+        case .fetchFailed(let stderr):
+            return "git fetch failed:\n\(stderr)"
+        case .worktreeAddFailed(let stderr):
+            return "git worktree add failed:\n\(stderr)"
+        case .branchNotFound(let branch):
+            return "Branch not found: \(branch)"
+        case .resetFailed(let stderr):
+            return "git reset failed:\n\(stderr)"
+        case .ioFailed(let message):
+            return message
+        case .cannotEvictWhileReviewRunning(let repo):
+            return "Cannot evict caches: review still running for \(repo)"
+        }
+    }
+}
+
 // MARK: - WorktreeManager
 
 struct WorktreeManager {
@@ -68,10 +96,13 @@ struct WorktreeManager {
     /// `repo` is `<org>/<repo>` (e.g. `Ala-com/work-homepage`).
     ///
     /// When `LocalRepoIndex` has a mapping for the repo (user already owns a
-    /// clone under one of the configured roots), the worktree is created
-    /// inside that clone at `<localRepo>/.worktrees/<prNumber>/` instead of
-    /// the bare-clone layout. The bare clone is bypassed entirely in that
-    /// case — we fetch from origin in the user's clone directly.
+    /// clone under one of the configured roots), the worktree is still placed
+    /// at the canonical `<baseDir>/worktrees/<repo>/<prNumber>/` location, but
+    /// is created via `git worktree add` from inside the user's clone (so the
+    /// bare clone is bypassed entirely — we fetch from origin in the user's
+    /// clone directly). The worktree is kept outside the user's main checkout
+    /// so IntelliJ resolves it as its own project root rather than inheriting
+    /// the parent repo's `.idea`.
     static func prepare(repo: String, branch: String, sha: String, prNumber: Int) async throws -> URL {
         // Scan the configured roots on demand if no mapping exists yet, so
         // the first review against a repo doesn't require the user to open
@@ -96,7 +127,8 @@ struct WorktreeManager {
     /// for this; slice 07 only needs the API surface and tests.
     ///
     /// Local-repo flow: when a `LocalRepoIndex` mapping exists, this evicts
-    /// `<localRepo>/.worktrees/<prNumber>` and prunes inside the local clone.
+    /// the canonical `<baseDir>/worktrees/<repo>/<prNumber>` path and prunes
+    /// inside the user's clone (which still owns the worktree registration).
     /// The user's main checkout is never touched.
     static func evict(repo: String, prNumber: Int) throws {
         try evict(
@@ -123,14 +155,19 @@ struct WorktreeManager {
         localRepoURL: URL? = nil
     ) async throws -> URL {
         // Local-repo branch: user already owns a clone of this repo. Skip the
-        // bare layout entirely and create the worktree as a sibling of the
-        // user's working tree (`<localRepo>/.worktrees/<prNumber>/`). The
-        // user's main checkout is never modified.
+        // bare layout entirely, but place the worktree at the canonical
+        // `<baseDir>/worktrees/<repo>/<prNumber>/` location — outside the user's
+        // checkout — so IntelliJ resolves the worktree as its own project root
+        // (a worktree nested inside the main checkout would inherit the parent's
+        // `.idea` and break "find usages" against worktree files). The user's
+        // clone is still used for fetching, just not as the worktree's parent.
         if let localRepoURL {
             return try await prepareInLocalRepo(
                 localRepoURL: localRepoURL,
+                repo: repo,
                 branch: branch,
                 prNumber: prNumber,
+                baseDir: baseDir,
                 gitURL: gitURL
             )
         }
@@ -169,29 +206,24 @@ struct WorktreeManager {
 
     // MARK: - Local-repo flow
     //
-    // The user-owned clone path. Layout is `<localRepo>/.worktrees/<prNumber>`,
-    // hidden inside the existing checkout so multiple in-flight reviews don't
-    // pollute the user's `~/src` listing. We fetch from `origin` inside the
-    // clone before adding/refreshing the worktree so `origin/<branch>` is
-    // always current. The same `--detach` discipline applies — the worktree
-    // is read-only review territory; we never push from it.
-
-    /// Returns the worktree URL `<localRepo>/.worktrees/<prNumber>` for an
-    /// already-owned clone. Public for callers (IntelliJ launcher,
-    /// `WorktreePath`) that need the path without preparing.
-    static func localWorktreeURL(localRepoURL: URL, prNumber: Int) -> URL {
-        localRepoURL
-            .appendingPathComponent(".worktrees", isDirectory: true)
-            .appendingPathComponent(String(prNumber), isDirectory: true)
-    }
+    // The worktree is placed at the canonical
+    // `<baseDir>/worktrees/<repo>/<prNumber>` path (outside the user's
+    // checkout) but is registered against the user's clone via
+    // `git worktree add`, so we reuse the existing object database and avoid
+    // a second clone. We fetch from `origin` inside the clone before
+    // adding/refreshing the worktree so `origin/<branch>` is always current.
+    // The same `--detach` discipline applies — the worktree is read-only
+    // review territory; we never push from it.
 
     private static func prepareInLocalRepo(
         localRepoURL: URL,
+        repo: String,
         branch: String,
         prNumber: Int,
+        baseDir: URL,
         gitURL: URL
     ) async throws -> URL {
-        let worktreeDir = localWorktreeURL(localRepoURL: localRepoURL, prNumber: prNumber)
+        let worktreeDir = worktreeURL(baseDir: baseDir, repo: repo, prNumber: prNumber)
         try ensureParentDirs(for: worktreeDir)
 
         // Refresh remote refs in the user's clone. We fetch the specific
@@ -215,11 +247,19 @@ struct WorktreeManager {
         if FileManager.default.fileExists(atPath: worktreeDir.path) {
             try await resetHardInWorktree(worktreeDir: worktreeDir, branch: branch, gitURL: gitURL)
         } else {
+            // `--force` overrides the "missing but already registered worktree"
+            // error that surfaces when a prior `worktree add` left a stale
+            // entry under `<localRepo>/.git/worktrees/<pr#>` (e.g. eviction
+            // didn't fully unregister, or the dir was deleted out-of-band).
+            // The canonical worktree path is owned by this app — nothing else
+            // should be holding a valid registration there — so forcing is
+            // safe.
             let result = await runProcess(
                 executable: gitURL,
                 arguments: [
                     "-C", localRepoURL.path,
                     "worktree", "add",
+                    "--force",
                     "--detach",
                     worktreeDir.path,
                     "origin/" + branch
@@ -234,6 +274,16 @@ struct WorktreeManager {
             }
         }
 
+        // Mirror the user's `.idea/` project model into the worktree so
+        // IntelliJ recognises it as an existing project (right SDK, modules,
+        // run configs, code style). Per-window state — workspace.xml, shelf,
+        // tasks, dataSources — is filtered out by `IdeaProjectSync` so the
+        // worktree's IntelliJ window owns its own IDE state and doesn't race
+        // the main checkout. Best-effort: a sync failure does not abort the
+        // review (the worktree is still valid; IntelliJ would just fall back
+        // to re-importing from Gradle).
+        try? IdeaProjectSync.copyProjectModel(from: localRepoURL, to: worktreeDir)
+
         return worktreeDir
     }
 
@@ -244,11 +294,12 @@ struct WorktreeManager {
         gitURL: URL,
         localRepoURL: URL? = nil
     ) throws {
-        // Local-repo flow: the worktree lives under the user's clone, not the
-        // bare layout. Run `git worktree remove --force` from inside the user
-        // clone, prune, and remove any leftover directory.
+        // Local-repo flow: the worktree was created via `git worktree add`
+        // inside the user's clone but lives at the canonical baseDir layout.
+        // Run `git worktree remove --force` from inside the user clone (where
+        // the worktree is registered), prune, and remove any leftover dir.
         if let localRepoURL {
-            let worktreeDir = localWorktreeURL(localRepoURL: localRepoURL, prNumber: prNumber)
+            let worktreeDir = worktreeURL(baseDir: baseDir, repo: repo, prNumber: prNumber)
             if FileManager.default.fileExists(atPath: worktreeDir.path) {
                 _ = runProcessSync(
                     executable: gitURL,
@@ -436,12 +487,15 @@ struct WorktreeManager {
     ) async throws {
         // `git worktree add --detach <path> origin/<branch>` checks out a
         // detached HEAD at the remote ref. That's what we want — slice 07 is
-        // read-only review territory; we never push from a worktree.
+        // read-only review territory; we never push from a worktree. `--force`
+        // shrugs off stale "already registered" entries from an interrupted
+        // prior eviction; the path is app-owned, so forcing is safe.
         let result = await runProcess(
             executable: gitURL,
             arguments: [
                 "-C", bareDir.path,
                 "worktree", "add",
+                "--force",
                 "--detach",
                 worktreeDir.path,
                 "origin/" + branch

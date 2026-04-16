@@ -3,9 +3,10 @@
 //  WorkHomepageTests
 //
 //  Verifies the local-repo branch of `WorktreeManager.prepare`/`evict`:
-//  worktrees land at `<localRepo>/.worktrees/<pr#>`, repeated prepare
-//  fast-forwards, and evict only removes the worktree subdir (not the
-//  user's main checkout).
+//  worktrees land at the canonical `<baseDir>/worktrees/<repo>/<pr#>` layout
+//  (outside the user's checkout, so IntelliJ resolves the worktree as its own
+//  project root), repeated prepare fast-forwards, and evict removes the
+//  worktree without touching the user's main checkout.
 //
 
 import XCTest
@@ -52,8 +53,8 @@ final class WorktreeManagerLocalRepoTests: XCTestCase {
 
     // MARK: - Tests
 
-    func testPrepareCreatesWorktreeInsideLocalRepo() async throws {
-        let baseDir = tempDir.appendingPathComponent("unused-base", isDirectory: true)
+    func testPrepareCreatesWorktreeAtCanonicalPathOutsideLocalRepo() async throws {
+        let baseDir = tempDir.appendingPathComponent("hp-base", isDirectory: true)
         let worktree = try await WorktreeManager.prepare(
             repo: "Acme/widgets",
             branch: "feature/x",
@@ -64,12 +65,16 @@ final class WorktreeManagerLocalRepoTests: XCTestCase {
             localRepoURL: localRepoDir
         )
 
-        // Worktree lives inside the local clone, not the bare-clone layout.
-        let expected = localRepoDir
-            .appendingPathComponent(".worktrees", isDirectory: true)
-            .appendingPathComponent("42", isDirectory: true)
+        // Worktree lives at canonical `<baseDir>/worktrees/<repo>/<pr#>`,
+        // outside the user's checkout so IntelliJ won't inherit a parent
+        // project's `.idea`.
+        let expected = WorktreeManager.worktreeURL(baseDir: baseDir, repo: "Acme/widgets", prNumber: 42)
         XCTAssertEqual(worktree.path, expected.path)
         XCTAssertTrue(FileManager.default.fileExists(atPath: worktree.path))
+
+        // Worktree must NOT be nested inside the user's main checkout.
+        XCTAssertFalse(worktree.path.hasPrefix(localRepoDir.path + "/"),
+                       "local-repo worktree must not live inside the user's main checkout")
 
         // Bare-clone path was not created.
         let bareDir = WorktreeManager.bareCloneURL(baseDir: baseDir, repo: "Acme/widgets")
@@ -82,8 +87,49 @@ final class WorktreeManagerLocalRepoTests: XCTestCase {
         XCTAssertTrue(body.contains("commit-2"), "expected branch-tip content; got: \(body)")
     }
 
+    func testPreparePropagatesIdeaProjectModelFromLocalRepo() async throws {
+        // Seed the user's clone with a `.idea/` containing a project-model
+        // file and a workspace.xml. After prepare, the worktree must have
+        // the project-model file (so IntelliJ recognises it) but not the
+        // user-state workspace.xml (which would race with the main window).
+        let idea = localRepoDir.appendingPathComponent(".idea", isDirectory: true)
+        try FileManager.default.createDirectory(at: idea, withIntermediateDirectories: true)
+        try "<modules/>".write(
+            to: idea.appendingPathComponent("modules.xml"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "<workspace/>".write(
+            to: idea.appendingPathComponent("workspace.xml"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let baseDir = tempDir.appendingPathComponent("hp-base", isDirectory: true)
+        let worktree = try await WorktreeManager.prepare(
+            repo: "Acme/widgets",
+            branch: "feature/x",
+            sha: "deadbeef",
+            prNumber: 21,
+            baseDir: baseDir,
+            gitURL: gitURL,
+            localRepoURL: localRepoDir
+        )
+
+        let copiedModules = worktree.appendingPathComponent(".idea/modules.xml")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: copiedModules.path),
+            "project-model file should propagate to worktree"
+        )
+        let copiedWorkspace = worktree.appendingPathComponent(".idea/workspace.xml")
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: copiedWorkspace.path),
+            "workspace.xml is per-window state and must not propagate"
+        )
+    }
+
     func testRepeatPrepareAdvancesLocalWorktreeToNewHead() async throws {
-        let baseDir = tempDir.appendingPathComponent("unused-base", isDirectory: true)
+        let baseDir = tempDir.appendingPathComponent("hp-base", isDirectory: true)
         let worktree = try await WorktreeManager.prepare(
             repo: "Acme/widgets",
             branch: "feature/x",
@@ -115,7 +161,7 @@ final class WorktreeManagerLocalRepoTests: XCTestCase {
     }
 
     func testEvictRemovesLocalWorktreeButLeavesMainCheckout() async throws {
-        let baseDir = tempDir.appendingPathComponent("unused-base", isDirectory: true)
+        let baseDir = tempDir.appendingPathComponent("hp-base", isDirectory: true)
         let worktree = try await WorktreeManager.prepare(
             repo: "Acme/widgets",
             branch: "feature/x",
