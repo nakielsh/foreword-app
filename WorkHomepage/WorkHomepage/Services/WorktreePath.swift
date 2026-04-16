@@ -16,9 +16,16 @@
 import Foundation
 
 enum WorktreePath {
-    /// `<home>/.work-homepage/worktrees/<repoFullName>/<prNumber>`.
+    /// Resolves the on-disk worktree URL for the given PR. When
+    /// `LocalRepoIndex` has a mapping for `repoFullName`, returns
+    /// `<localRepo>/.worktrees/<prNumber>` so launchers open the user's clone.
+    /// Otherwise falls back to the bare-clone layout under
+    /// `~/.work-homepage/worktrees/<repoFullName>/<prNumber>`.
     /// `repoFullName` is `<org>/<repo>` (e.g. `Ala-com/work-homepage`).
     static func url(for repoFullName: String, prNumber: Int) -> URL {
+        if let local = LocalRepoIndex.localPath(for: repoFullName) {
+            return WorktreeManager.localWorktreeURL(localRepoURL: local, prNumber: prNumber)
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home
             .appending(path: ".work-homepage")

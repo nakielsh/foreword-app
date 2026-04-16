@@ -57,6 +57,13 @@ struct SettingsView: View {
     @State private var pendingEvictRepo: String? = nil
     @State private var evictError: String? = nil
 
+    // Local repos (worktrees inside user-owned clones)
+    @State private var localRepoRoots: [URL] = LocalRepoIndex.roots
+    @State private var localRepoMapping: [String: URL] = LocalRepoIndex.mapping
+    @State private var localRepoOverrides: [String: URL] = LocalRepoIndex.overrides
+    @State private var isScanningLocalRepos: Bool = false
+    @State private var localRepoScanStatus: String? = nil
+
     @Environment(\.dismiss) private var dismiss
 
     enum TestStatus: Equatable {
@@ -81,6 +88,8 @@ struct SettingsView: View {
                 reviewPromptSection
                 Divider()
                 preReviewSummarySection
+                Divider()
+                localReposSection
                 Divider()
                 storageSection
                 Divider()
@@ -422,6 +431,196 @@ struct SettingsView: View {
             Spacer()
             Button("Re-run first-run wizard") { showWizardSheet = true }
         }
+    }
+
+    // MARK: - Local repos section
+    //
+    // When a `<org>/<repo>` GitHub identifier maps onto a clone the user
+    // already owns, `WorktreeManager` creates worktrees inside that clone
+    // (`<localRepo>/.worktrees/<pr#>`) instead of inflating a fresh bare clone
+    // under `~/.work-homepage/`. The mapping comes from scanning configurable
+    // search roots (default `~/src`) and reading each candidate's `origin`
+    // remote. The user can also set per-repo overrides by browsing.
+
+    private var localReposSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Local Repos").font(Font.display(size: 14, weight: .bold))
+                Spacer()
+                Button("Rescan") {
+                    Task { await rescanLocalRepos() }
+                }
+                .disabled(isScanningLocalRepos)
+                if isScanningLocalRepos {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            Text("Worktrees are created inside any clone listed below at <repo>/.worktrees/<pr#>/. Repos without a local mapping fall back to a bare clone under ~/.work-homepage/.")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+
+            // Search roots
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Search roots")
+                    .font(Font.appBody(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.textMuted)
+                ForEach(Array(localRepoRoots.enumerated()), id: \.offset) { idx, root in
+                    HStack {
+                        Text(root.path)
+                            .font(.callout.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        Button("Remove") {
+                            localRepoRoots.remove(at: idx)
+                            LocalRepoIndex.setRoots(localRepoRoots, defaults: .standard)
+                        }
+                    }
+                }
+                HStack {
+                    Button("Add root...") {
+                        addLocalRepoRoot()
+                    }
+                    Spacer()
+                }
+            }
+
+            if let status = localRepoScanStatus {
+                Text(status)
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            // Repo mapping table
+            localReposTable
+        }
+    }
+
+    @ViewBuilder
+    private var localReposTable: some View {
+        let combinedKeys: [String] = {
+            var seen = Set<String>()
+            var out: [String] = []
+            for key in localRepoMapping.keys.sorted() where seen.insert(key).inserted {
+                out.append(key)
+            }
+            for key in localRepoOverrides.keys.sorted() where seen.insert(key).inserted {
+                out.append(key)
+            }
+            return out
+        }()
+
+        if combinedKeys.isEmpty {
+            HStack {
+                Text(isScanningLocalRepos ? "Scanning…" : "No local repos found yet. Add a root and Rescan, or set an override.")
+                    .font(Font.appBody(size: 13))
+                    .foregroundStyle(Color.textMuted)
+                Spacer()
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text("Repo")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Path")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("")
+                        .frame(width: 160, alignment: .trailing)
+                }
+                .font(Font.appBody(size: 12, weight: .semibold))
+                .foregroundStyle(Color.textMuted)
+                .padding(.vertical, 4)
+
+                Divider()
+
+                ForEach(combinedKeys, id: \.self) { repo in
+                    let path = localRepoOverrides[repo] ?? localRepoMapping[repo]
+                    let isOverride = localRepoOverrides[repo] != nil
+                    HStack(spacing: 8) {
+                        Text(repo)
+                            .font(.callout.monospaced())
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                        HStack(spacing: 4) {
+                            Text(path?.path ?? "—")
+                                .font(.callout.monospaced())
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            if isOverride {
+                                Text("(override)")
+                                    .font(Font.appBody(size: 11))
+                                    .foregroundStyle(Color.accentMarigold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 4) {
+                            Button("Browse...") {
+                                browseForLocalRepo(repo: repo)
+                            }
+                            if isOverride {
+                                Button("Clear") {
+                                    LocalRepoIndex.setOverride(repo: repo, url: nil, defaults: .standard)
+                                    localRepoOverrides = LocalRepoIndex.overrides
+                                }
+                            }
+                        }
+                        .frame(width: 160, alignment: .trailing)
+                    }
+                    .padding(.vertical, 4)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private func addLocalRepoRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Pick a directory to scan for local repos"
+        panel.prompt = "Add"
+        if panel.runModal() == .OK, let url = panel.url {
+            if !localRepoRoots.contains(where: { $0.path == url.path }) {
+                localRepoRoots.append(url)
+                LocalRepoIndex.setRoots(localRepoRoots, defaults: .standard)
+            }
+        }
+    }
+
+    private func browseForLocalRepo(repo: String) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Pick the local clone for \(repo)"
+        panel.prompt = "Use"
+        if panel.runModal() == .OK, let url = panel.url {
+            LocalRepoIndex.setOverride(repo: repo, url: url, defaults: .standard)
+            localRepoOverrides = LocalRepoIndex.overrides
+        }
+    }
+
+    /// Walks the configured roots off the main thread (process spawns are I/O
+    /// bound) and writes the result into the persisted mapping.
+    private func rescanLocalRepos() async {
+        if isScanningLocalRepos { return }
+        isScanningLocalRepos = true
+        localRepoScanStatus = nil
+        defer { isScanningLocalRepos = false }
+        let roots = localRepoRoots
+        let result = await Task.detached(priority: .userInitiated) { () -> [String: URL] in
+            guard let gitURL = BinaryResolver.resolve(.git) else { return [:] }
+            return LocalRepoIndex.scan(roots: roots, gitURL: gitURL)
+        }.value
+        LocalRepoIndex.setMapping(result, defaults: .standard)
+        localRepoMapping = result
+        localRepoScanStatus = "Found \(result.count) repo\(result.count == 1 ? "" : "s")."
     }
 
     // MARK: - Storage section

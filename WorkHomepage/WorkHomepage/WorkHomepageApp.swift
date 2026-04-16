@@ -76,6 +76,7 @@ struct WorkHomepageApp: App {
                     didBootstrap = true
                     await bootstrapToken()
                     await maybeShowFirstRunWizard()
+                    await refreshLocalRepoIndex()
                 }
                 .sheet(isPresented: $showFirstLaunchTokenPrompt) {
                     TokenPromptSheet(reason: .firstLaunch) {
@@ -115,6 +116,17 @@ struct WorkHomepageApp: App {
         await MainActor.run {
             showFirstLaunchTokenPrompt = true
         }
+    }
+
+    /// Walks the configured search roots (default `~/src`) and refreshes the
+    /// `<org>/<repo>` → local-clone mapping in the background. Keeps the
+    /// IntelliJ launcher's synchronous `WorktreePath.url` lookup fast since
+    /// the mapping is already populated by the time the user clicks a
+    /// finding.
+    private func refreshLocalRepoIndex() async {
+        await Task.detached(priority: .background) {
+            LocalRepoIndex.rescan()
+        }.value
     }
 
     private func maybeShowFirstRunWizard() async {

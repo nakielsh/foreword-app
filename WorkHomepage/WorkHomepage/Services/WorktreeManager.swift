@@ -66,26 +66,45 @@ struct WorktreeManager {
     /// at the head of `branch` (we resolve via `origin/<branch>` rather than the
     /// raw SHA so future re-prepares pick up new commits to the branch).
     /// `repo` is `<org>/<repo>` (e.g. `Ala-com/work-homepage`).
+    ///
+    /// When `LocalRepoIndex` has a mapping for the repo (user already owns a
+    /// clone under one of the configured roots), the worktree is created
+    /// inside that clone at `<localRepo>/.worktrees/<prNumber>/` instead of
+    /// the bare-clone layout. The bare clone is bypassed entirely in that
+    /// case — we fetch from origin in the user's clone directly.
     static func prepare(repo: String, branch: String, sha: String, prNumber: Int) async throws -> URL {
-        try await prepare(
+        // Scan the configured roots on demand if no mapping exists yet, so
+        // the first review against a repo doesn't require the user to open
+        // Settings → Rescan first. The scan is I/O-heavy (one git spawn per
+        // candidate dir) so we hop off the main actor.
+        let local = await Task.detached(priority: .userInitiated) {
+            LocalRepoIndex.localPathOrScan(for: repo)
+        }.value
+        return try await prepare(
             repo: repo,
             branch: branch,
             sha: sha,
             prNumber: prNumber,
             baseDir: defaultBaseDir(),
-            gitURL: try resolveGit()
+            gitURL: try resolveGit(),
+            localRepoURL: local
         )
     }
 
     /// Removes the worktree directory for the given PR but keeps the bare clone
     /// around for the next review of any PR in this repo. Slice 17 wires a UI
     /// for this; slice 07 only needs the API surface and tests.
+    ///
+    /// Local-repo flow: when a `LocalRepoIndex` mapping exists, this evicts
+    /// `<localRepo>/.worktrees/<prNumber>` and prunes inside the local clone.
+    /// The user's main checkout is never touched.
     static func evict(repo: String, prNumber: Int) throws {
         try evict(
             repo: repo,
             prNumber: prNumber,
             baseDir: defaultBaseDir(),
-            gitURL: try resolveGit()
+            gitURL: try resolveGit(),
+            localRepoURL: LocalRepoIndex.localPath(for: repo)
         )
     }
 
@@ -100,8 +119,22 @@ struct WorktreeManager {
         sha: String,
         prNumber: Int,
         baseDir: URL,
-        gitURL: URL
+        gitURL: URL,
+        localRepoURL: URL? = nil
     ) async throws -> URL {
+        // Local-repo branch: user already owns a clone of this repo. Skip the
+        // bare layout entirely and create the worktree as a sibling of the
+        // user's working tree (`<localRepo>/.worktrees/<prNumber>/`). The
+        // user's main checkout is never modified.
+        if let localRepoURL {
+            return try await prepareInLocalRepo(
+                localRepoURL: localRepoURL,
+                branch: branch,
+                prNumber: prNumber,
+                gitURL: gitURL
+            )
+        }
+
         let bareDir = bareCloneURL(baseDir: baseDir, repo: repo)
         let worktreeDir = worktreeURL(baseDir: baseDir, repo: repo, prNumber: prNumber)
 
@@ -134,12 +167,106 @@ struct WorktreeManager {
         return worktreeDir
     }
 
+    // MARK: - Local-repo flow
+    //
+    // The user-owned clone path. Layout is `<localRepo>/.worktrees/<prNumber>`,
+    // hidden inside the existing checkout so multiple in-flight reviews don't
+    // pollute the user's `~/src` listing. We fetch from `origin` inside the
+    // clone before adding/refreshing the worktree so `origin/<branch>` is
+    // always current. The same `--detach` discipline applies — the worktree
+    // is read-only review territory; we never push from it.
+
+    /// Returns the worktree URL `<localRepo>/.worktrees/<prNumber>` for an
+    /// already-owned clone. Public for callers (IntelliJ launcher,
+    /// `WorktreePath`) that need the path without preparing.
+    static func localWorktreeURL(localRepoURL: URL, prNumber: Int) -> URL {
+        localRepoURL
+            .appendingPathComponent(".worktrees", isDirectory: true)
+            .appendingPathComponent(String(prNumber), isDirectory: true)
+    }
+
+    private static func prepareInLocalRepo(
+        localRepoURL: URL,
+        branch: String,
+        prNumber: Int,
+        gitURL: URL
+    ) async throws -> URL {
+        let worktreeDir = localWorktreeURL(localRepoURL: localRepoURL, prNumber: prNumber)
+        try ensureParentDirs(for: worktreeDir)
+
+        // Refresh remote refs in the user's clone. We fetch the specific
+        // branch with `--prune` so dropped remote branches stop resolving.
+        let fetch = await runProcess(
+            executable: gitURL,
+            arguments: ["-C", localRepoURL.path, "fetch", "origin", "--prune", branch]
+        )
+        if fetch.exitCode != 0 {
+            // Some users keep multiple remotes; fall back to a generic fetch
+            // so a misnamed default remote doesn't kill the review entirely.
+            let generic = await runProcess(
+                executable: gitURL,
+                arguments: ["-C", localRepoURL.path, "fetch", "--all", "--prune"]
+            )
+            if generic.exitCode != 0 {
+                throw WorktreeError.fetchFailed(stderr: fetch.stderr + "\n" + generic.stderr)
+            }
+        }
+
+        if FileManager.default.fileExists(atPath: worktreeDir.path) {
+            try await resetHardInWorktree(worktreeDir: worktreeDir, branch: branch, gitURL: gitURL)
+        } else {
+            let result = await runProcess(
+                executable: gitURL,
+                arguments: [
+                    "-C", localRepoURL.path,
+                    "worktree", "add",
+                    "--detach",
+                    worktreeDir.path,
+                    "origin/" + branch
+                ]
+            )
+            if result.exitCode != 0 {
+                let lower = result.stderr.lowercased()
+                if lower.contains("invalid reference") || lower.contains("not a valid ref") || lower.contains("unknown revision") {
+                    throw WorktreeError.branchNotFound(branch)
+                }
+                throw WorktreeError.worktreeAddFailed(stderr: result.stderr)
+            }
+        }
+
+        return worktreeDir
+    }
+
     static func evict(
         repo: String,
         prNumber: Int,
         baseDir: URL,
-        gitURL: URL
+        gitURL: URL,
+        localRepoURL: URL? = nil
     ) throws {
+        // Local-repo flow: the worktree lives under the user's clone, not the
+        // bare layout. Run `git worktree remove --force` from inside the user
+        // clone, prune, and remove any leftover directory.
+        if let localRepoURL {
+            let worktreeDir = localWorktreeURL(localRepoURL: localRepoURL, prNumber: prNumber)
+            if FileManager.default.fileExists(atPath: worktreeDir.path) {
+                _ = runProcessSync(
+                    executable: gitURL,
+                    arguments: ["-C", localRepoURL.path, "worktree", "remove", "--force", worktreeDir.path]
+                )
+            }
+            if FileManager.default.fileExists(atPath: localRepoURL.path) {
+                _ = runProcessSync(
+                    executable: gitURL,
+                    arguments: ["-C", localRepoURL.path, "worktree", "prune"]
+                )
+            }
+            if FileManager.default.fileExists(atPath: worktreeDir.path) {
+                try FileManager.default.removeItem(at: worktreeDir)
+            }
+            return
+        }
+
         let bareDir = bareCloneURL(baseDir: baseDir, repo: repo)
         let worktreeDir = worktreeURL(baseDir: baseDir, repo: repo, prNumber: prNumber)
 
