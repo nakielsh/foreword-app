@@ -191,6 +191,7 @@ struct ReviewsAPI {
         }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.timeoutInterval = GitHubClient.defaultRequestTimeout
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
@@ -227,6 +228,7 @@ struct ReviewsAPI {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw GitHubError.http(status: http.statusCode, body: body)
         }
+        GitHub401Counter.shared.recordSuccess()
     }
 }
 

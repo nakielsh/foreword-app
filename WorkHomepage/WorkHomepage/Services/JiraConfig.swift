@@ -54,13 +54,31 @@ enum JiraConfig {
     // Same logic, but tests pass unique keys per test so they don't trample
     // a developer's real Jira config in the shared keychain / defaults.
 
+    /// Returns true when `url` is a syntactically valid https Jira base URL.
+    /// We reject http (Basic-auth credentials would travel in plaintext),
+    /// arbitrary schemes (file://, javascript:), and inputs that fail to
+    /// parse as a URL. Empty input is allowed by callers as the "clear"
+    /// signal, so we don't validate that here.
+    static func validateBaseURL(_ url: String) -> Bool {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard let parsed = URL(string: trimmed) else { return false }
+        guard let scheme = parsed.scheme?.lowercased(), scheme == "https" else { return false }
+        guard let host = parsed.host, !host.isEmpty else { return false }
+        return true
+    }
+
     static func setBaseURL(_ url: String, key: String, defaults: UserDefaults) {
         let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             defaults.removeObject(forKey: key)
-        } else {
-            defaults.set(trimmed, forKey: key)
+            return
         }
+        // Silently refuse to persist a non-https URL; Settings UI surfaces the
+        // validation result via `validateBaseURL` so the user gets a visible
+        // error instead of "saved but doesn't work".
+        guard validateBaseURL(trimmed) else { return }
+        defaults.set(trimmed, forKey: key)
     }
 
     static func getBaseURL(key: String, defaults: UserDefaults) -> String? {

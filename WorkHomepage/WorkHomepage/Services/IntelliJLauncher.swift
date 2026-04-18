@@ -99,9 +99,12 @@ enum IntelliJLauncher {
         guard let ideaURL = resolveIdea() else {
             throw LaunchError.ideaCLINotFound
         }
-        let fileURL = worktree.appending(path: file)
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            throw LaunchError.fileNotFoundInWorktree(fileURL)
+        guard let fileURL = resolveFileInWorktree(worktree: worktree, file: file) else {
+            // Either the path failed to resolve, escaped the worktree, or
+            // doesn't exist on disk. Surface as "file not found" so the UI
+            // shows a meaningful error rather than silently launching IntelliJ
+            // pointed at e.g. ~/.aws/credentials.
+            throw LaunchError.fileNotFoundInWorktree(worktree.appending(path: file))
         }
         // Pass the worktree directory as an explicit project argument
         // BEFORE the file. Without this, IntelliJ routes the file to the
@@ -110,6 +113,39 @@ enum IntelliJLauncher {
         // as a separate project. With the project arg, IntelliJ opens (or
         // focuses) the worktree project and then navigates to file:line.
         try spawn(ideaURL, [worktree.path, "--line", "\(line)", fileURL.path])
+    }
+
+    /// Resolves `file` against the worktree, with a path-traversal guard:
+    /// rejects any result that, after symlink resolution, falls outside the
+    /// worktree directory. Claude-supplied finding paths are not trusted —
+    /// a hostile or hallucinated `../../etc/passwd` must not open the user's
+    /// SSH config / credentials in IntelliJ.
+    ///
+    /// The returned URL preserves the caller-visible (un-symlink-resolved)
+    /// shape — IntelliJ accepts either, and existing call sites compare paths
+    /// against `worktree.appending(path: file)`.
+    static func resolveFileInWorktree(worktree: URL, file: String) -> URL? {
+        let trimmed = file.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        // Reject absolute paths outright; findings must be worktree-relative.
+        if trimmed.hasPrefix("/") { return nil }
+
+        let candidate = worktree.appending(path: trimmed)
+
+        // Containment check is done on fully-resolved paths so a symlink
+        // pointing outside the worktree is rejected too, but the URL we
+        // hand back is the original `candidate` so callers (and tests)
+        // see the path they constructed.
+        let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
+        let worktreeResolved = worktree.standardizedFileURL.resolvingSymlinksInPath()
+        let worktreeComponents = worktreeResolved.pathComponents
+        let resolvedComponents = resolved.pathComponents
+        guard resolvedComponents.count >= worktreeComponents.count else { return nil }
+        guard Array(resolvedComponents.prefix(worktreeComponents.count)) == worktreeComponents else {
+            return nil
+        }
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        return candidate
     }
 
     static func openWithFallback(
@@ -126,13 +162,10 @@ enum IntelliJLauncher {
         } catch let error as LaunchError {
             switch error {
             case .ideaCLINotFound:
-                let fileURL = worktree.appending(path: file)
-                // The fallback predates the file existence check that lives
-                // inside `open(...)`, so we re-check here to keep the UI
-                // surface honest: a missing file in the worktree is a
-                // missing file regardless of whether `idea` is installed.
-                if !FileManager.default.fileExists(atPath: fileURL.path) {
-                    return .fileMissing(fileURL)
+                // Same containment guard as `open(...)` — never hand a path
+                // that escapes the worktree to NSWorkspace.shared.open.
+                guard let fileURL = resolveFileInWorktree(worktree: worktree, file: file) else {
+                    return .fileMissing(worktree.appending(path: file))
                 }
                 if workspaceOpen(fileURL) {
                     return .openedWithoutLineJump

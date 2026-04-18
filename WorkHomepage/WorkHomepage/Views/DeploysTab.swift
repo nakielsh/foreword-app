@@ -26,6 +26,11 @@ struct DeploysTab: View {
         self.refreshTick = refreshTick
     }
 
+    /// Holds the in-flight refresh Task so a new refresh tick cancels the
+    /// prior fan-out instead of overlapping it (each refresh issues N
+    /// workflow-run requests; rapid ticks would multiply that).
+    @State private var refreshTask: Task<Void, Never>?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let globalError = vm.globalError {
@@ -36,7 +41,8 @@ struct DeploysTab: View {
         }
         .navigationTitle("Deploys")
         .onChange(of: refreshTick) { _, _ in
-            Task { await refresh() }
+            refreshTask?.cancel()
+            refreshTask = Task { @MainActor in await refresh() }
         }
         .task {
             if !vm.hasRefreshedOnce {

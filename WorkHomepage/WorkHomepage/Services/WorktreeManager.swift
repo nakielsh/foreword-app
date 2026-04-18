@@ -595,15 +595,67 @@ struct WorktreeManager {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let stdoutHandle = stdoutPipe.fileHandleForReading
+        let stderrHandle = stderrPipe.fileHandleForReading
+
+        // Drain both pipes concurrently. Reading sequentially after exit can
+        // deadlock when the child fills the Pipe's ~16-64KB kernel buffer
+        // (large `git fetch`/`clone` progress output is the realistic case).
+        // Bounded so a runaway child can't OOM the parent.
+        let maxPipeBytes = 4 * 1024 * 1024
+        let outLock = NSLock()
+        let errLock = NSLock()
+        var outBuf = Data()
+        var errBuf = Data()
+        stdoutHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil; return }
+            outLock.lock()
+            outBuf.append(chunk)
+            if outBuf.count > maxPipeBytes {
+                outBuf.removeFirst(outBuf.count - maxPipeBytes)
+            }
+            outLock.unlock()
+        }
+        stderrHandle.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty { handle.readabilityHandler = nil; return }
+            errLock.lock()
+            errBuf.append(chunk)
+            if errBuf.count > maxPipeBytes {
+                errBuf.removeFirst(errBuf.count - maxPipeBytes)
+            }
+            errLock.unlock()
+        }
+
         do {
             try process.run()
         } catch {
+            stdoutHandle.readabilityHandler = nil
+            stderrHandle.readabilityHandler = nil
+            try? stdoutHandle.close()
+            try? stderrHandle.close()
             return ProcessResult(exitCode: -1, stdout: "", stderr: "Failed to launch \(executable.path): \(error.localizedDescription)")
         }
         process.waitUntilExit()
 
-        let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        // Detach handlers and snapshot. After detach, any buffered-but-not-yet-
+        // delivered chunks may still be sitting in the pipe; drain remainders
+        // synchronously so we don't lose the tail of small command output.
+        stdoutHandle.readabilityHandler = nil
+        stderrHandle.readabilityHandler = nil
+        if let tail = try? stdoutHandle.readToEnd(), !tail.isEmpty {
+            outLock.lock(); outBuf.append(tail); outLock.unlock()
+        }
+        if let tail = try? stderrHandle.readToEnd(), !tail.isEmpty {
+            errLock.lock(); errBuf.append(tail); errLock.unlock()
+        }
+        outLock.lock(); let outData = outBuf; outLock.unlock()
+        errLock.lock(); let errData = errBuf; errLock.unlock()
+
+        try? stdoutHandle.close()
+        try? stderrHandle.close()
+
         let out = String(data: outData, encoding: .utf8) ?? ""
         let err = String(data: errData, encoding: .utf8) ?? ""
         return ProcessResult(exitCode: process.terminationStatus, stdout: out, stderr: err)

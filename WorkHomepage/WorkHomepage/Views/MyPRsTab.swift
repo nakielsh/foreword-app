@@ -28,6 +28,10 @@ struct MyPRsTab: View {
     // MARK: - Transient UI state (does not need to survive tab switches)
 
     @State private var showReauthSheet: Bool = false
+    /// Holds the in-flight refresh Task so a new tick cancels the prior one
+    /// (rapid refreshes otherwise overlap and last-writer-wins can clobber
+    /// fresher data with stale results).
+    @State private var refreshTask: Task<Void, Never>?
 
     private let client = GitHubClient()
 
@@ -46,7 +50,7 @@ struct MyPRsTab: View {
             // global toolbar's `refreshTick` once SidebarView wires it up.
             ToolbarItem(placement: .secondaryAction) {
                 Button {
-                    Task { await refresh() }
+                    startRefreshTask()
                 } label: {
                     Label("Refresh My PRs", systemImage: "arrow.clockwise.circle")
                 }
@@ -54,7 +58,7 @@ struct MyPRsTab: View {
             }
         }
         .onChange(of: refreshTick) { _, _ in
-            Task { await refresh() }
+            startRefreshTask()
         }
         .task {
             if !vm.hasFetchedOnce && !vm.isLoading {
@@ -64,8 +68,16 @@ struct MyPRsTab: View {
         .sheet(isPresented: $showReauthSheet) {
             TokenPromptSheet(reason: .reauth) {
                 showReauthSheet = false
-                Task { await refresh() }
+                startRefreshTask()
             }
+        }
+    }
+
+    @MainActor
+    private func startRefreshTask() {
+        refreshTask?.cancel()
+        refreshTask = Task { @MainActor in
+            await refresh()
         }
     }
 

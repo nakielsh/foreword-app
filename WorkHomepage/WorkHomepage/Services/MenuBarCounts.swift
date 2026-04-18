@@ -124,12 +124,16 @@ final class MenuBarCounts {
     /// re-arms the observation. `withObservationTracking` fires its change
     /// closure exactly once when any tracked property changes, so we have to
     /// re-arm each time to keep the watcher alive.
+    ///
+    /// Track `orchestrator.running.count` only — the array is mutated when
+    /// a review starts or finishes, and that's all we care about. The
+    /// previous version read `current?.state`, which transitively tracked
+    /// the `Review` SwiftData model and re-fired this watcher on every
+    /// streaming `partialStream` token append. That created a Task-per-
+    /// token storm during active reviews.
     private func rearmInFlightWatcher() {
         let snapshot = withObservationTracking {
-            // Read everything we want to track. Reading `current?.state`
-            // tracks both `current` and (transitively) the Review's `state`.
-            let orchestrator = ReviewOrchestrator.shared
-            return orchestrator.current?.state == "running" ? 1 : 0
+            ReviewOrchestrator.shared.running.count
         } onChange: { [weak self] in
             // Hop to the main actor — `onChange` runs on whatever scheduler
             // posted the change.

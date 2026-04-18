@@ -59,6 +59,11 @@ struct ReviewsTab: View {
     /// Slice 15 — transient banner shown after the closed-PR sweep or a manual
     /// evict. Auto-dismisses after 3s. Nil when nothing to show.
     @State private var cleanupNotice: String?
+    /// Holds the in-flight Task spawned by Refresh. Storing it lets a new
+    /// Refresh tick cancel the previous fetch instead of overlapping — without
+    /// this, two rapid refresh ticks could race and the older finisher would
+    /// clobber fresher PR data on `vm.pendingPRs`.
+    @State private var refreshTask: Task<Void, Never>?
     /// Slice 15 — confirmation alert state for the per-card "Evict review
     /// state" context-menu item.
     @State private var pendingManualEvict: PendingManualEvict?
@@ -95,7 +100,7 @@ struct ReviewsTab: View {
         .toolbar {
             ToolbarItem(placement: .secondaryAction) {
                 Button {
-                    Task { await refresh() }
+                    startRefreshTask()
                 } label: {
                     Label("Refresh Reviews", systemImage: "arrow.clockwise.circle")
                 }
@@ -103,7 +108,7 @@ struct ReviewsTab: View {
             }
         }
         .onChange(of: refreshTick) { _, _ in
-            Task { await refresh() }
+            startRefreshTask()
         }
         .task {
             // Slice 25: wire the summary orchestrator's store to the live
@@ -135,6 +140,14 @@ struct ReviewsTab: View {
                     .padding(.top, 8)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+        }
+        // Auto-clear the cleanup toast after 3s. View-owned task: cancels and
+        // re-arms whenever cleanupNotice changes; can't outlive the view.
+        .task(id: cleanupNotice) {
+            guard cleanupNotice != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            cleanupNotice = nil
         }
         .alert(
             "Evict cached review state?",
@@ -214,18 +227,23 @@ struct ReviewsTab: View {
         showCleanupNotice("Evicted review state for \(evict.prKey)")
     }
 
-    /// Posts a transient toast and schedules its dismissal. New posts cancel
-    /// any in-flight dismissal by overwriting the @State.
+    /// Posts a transient toast. The auto-dismiss timer lives in a
+    /// `.task(id: cleanupNotice)` modifier on the view body, so showing a
+    /// new toast cancels the prior timer and re-fires against the new value.
     @MainActor
     fileprivate func showCleanupNotice(_ text: String) {
         cleanupNotice = text
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            // Only clear if this is still the same notice — a later post
-            // would have overwritten the string already.
-            if cleanupNotice == text {
-                cleanupNotice = nil
-            }
+    }
+
+    /// Cancels the previous in-flight refresh (if any) before spawning a new
+    /// one. Without cancellation, rapid refresh ticks fan out hundreds of
+    /// concurrent GitHub requests and last-writer-wins can clobber fresher
+    /// data with stale results.
+    @MainActor
+    fileprivate func startRefreshTask() {
+        refreshTask?.cancel()
+        refreshTask = Task { @MainActor in
+            await refresh()
         }
     }
 

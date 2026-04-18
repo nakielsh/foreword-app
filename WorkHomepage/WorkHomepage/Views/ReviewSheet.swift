@@ -120,6 +120,18 @@ struct ReviewSheet: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        // Auto-dismiss the toast after 3s. `.task(id:)` is automatically
+        // cancelled and re-fired whenever `launcherToastMessage` changes (new
+        // toast, or sheet dismissed), so a stale timer can't clobber a fresh
+        // toast or write to a dead view.
+        .task(id: launcherToastMessage) {
+            guard launcherToastMessage != nil else { return }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                launcherToastMessage = nil
+            }
+        }
         .alert(
             "Could not open file",
             isPresented: Binding(
@@ -188,21 +200,14 @@ struct ReviewSheet: View {
         }
     }
 
-    /// Shows a toast for ~3s, dismissing automatically. Re-showing the same
-    /// toast resets the timer.
+    /// Shows a toast for ~3s, dismissing automatically. The auto-dismiss
+    /// timer lives in a `.task(id: launcherToastMessage)` modifier on the
+    /// view body, so showing a new toast cancels the old timer and re-fires
+    /// against the new value — no risk of a stale closure clobbering a
+    /// fresher message or writing to a dismissed view.
     private func showToast(_ message: String) {
         withAnimation(.easeInOut(duration: 0.2)) {
             launcherToastMessage = message
-        }
-        let captured = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            // Only clear if the visible toast is still the one we showed —
-            // otherwise a later toast would get clobbered by this stale timer.
-            if launcherToastMessage == captured {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    launcherToastMessage = nil
-                }
-            }
         }
     }
 

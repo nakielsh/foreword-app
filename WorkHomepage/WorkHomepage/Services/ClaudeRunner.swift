@@ -124,6 +124,13 @@ struct ClaudeRunner {
 
     /// Builds the event stream. Split out so tests can drive it with a custom
     /// argument list without recreating the whole CLI surface.
+    /// Hard cap on the per-line stdout buffer. A misbehaving child that emits a
+    /// single multi-MB line without a newline must not OOM the app.
+    private static let maxLineBufferBytes = 1 * 1024 * 1024
+    /// Hard cap on captured stderr. We only need a tail for diagnostics; if a
+    /// child spews indefinitely we keep the most-recent slice.
+    private static let maxStderrBytes = 256 * 1024
+
     static func makeStream(
         executable: URL,
         arguments: [String],
@@ -132,12 +139,22 @@ struct ClaudeRunner {
     ) -> AsyncThrowingStream<ClaudeEvent, Error> {
         AsyncThrowingStream { continuation in
 
-            // Box for the running process so the timeout / cancellation tasks
-            // can reach in. We assign before kicking off the stdout reader,
-            // and the box is released on stream finish.
+            // Lock-protected box so timeout / cancellation / exit handlers can
+            // safely observe Process state from any queue. The previous
+            // `@unchecked Sendable` mutable struct raced kill() against
+            // process construction.
             final class ProcessBox: @unchecked Sendable {
-                var process: Process?
-                var didTimeout: Bool = false
+                private let lock = NSLock()
+                private var _process: Process?
+                private var _didTimeout: Bool = false
+                var process: Process? {
+                    get { lock.lock(); defer { lock.unlock() }; return _process }
+                    set { lock.lock(); defer { lock.unlock() }; _process = newValue }
+                }
+                var didTimeout: Bool {
+                    get { lock.lock(); defer { lock.unlock() }; return _didTimeout }
+                    set { lock.lock(); defer { lock.unlock() }; _didTimeout = newValue }
+                }
             }
             let box = ProcessBox()
 
@@ -160,14 +177,48 @@ struct ClaudeRunner {
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
+                let stdoutHandle = stdoutPipe.fileHandleForReading
+                let stderrHandle = stderrPipe.fileHandleForReading
+
+                // Drain stderr concurrently — Pipe buffer is ~16-64KB. If we
+                // wait for the child to exit before reading, a chatty child
+                // fills its stderr buffer and blocks on write() forever, hanging
+                // the parent on waitUntilExit(). Bounded ring-style: once we hit
+                // maxStderrBytes we keep only the trailing slice.
+                let stderrLock = NSLock()
+                var stderrBuffer = Data()
+                stderrHandle.readabilityHandler = { handle in
+                    let chunk = handle.availableData
+                    if chunk.isEmpty {
+                        // EOF — release the handler so it doesn't leak.
+                        handle.readabilityHandler = nil
+                        return
+                    }
+                    stderrLock.lock()
+                    stderrBuffer.append(chunk)
+                    if stderrBuffer.count > maxStderrBytes {
+                        let drop = stderrBuffer.count - maxStderrBytes
+                        stderrBuffer.removeFirst(drop)
+                    }
+                    stderrLock.unlock()
+                }
+
+                // Set process box BEFORE run() returns so a fast onTermination
+                // (consumer drops the stream during run()) can still find the
+                // pid. `p.isRunning` will be false until run() succeeds, so a
+                // premature kill is a no-op.
+                box.process = process
+
                 do {
                     try process.run()
                 } catch {
+                    stderrHandle.readabilityHandler = nil
+                    try? stdoutHandle.close()
+                    try? stderrHandle.close()
                     continuation.yield(.error("Failed to launch \(executable.path): \(error.localizedDescription)"))
                     continuation.finish()
                     return
                 }
-                box.process = process
 
                 // Schedule the timeout. On expiry, SIGTERM, wait 2s, then
                 // SIGKILL. The flag tells the exit-handler block to emit a
@@ -188,10 +239,8 @@ struct ClaudeRunner {
                 // Stream stdout line-by-line. `FileHandle.bytes` would be
                 // ideal, but its line-mode parser doesn't exist on Foundation;
                 // we hand-roll it with a buffer that splits on `\n`.
-                let stdoutHandle = stdoutPipe.fileHandleForReading
-                let stderrHandle = stderrPipe.fileHandleForReading
-
                 var buffer = Data()
+                var aborted = false
                 while true {
                     let chunk: Data
                     do {
@@ -213,9 +262,21 @@ struct ClaudeRunner {
                             continuation.yield(event)
                         }
                     }
+                    // Per-line OOM guard. If the child emits a giant single
+                    // line (no newline) we'd otherwise grow buffer without
+                    // bound. SIGTERM the child and bail.
+                    if buffer.count > maxLineBufferBytes {
+                        aborted = true
+                        if let p = box.process, p.isRunning {
+                            kill(p.processIdentifier, SIGTERM)
+                        }
+                        continuation.yield(.error("claude output exceeded \(maxLineBufferBytes) bytes on a single line; aborting"))
+                        break
+                    }
                 }
-                // Flush trailing buffer (no-newline tail).
-                if !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
+                // Flush trailing buffer (no-newline tail) only if we didn't
+                // abort.
+                if !aborted, !buffer.isEmpty, let line = String(data: buffer, encoding: .utf8) {
                     for event in decodeLine(line) {
                         continuation.yield(event)
                     }
@@ -224,13 +285,22 @@ struct ClaudeRunner {
                 process.waitUntilExit()
                 timeoutWorkItem.cancel()
 
-                // Drain stderr now that the process has exited.
-                let stderrData = (try? stderrHandle.readToEnd()) ?? Data()
-                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                // Tear down stderr drain and snapshot whatever we accumulated.
+                stderrHandle.readabilityHandler = nil
+                stderrLock.lock()
+                let stderrSnapshot = stderrBuffer
+                stderrLock.unlock()
+                let stderr = String(data: stderrSnapshot, encoding: .utf8) ?? ""
+
+                // Explicitly close pipe FDs so they're released immediately
+                // rather than waiting for ARC to drop the Pipe instance.
+                try? stdoutHandle.close()
+                try? stderrHandle.close()
+                box.process = nil
 
                 if box.didTimeout {
                     continuation.yield(.error("timeout"))
-                } else if process.terminationStatus != 0 {
+                } else if !aborted, process.terminationStatus != 0 {
                     let payload = stderr.isEmpty
                         ? "claude exited with status \(process.terminationStatus)"
                         : stderr
@@ -243,13 +313,11 @@ struct ClaudeRunner {
             // child cleanly. Slice 07's UI doesn't expose this yet (slice 13
             // does), but having it wired now keeps later slices simple.
             continuation.onTermination = { _ in
-                if let p = box.process, p.isRunning {
-                    kill(p.processIdentifier, SIGTERM)
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
-                        if p.isRunning {
-                            kill(p.processIdentifier, SIGKILL)
-                        }
-                    }
+                guard let p = box.process, p.isRunning else { return }
+                kill(p.processIdentifier, SIGTERM)
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak box] in
+                    guard let p = box?.process, p.isRunning else { return }
+                    kill(p.processIdentifier, SIGKILL)
                 }
             }
         }

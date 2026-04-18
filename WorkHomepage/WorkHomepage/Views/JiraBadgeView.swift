@@ -56,8 +56,15 @@ struct JiraBadgeView: View {
             !raw.isEmpty
         else { return nil }
 
+        // Defense in depth: even though JiraConfig.setBaseURL refuses non-
+        // https inputs, an older defaults entry (or a manually-edited plist)
+        // could still ship a `http://` or `javascript:` URL. We never want
+        // NSWorkspace.shared.open to honor anything but https.
+        guard JiraConfig.validateBaseURL(raw) else { return nil }
+
         let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: "\(trimmed)/browse/\(key)") else { return nil }
+        guard let url = URL(string: "\(trimmed)/browse/\(key)"),
+              let scheme = url.scheme?.lowercased(), scheme == "https" else { return nil }
         return (key, url)
     }
 }

@@ -109,6 +109,12 @@ struct PreReviewSummaryRunner {
 
     /// Builds the event stream. Extracted as a static so tests can drive it
     /// directly with a custom argument list, mirroring `ClaudeRunner.makeStream`.
+    /// Hard cap on captured stderr/stdout. Bounded so a chatty child can't
+    /// exhaust process memory in a multi-day session. We keep the trailing
+    /// slice — error diagnostics live near the end of the stream.
+    private static let maxStreamBytes = 4 * 1024 * 1024
+    private static let maxStderrBytes = 256 * 1024
+
     static func makeStream(
         executable: URL,
         arguments: [String],
@@ -117,8 +123,17 @@ struct PreReviewSummaryRunner {
         AsyncStream { continuation in
 
             final class ProcessBox: @unchecked Sendable {
-                var process: Process?
-                var didTimeout: Bool = false
+                private let lock = NSLock()
+                private var _process: Process?
+                private var _didTimeout: Bool = false
+                var process: Process? {
+                    get { lock.lock(); defer { lock.unlock() }; return _process }
+                    set { lock.lock(); defer { lock.unlock() }; _process = newValue }
+                }
+                var didTimeout: Bool {
+                    get { lock.lock(); defer { lock.unlock() }; return _didTimeout }
+                    set { lock.lock(); defer { lock.unlock() }; _didTimeout = newValue }
+                }
             }
             let box = ProcessBox()
 
@@ -138,14 +153,41 @@ struct PreReviewSummaryRunner {
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
+                let stdoutHandle = stdoutPipe.fileHandleForReading
+                let stderrHandle = stderrPipe.fileHandleForReading
+
+                // Drain stderr concurrently. If we waited until after exit,
+                // a chatty child filling its stderr Pipe (~16-64KB) would
+                // block on write() and waitUntilExit() would hang forever.
+                let stderrLock = NSLock()
+                var stderrBuffer = Data()
+                stderrHandle.readabilityHandler = { handle in
+                    let chunk = handle.availableData
+                    if chunk.isEmpty {
+                        handle.readabilityHandler = nil
+                        return
+                    }
+                    stderrLock.lock()
+                    stderrBuffer.append(chunk)
+                    if stderrBuffer.count > maxStderrBytes {
+                        let drop = stderrBuffer.count - maxStderrBytes
+                        stderrBuffer.removeFirst(drop)
+                    }
+                    stderrLock.unlock()
+                }
+
+                box.process = process
+
                 do {
                     try process.run()
                 } catch {
+                    stderrHandle.readabilityHandler = nil
+                    try? stdoutHandle.close()
+                    try? stderrHandle.close()
                     continuation.yield(.error(message: "Failed to launch \(executable.path): \(error.localizedDescription)"))
                     continuation.finish()
                     return
                 }
-                box.process = process
 
                 // Timeout: SIGTERM then SIGKILL after 2s grace.
                 let timeoutWorkItem = DispatchWorkItem {
@@ -161,20 +203,50 @@ struct PreReviewSummaryRunner {
                 let secs = TimeInterval(ClaudeRunner.durationToSeconds(timeout))
                 DispatchQueue.global().asyncAfter(deadline: .now() + secs, execute: timeoutWorkItem)
 
-                let stdoutHandle = stdoutPipe.fileHandleForReading
-                let stderrHandle = stderrPipe.fileHandleForReading
-
                 // --output-format json emits one JSON value (array) on stdout,
-                // not line-delimited. Drain the whole pipe, then decode.
-                let stdoutData = (try? stdoutHandle.readToEnd()) ?? Data()
+                // not line-delimited. Drain incrementally so we (a) don't
+                // wedge on a stdout Pipe-buffer fill in pathological cases,
+                // and (b) can enforce a size cap that prevents OOM.
+                var stdoutData = Data()
+                var aborted = false
+                while true {
+                    let chunk: Data
+                    do {
+                        chunk = try stdoutHandle.read(upToCount: 64 * 1024) ?? Data()
+                    } catch {
+                        chunk = Data()
+                    }
+                    if chunk.isEmpty { break }
+                    stdoutData.append(chunk)
+                    if stdoutData.count > maxStreamBytes {
+                        aborted = true
+                        if let p = box.process, p.isRunning {
+                            kill(p.processIdentifier, SIGTERM)
+                        }
+                        break
+                    }
+                }
                 process.waitUntilExit()
                 timeoutWorkItem.cancel()
 
-                let stderrData = (try? stderrHandle.readToEnd()) ?? Data()
-                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+                stderrHandle.readabilityHandler = nil
+                stderrLock.lock()
+                let stderrSnapshot = stderrBuffer
+                stderrLock.unlock()
+                let stderr = String(data: stderrSnapshot, encoding: .utf8) ?? ""
+
+                try? stdoutHandle.close()
+                try? stderrHandle.close()
+                box.process = nil
 
                 if box.didTimeout {
                     continuation.yield(.error(message: "timeout"))
+                    continuation.finish()
+                    return
+                }
+
+                if aborted {
+                    continuation.yield(.error(message: "claude output exceeded \(maxStreamBytes) bytes; aborting"))
                     continuation.finish()
                     return
                 }
@@ -195,13 +267,11 @@ struct PreReviewSummaryRunner {
             }
 
             continuation.onTermination = { _ in
-                if let p = box.process, p.isRunning {
-                    kill(p.processIdentifier, SIGTERM)
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
-                        if p.isRunning {
-                            kill(p.processIdentifier, SIGKILL)
-                        }
-                    }
+                guard let p = box.process, p.isRunning else { return }
+                kill(p.processIdentifier, SIGTERM)
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak box] in
+                    guard let p = box?.process, p.isRunning else { return }
+                    kill(p.processIdentifier, SIGKILL)
                 }
             }
         }
