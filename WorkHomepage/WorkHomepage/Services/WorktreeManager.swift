@@ -284,6 +284,11 @@ struct WorktreeManager {
         // to re-importing from Gradle).
         try? IdeaProjectSync.copyProjectModel(from: localRepoURL, to: worktreeDir)
 
+        // Mirror untracked review helpers (CLAUDE.md and friends) so the
+        // review tooling running against the worktree has the same grounding
+        // notes the user keeps next to their main checkout.
+        WorktreeAuxFiles.mirror(from: localRepoURL, to: worktreeDir)
+
         return worktreeDir
     }
 

@@ -87,6 +87,35 @@ final class WorktreeManagerLocalRepoTests: XCTestCase {
         XCTAssertTrue(body.contains("commit-2"), "expected branch-tip content; got: \(body)")
     }
 
+    func testPrepareMirrorsClaudeMdFromLocalRepo() async throws {
+        // CLAUDE.md is typically untracked (gitignored or just never
+        // committed) so `git worktree add` doesn't bring it across.
+        // WorktreeAuxFiles.mirror should fill that gap.
+        try "review-rules\n".write(
+            to: localRepoDir.appendingPathComponent("CLAUDE.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let baseDir = tempDir.appendingPathComponent("hp-base", isDirectory: true)
+        let worktree = try await WorktreeManager.prepare(
+            repo: "Acme/widgets",
+            branch: "feature/x",
+            sha: "deadbeef",
+            prNumber: 99,
+            baseDir: baseDir,
+            gitURL: gitURL,
+            localRepoURL: localRepoDir
+        )
+
+        let mirrored = worktree.appendingPathComponent("CLAUDE.md")
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: mirrored.path),
+            "CLAUDE.md should be mirrored into the worktree from the user's main checkout"
+        )
+        XCTAssertEqual(try String(contentsOf: mirrored), "review-rules\n")
+    }
+
     func testPreparePropagatesIdeaProjectModelFromLocalRepo() async throws {
         // Seed the user's clone with a `.idea/` containing a project-model
         // file and a workspace.xml. After prepare, the worktree must have
