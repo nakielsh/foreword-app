@@ -133,7 +133,10 @@ final class IntelliJLauncherTests: XCTestCase {
 
         assertThat(spawnedExecutable?.path).isEqualTo(ideaURL.path)
         let expectedFilePath = worktree.appending(path: file).path
-        assertThat(spawnedArguments).isEqualTo(["--line", "42", expectedFilePath])
+        // Worktree project dir is passed as the first positional so IntelliJ
+        // routes the navigation to that project (not whichever window happens
+        // to be active). `--line` then applies to the file path.
+        assertThat(spawnedArguments).isEqualTo([worktree.path, "--line", "42", expectedFilePath])
     }
 
     // MARK: - openWithFallback(...)

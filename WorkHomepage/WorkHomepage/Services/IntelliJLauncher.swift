@@ -99,14 +99,17 @@ enum IntelliJLauncher {
         guard let ideaURL = resolveIdea() else {
             throw LaunchError.ideaCLINotFound
         }
-        // PRD Q8c: pass the file path inside the worktree; IntelliJ walks
-        // upward to detect the project root, which means it indexes the
-        // worktree (not the user's main repo checkout).
         let fileURL = worktree.appending(path: file)
         if !FileManager.default.fileExists(atPath: fileURL.path) {
             throw LaunchError.fileNotFoundInWorktree(fileURL)
         }
-        try spawn(ideaURL, ["--line", "\(line)", fileURL.path])
+        // Pass the worktree directory as an explicit project argument
+        // BEFORE the file. Without this, IntelliJ routes the file to the
+        // active project window (e.g. the user's main checkout opened in
+        // another window) rather than recognising the worktree's `.idea/`
+        // as a separate project. With the project arg, IntelliJ opens (or
+        // focuses) the worktree project and then navigates to file:line.
+        try spawn(ideaURL, [worktree.path, "--line", "\(line)", fileURL.path])
     }
 
     static func openWithFallback(
