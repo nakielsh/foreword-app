@@ -150,16 +150,29 @@ enum IntelliJLauncher {
 
     /// Default spawn: launches `idea` in a detached `Process`. We don't wait
     /// for exit — IntelliJ stays running long after this call returns.
+    ///
+    /// IntelliJ's spawned children (gradle daemon, kotlin compiler, etc.)
+    /// inherit env from the IntelliJ process, which inherits from us. GUI
+    /// macOS apps launch with a minimal launchd env, so vars exported in
+    /// the user's `~/.zshrc` (REPO_USER, JAVA_HOME, custom Artifactory
+    /// creds) are invisible to us by default — and the gradle daemon then
+    /// fails to authenticate. We bridge that gap by sourcing the user's
+    /// interactive shell env once via `ShellEnvironment` and merging it
+    /// into the spawn env. Process-level overrides (HOME, USER, PATH
+    /// fallback) win against whatever the shell exported, so we don't
+    /// accidentally pick up a half-baked PATH that misses Homebrew.
     private static func defaultSpawn(executable: URL, arguments: [String]) throws {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
-        // Minimal env so `idea` can find supporting tools if it shells out.
-        // Mirrors `WorktreeManager.runProcessSync`'s minimal env shape.
-        var env: [String: String] = [:]
+        var env = ShellEnvironment.userInteractiveEnv()
         if let home = ProcessInfo.processInfo.environment["HOME"] { env["HOME"] = home }
         if let user = ProcessInfo.processInfo.environment["USER"] { env["USER"] = user }
-        env["PATH"] = "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"
+        // Only set a fallback PATH if the shell didn't export one — the
+        // user's PATH (with Homebrew, asdf, sdkman, etc.) is preferred.
+        if env["PATH"] == nil || env["PATH"]?.isEmpty == true {
+            env["PATH"] = "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"
+        }
         process.environment = env
         try process.run()
         // Intentionally do NOT call `waitUntilExit` — we want to detach.
