@@ -92,11 +92,14 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
 
 ## Lower priority
 
-- **Per-line buffer cap in `ClaudeRunner`** (1MB) shipped this pass — but consider a similar guard in `WorktreeManager.runProcessSync` (already 4MB cap added). Document the cap policy in one place.
-- **Avatar URL pinned to `?s=96`.** Currently no size param is appended; GitHub serves the largest cached size by default. Cap pixel area to keep cache cost predictable.
-- **`DeploymentsParser` regex constants use `try?`** — hide programmer error. Use `try!` once at file scope to fail fast.
-- **`WorkflowRun.htmlURL: URL` (non-optional)** — empty-string from API would break the whole `RunsResponse` decode.
-- **`JiraConnectionTester` 401 message** is bare `"HTTP 401"` — include body for "valid creds, wrong tenant" diagnosis.
-- **`BinaryResolver` Homebrew trust assumption** (`/usr/local/bin` writable on Intel default). Document in README. Optionally add a `kSecCodeSign` validity check on resolved binaries.
-- **`IntelliJLauncher` PATH includes `/usr/local/bin`** for git's child processes. Same Homebrew-writable risk.
-- **`IdeaProjectSync` regex-based XML rewrite** (`gradle.xml`) is fragile. Switch to `XMLDocument` parser.
+- **`WorkflowRun.htmlURL: URL` (non-optional)** — empty-string from API would break the whole `RunsResponse` decode. _Deferred:_ flipping to `URL?` requires editing `Views/DeploysTab.swift` and `Models/Deployment.swift` (off-limits). `// TODO(leftovers):` left on the field.
+- **`BinaryResolver` `kSecCodeSign` validity check** on resolved binaries — punt. Homebrew/PATH trust assumption is now documented in README.
+
+### Done in this pass
+
+- Per-line buffer cap policy comment added in `WorktreeManager.runProcessSync` cross-referencing `ClaudeRunner.maxLineBufferBytes`.
+- `AvatarLoader` now appends `?s=96` (merging with existing query) before fetch and cache key.
+- `DeploymentsParser` switched to a file-scope `try!` regex that fails fast on programmer error.
+- `JiraConnectionTester` 401/non-2xx now includes a whitespace-collapsed body snippet (≤200 chars).
+- README documents the Homebrew/`/usr/local/bin` trust assumption shared by `BinaryResolver` and `IntelliJLauncher`.
+- `IdeaProjectSync` `gradle.xml` / `misc.xml` rewrite ported from regex/string-replace to `XMLDocument` (public API unchanged).

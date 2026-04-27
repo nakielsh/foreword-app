@@ -11,19 +11,9 @@
 //  `ReviewsAPI` struct, which owns its own URLSession plumbing and is what
 //  unit tests instantiate with a stubbed session.
 //
-//  Two operations:
-//    - `fetchPendingReviewPRs(currentUser:)` — REST search
-//      `is:pr+is:open+review-requested:@me` then per-PR `pulls/{n}/reviews`
-//      to compute approval count and detect dismissed-by-me state.
-//    - `fetchReviewedByMePRs(currentUser:)` — REST search
-//      `is:pr+is:open+reviewed-by:@me+-author:@me` then per-PR reviews + commits
-//      to derive `myLastReviewState`, `myLastReviewSubmittedAt`, and
-//      `newCommitsSinceReview`.
-//
-//  Both methods accept the current-user login as a parameter, matching the
-//  same explicit-parameter style `MyPRsAPI.fetchPRReviewState` uses for the
-//  same reason — derivations depend on it, and accepting it from the caller
-//  keeps tests deterministic.
+//  All HTTP plumbing (auth headers, retries, ETag, rate-limit, decode
+//  errors) lives in `HTTPClient.swift`. This file is a thin layer over
+//  `HTTPClient.getDecoded` / `paginate` plus per-PR derivation logic.
 //
 
 import struct Foundation.URL
@@ -74,11 +64,19 @@ struct ReviewsAPI {
     /// Production defaults: shared session + Keychain token + 401-clears-keychain.
     static func `default`() -> ReviewsAPI { ReviewsAPI() }
 
+    private var http: HTTPClient {
+        HTTPClient(
+            session: session,
+            tokenProvider: tokenProvider,
+            onUnauthorized: onUnauthorized
+        )
+    }
+
     // MARK: - Pending review PRs
 
     func fetchPendingReviewPRs(currentUser: String) async throws -> [PendingReviewPR] {
         let q = "is:pr+is:open+review-requested:@me"
-        let urlString = "https://api.github.com/search/issues?q=\(q)&sort=updated&order=desc&per_page=50"
+        let urlString = "https://api.github.com/search/issues?q=\(q)&sort=updated&order=desc&per_page=100"
         let items: [ReviewsSearchPR] = try await searchPRs(urlString: urlString)
 
         var out: [PendingReviewPR] = []
@@ -89,6 +87,8 @@ struct ReviewsAPI {
                 reviews = try await fetchPRReviews(repo: pr.repoFullName, number: pr.number)
             } catch {
                 // index.html parity: per-PR failure becomes empty review set.
+                // TODO(networking-followup): surface a per-card error indicator
+                // so "fetch failed" is distinguishable from "no reviews".
                 reviews = []
             }
             let approvals = ReviewsDerive.approvalCount(reviews: reviews)
@@ -121,7 +121,7 @@ struct ReviewsAPI {
 
     func fetchReviewedByMePRs(currentUser: String) async throws -> [ReviewedPR] {
         let q = "is:pr+is:open+reviewed-by:@me+-author:@me"
-        let urlString = "https://api.github.com/search/issues?q=\(q)&sort=updated&order=desc&per_page=50"
+        let urlString = "https://api.github.com/search/issues?q=\(q)&sort=updated&order=desc&per_page=100"
         let items: [ReviewsSearchPR] = try await searchPRs(urlString: urlString)
 
         var out: [ReviewedPR] = []
@@ -134,6 +134,8 @@ struct ReviewsAPI {
                 async let c = fetchPRCommits(repo: pr.repoFullName, number: pr.number)
                 (reviews, commits) = try await (r, c)
             } catch {
+                // TODO(networking-followup): surface a per-card error indicator
+                // so "fetch failed" is distinguishable from "no reviews".
                 reviews = []
                 commits = []
             }
@@ -169,66 +171,19 @@ struct ReviewsAPI {
 
     func fetchPRReviews(repo: String, number: Int) async throws -> [PRReviewDTO] {
         let url = "https://api.github.com/repos/\(repo)/pulls/\(number)/reviews?per_page=100"
-        return try await getDecoded([PRReviewDTO].self, urlString: url)
+        return try await http.getDecoded([PRReviewDTO].self, urlString: url)
     }
 
     func fetchPRCommits(repo: String, number: Int) async throws -> [PRCommitDTO] {
         let url = "https://api.github.com/repos/\(repo)/pulls/\(number)/commits?per_page=100"
-        return try await getDecoded([PRCommitDTO].self, urlString: url)
+        return try await http.getDecoded([PRCommitDTO].self, urlString: url)
     }
 
-    // MARK: - Generic helpers
+    // MARK: - Search helper
 
     private func searchPRs(urlString: String) async throws -> [ReviewsSearchPR] {
-        let envelope: SearchEnvelope = try await getDecoded(SearchEnvelope.self, urlString: urlString)
+        let envelope: SearchEnvelope = try await http.getDecoded(SearchEnvelope.self, urlString: urlString)
         return envelope.items
-    }
-
-    private func getDecoded<T: Decodable>(_ type: T.Type, urlString: String) async throws -> T {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
-        guard let url = URL(string: urlString) else {
-            throw GitHubError.transport("Invalid URL")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-        let (data, response) = try await performRequest(request)
-        try checkResponse(response, data: data)
-
-        do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try decoder.decode(T.self, from: data)
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
-    }
-
-    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch {
-            throw GitHubError.transport(error.localizedDescription)
-        }
-    }
-
-    private func checkResponse(_ response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw GitHubError.transport("Non-HTTP response")
-        }
-        if http.statusCode == 401 {
-            onUnauthorized()
-            throw GitHubError.unauthorized
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw GitHubError.http(status: http.statusCode, body: body)
-        }
-        GitHub401Counter.shared.recordSuccess()
     }
 }
 

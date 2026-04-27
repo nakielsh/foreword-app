@@ -81,6 +81,10 @@ struct FirstRunWizard: View {
         }
         .frame(width: 560, height: 700)
         .onAppear { loadInitial() }
+        .task {
+            // Probe binaries off the main thread.
+            await reprobeBinaries()
+        }
     }
 
     // MARK: - Sections
@@ -98,6 +102,14 @@ struct FirstRunWizard: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("1. GitHub token", skipBinding: $skipGitHub)
             if !skipGitHub {
+                // Consent copy — explain what "Try gh auth token" actually
+                // does before the user clicks. Replaces the silent
+                // `gh auth token` invocation that used to run during app
+                // launch without user awareness.
+                Text("WorkHomepage can read your existing `gh` CLI token and store it in your macOS Keychain. The token never leaves your machine — it is used only to call the GitHub REST and GraphQL APIs from within this app. You can also paste a token manually below, or skip this step entirely.")
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 switch ghBootstrapStatus {
                 case .unknown:
                     HStack {
@@ -168,13 +180,26 @@ struct FirstRunWizard: View {
             if !skipTools {
                 HStack {
                     Spacer()
-                    Button("Re-detect") { toolStatus = BinaryResolver.validate() }
+                    Button("Re-detect") {
+                        Task { await reprobeBinaries() }
+                    }
                 }
                 ForEach(Tool.allCases, id: \.self) { tool in
                     toolRow(tool)
                 }
             }
         }
+    }
+
+    /// Probe binaries off the main thread — `BinaryResolver.validate()` spawns
+    /// a `Process` per tool which would otherwise freeze the wizard sheet
+    /// while it waits on `waitUntilExit`.
+    @MainActor
+    private func reprobeBinaries() async {
+        let probed = await Task.detached(priority: .userInitiated) {
+            BinaryResolver.validate()
+        }.value
+        toolStatus = probed
     }
 
     private func toolRow(_ tool: Tool) -> some View {
@@ -257,7 +282,9 @@ struct FirstRunWizard: View {
         jiraBaseURL = JiraConfig.getBaseURL() ?? ""
         jiraEmail = JiraConfig.getEmail() ?? ""
         jiraToken = JiraConfig.getToken() ?? ""
-        toolStatus = BinaryResolver.validate()
+        // toolStatus is loaded async via `.task` on the body; leave at empty
+        // so the wizard sheet doesn't block on subprocess probes during the
+        // initial render.
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
         concurrencyCap = AppSettings.concurrencyCap
     }
@@ -300,7 +327,7 @@ struct FirstRunWizard: View {
         panel.showsHiddenFiles = true
         if panel.runModal() == .OK, let url = panel.url {
             BinaryResolver.setOverride(tool, url: url)
-            toolStatus = BinaryResolver.validate()
+            Task { await reprobeBinaries() }
         }
     }
 

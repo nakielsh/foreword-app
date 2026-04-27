@@ -48,4 +48,56 @@ final class KeychainStoreTests: XCTestCase {
         XCTAssertTrue(KeychainStore.delete(key: key))
         XCTAssertTrue(KeychainStore.delete(key: key))
     }
+
+    // MARK: - Access-denied path / unhappy paths
+    //
+    // Real Keychain access-denial is gated by `kSecAttrAccessControl` +
+    // user presence, which we cannot fake from a unit test. What we CAN
+    // pin is the contract the rest of the app relies on:
+    //
+    //   * `get` on a non-existent key returns nil and does not crash.
+    //   * `set` followed by `get` round-trips cleanly even with weird
+    //     values (empty / unicode / multiline).
+    //   * Stress: many parallel reads of an absent key all return nil
+    //     without ever throwing or trapping.
+    //
+    // If a future regression introduces a fatalError on the SecItem
+    // failure path (rather than returning nil / false), this triggers it.
+
+    func testGetOnNonExistentKeyReturnsNilAndDoesNotCrash() {
+        // Use a UUID that was never written to. Repeated reads must remain
+        // nil and never trip a trap or fatalError.
+        let absentKey = "absent." + UUID().uuidString
+        for _ in 0..<10 {
+            XCTAssertNil(KeychainStore.get(key: absentKey))
+        }
+    }
+
+    func testSetWithEmptyValueRoundTripsAndDoesNotCrash() {
+        // Empty string is a degenerate but valid value. `set` returns true
+        // and a subsequent `get` returns the same empty string.
+        XCTAssertTrue(KeychainStore.set(key: key, value: ""))
+        XCTAssertEqual(KeychainStore.get(key: key), "")
+    }
+
+    func testSetWithUnicodeValueRoundTrips() {
+        let weird = "🐈\u{200D}\u{2B1B} multiline\nvalue with NUL-adjacent \u{0001} chars"
+        XCTAssertTrue(KeychainStore.set(key: key, value: weird))
+        XCTAssertEqual(KeychainStore.get(key: key), weird)
+    }
+
+    func testParallelGetsOnAbsentKeyAllReturnNil() async {
+        // Fans out 16 concurrent `get` calls; the underlying SecItem API is
+        // thread-safe but a future caching layer could regress this. All
+        // must return nil; none may crash or hang.
+        let absentKey = "absent." + UUID().uuidString
+        await withTaskGroup(of: String?.self) { group in
+            for _ in 0..<16 {
+                group.addTask { KeychainStore.get(key: absentKey) }
+            }
+            for await result in group {
+                XCTAssertNil(result)
+            }
+        }
+    }
 }

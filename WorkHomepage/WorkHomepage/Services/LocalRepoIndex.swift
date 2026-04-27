@@ -120,6 +120,13 @@ enum LocalRepoIndex {
         return mapping(defaults: defaults)[repo]
     }
 
+    /// Serialises rescans so two concurrent callers can't both walk the
+    /// roots, both write back partial mappings, and clobber each other's
+    /// just-discovered entries. Implemented as an `NSLock` (not an actor —
+    /// the work is synchronous I/O and the rest of `LocalRepoIndex` is
+    /// non-isolated; an actor would force every caller to `await`).
+    private static let scanLock = NSLock()
+
     /// Lookup with a one-shot rescan fallback. If neither the override nor
     /// the persisted mapping has the repo, walks the configured roots, writes
     /// the result back, and returns the freshly-resolved path. Synchronous
@@ -134,12 +141,27 @@ enum LocalRepoIndex {
         guard !configuredRoots.isEmpty, let gitURL = BinaryResolver.resolve(.git) else {
             return nil
         }
+        // Serialise the read-modify-write so two parallel `start(...)` calls
+        // against repos that aren't yet mapped don't race each other and lose
+        // entries. The first to grab the lock writes the merged mapping; the
+        // second sees the cached value and skips the scan entirely.
+        scanLock.lock()
+        defer { scanLock.unlock() }
+        if let cached = localPath(for: repo, defaults: defaults) {
+            return cached
+        }
         let scanned = scan(roots: configuredRoots, gitURL: gitURL)
-        setMapping(scanned, defaults: defaults)
+        // Merge into the existing mapping rather than replacing it. The
+        // `scan` walker only sees what's on disk right now; rare-but-real
+        // case: another rescan finished between our cache check and the
+        // lock acquisition. Replacing wholesale would drop their entries.
+        var merged = mapping(defaults: defaults)
+        for (k, v) in scanned { merged[k] = v }
+        setMapping(merged, defaults: defaults)
         if let override = overrides(defaults: defaults)[repo] {
             return override
         }
-        return scanned[repo]
+        return merged[repo]
     }
 
     // MARK: - Scanning
@@ -150,13 +172,28 @@ enum LocalRepoIndex {
     /// Origins matching `github.com[:/]<owner>/<name>(.git)?` are recorded
     /// as `<owner>/<name>` → `<dir>`.
     ///
+    /// Containment check: after parsing the GitHub repo from the remote URL,
+    /// the resolved candidate dir must live under one of the configured
+    /// roots. Without this, a malicious nested directory whose `origin`
+    /// points at `github.com/<owner>/<repo>` could spoof the mapping for
+    /// that repo (via symlinks pointing outside the user's `~/src/`,
+    /// FileManager-followed) — leading the next review to clone-bypass into
+    /// attacker-controlled territory.
+    ///
     /// Synchronous and I/O-heavy. Call from a detached task.
     static func scan(roots: [URL], gitURL: URL) -> [String: URL] {
+        // Resolve roots once for containment comparison. Symlinks in the
+        // root paths themselves are honoured (e.g. `~/src` → `/Volumes/...`)
+        // so legitimate user setups still match. Candidate paths are
+        // resolved the same way before comparison.
+        let resolvedRoots: [URL] = roots.map { $0.standardizedFileURL.resolvingSymlinksInPath() }
+
         var result: [String: URL] = [:]
         for root in roots {
             for dir in candidateDirectories(under: root) {
                 guard let remote = readOriginRemote(at: dir, gitURL: gitURL) else { continue }
                 guard let repo = parseGitHubRepo(from: remote) else { continue }
+                guard isContained(dir, in: resolvedRoots) else { continue }
                 // First match wins: we don't want a stale clone deeper in the
                 // tree to overwrite a primary one closer to the root. The
                 // candidate enumeration already produces shallower entries
@@ -167,6 +204,22 @@ enum LocalRepoIndex {
             }
         }
         return result
+    }
+
+    /// True iff `candidate`, after symlink resolution, sits at or beneath
+    /// one of `resolvedRoots`. Comparison is by path-component prefix to
+    /// avoid `/srcfoo` matching `/src` on plain string contains checks.
+    static func isContained(_ candidate: URL, in resolvedRoots: [URL]) -> Bool {
+        let resolved = candidate.standardizedFileURL.resolvingSymlinksInPath()
+        let candidateComponents = resolved.pathComponents
+        for root in resolvedRoots {
+            let rootComponents = root.pathComponents
+            guard candidateComponents.count >= rootComponents.count else { continue }
+            if Array(candidateComponents.prefix(rootComponents.count)) == rootComponents {
+                return true
+            }
+        }
+        return false
     }
 
     /// Convenience: scan the persisted roots, using the resolved `git` binary,

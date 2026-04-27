@@ -255,55 +255,5 @@ final class WorktreeManagerDiskUsageTests: XCTestCase {
     }
 }
 
-// MARK: - assertJ-style fluent assertions
-//
-// Tiny, self-contained shim so the slice 17 tests follow the user's global
-// "always assertJ instead of jupiter" rule without dragging a third-party
-// dependency into the project. Covers exactly the assertions used here:
-// `isTrue`, `isFalse`, `isEqualTo`, `isNotNil`, `isEmpty`. Failures route
-// through `XCTFail` so Xcode highlights the right line.
-
-private struct FluentAssertion<T> {
-    let value: T
-    let file: StaticString
-    let line: UInt
-}
-
-private func assertThat<T>(_ value: T, file: StaticString = #filePath, line: UInt = #line) -> FluentAssertion<T> {
-    FluentAssertion(value: value, file: file, line: line)
-}
-
-extension FluentAssertion where T == Bool {
-    func isTrue() {
-        if !value { XCTFail("expected true, got false", file: file, line: line) }
-    }
-    func isFalse() {
-        if value { XCTFail("expected false, got true", file: file, line: line) }
-    }
-}
-
-extension FluentAssertion where T: Equatable {
-    func isEqualTo(_ expected: T) {
-        if value != expected {
-            XCTFail("expected \(expected), got \(value)", file: file, line: line)
-        }
-    }
-}
-
-extension FluentAssertion {
-    func isNotNil() {
-        // Mirror checks via Optional reflection: T may be Optional<U>.
-        let mirror = Mirror(reflecting: value)
-        if mirror.displayStyle == .optional && mirror.children.isEmpty {
-            XCTFail("expected non-nil, got nil", file: file, line: line)
-        }
-    }
-}
-
-extension FluentAssertion where T: Collection {
-    func isEmpty() {
-        if !value.isEmpty {
-            XCTFail("expected empty collection, got \(value.count) elements", file: file, line: line)
-        }
-    }
-}
+// AssertJ-flavoured helpers consolidated into Helpers/Assertions.swift —
+// the per-file FluentAssertion shim has been removed.

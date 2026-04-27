@@ -64,7 +64,7 @@ final class WorkflowRunsDecodingTests: XCTestCase {
         """
         WorkflowsStubURLProtocol.responder = { request in
             let url = request.url?.absoluteString ?? ""
-            if url.hasSuffix("/actions/workflows") {
+            if url.contains("/actions/workflows?") || url.hasSuffix("/actions/workflows") {
                 return Self.respond(url: request.url!, body: workflowsBody)
             }
             if url.contains("/actions/workflows/42/runs") {
@@ -161,7 +161,7 @@ final class WorkflowRunsDecodingTests: XCTestCase {
         var page2Calls = 0
         WorkflowsStubURLProtocol.responder = { request in
             let url = request.url?.absoluteString ?? ""
-            if url.hasSuffix("/actions/workflows") {
+            if url.contains("/actions/workflows?") || url.hasSuffix("/actions/workflows") {
                 return Self.respond(url: request.url!, body: workflowsBody)
             }
             if url.contains("page=1") {

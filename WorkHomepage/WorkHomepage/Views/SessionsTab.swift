@@ -97,10 +97,19 @@ struct SessionsTab: View {
 
     private func refresh() {
         isLoading = true
-        let result = SessionsReader.currentSessions()
-        sessions = result
-        hasFetchedOnce = true
-        isLoading = false
+        // `SessionsReader.currentSessions()` reads `~/.claude/sessions/*.json`
+        // and `~/.claude/history.jsonl` synchronously. With long history
+        // files (active multi-day Claude users) this is hundreds of ms of
+        // disk I/O — would freeze the UI on the main actor. Hop off main
+        // for the read, hop back on for the state mutation.
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                SessionsReader.currentSessions()
+            }.value
+            sessions = result
+            hasFetchedOnce = true
+            isLoading = false
+        }
     }
 }
 

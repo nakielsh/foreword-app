@@ -154,6 +154,13 @@ struct WorktreeManager {
         gitURL: URL,
         localRepoURL: URL? = nil
     ) async throws -> URL {
+        // Defence-in-depth: orchestrator validates first, but every
+        // `prepare(...)` entry point is also reachable directly from tests
+        // and (in theory) future callers. Validate at the boundary so a
+        // malformed value can never fold into a git argument.
+        try GitHubRepoSpec.validate(repo)
+        try GitBranchSpec.validate(branch)
+
         // Local-repo branch: user already owns a clone of this repo. Skip the
         // bare layout entirely, but place the worktree at the canonical
         // `<baseDir>/worktrees/<repo>/<prNumber>/` location — outside the user's
@@ -376,6 +383,19 @@ struct WorktreeManager {
     /// Re-evaluated each call — the probe is one directory listing and adding
     /// or removing keys between runs is rare enough not to warrant caching.
     static func cloneURL(for repo: String) -> String {
+        // Validate before folding into either URL form. `git clone` consumes
+        // shell-free `Process` arguments, so this is defence-in-depth: a
+        // malformed value gets a typed error here rather than a confusing
+        // git stderr further down.
+        do {
+            try GitHubRepoSpec.validate(repo)
+        } catch {
+            // Fail closed: return a sentinel URL that `git clone` will
+            // reject. Production never reaches this — `prepare(...)` in the
+            // orchestrator validates first — but defence-in-depth keeps the
+            // boundary honest.
+            return "invalid-repo://\(repo)"
+        }
         let sshDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".ssh", isDirectory: true)
         if let entries = try? FileManager.default.contentsOfDirectory(atPath: sshDir.path) {
@@ -602,6 +622,14 @@ struct WorktreeManager {
         // deadlock when the child fills the Pipe's ~16-64KB kernel buffer
         // (large `git fetch`/`clone` progress output is the realistic case).
         // Bounded so a runaway child can't OOM the parent.
+        //
+        // Buffer-cap policy: the per-line/per-stream caps live in two places —
+        // `ClaudeRunner.maxLineBufferBytes` (1MB, per-line stdout for the
+        // streaming Claude CLI) and the 4MB cap below (whole-stdout/stderr for
+        // bounded `git` invocations). Two different shapes, two different
+        // limits; both exist to prevent a misbehaving child from OOMing the
+        // app on a multi-day session. See `ClaudeRunner.swift:144-149` for the
+        // streaming-cap rationale.
         let maxPipeBytes = 4 * 1024 * 1024
         let outLock = NSLock()
         let errLock = NSLock()
@@ -834,14 +862,14 @@ extension WorktreeManager {
     // MARK: - Internals
 
     /// Production "is this repo currently being reviewed?" predicate. The
-    /// orchestrator singleton lives on `@MainActor`; the public
-    /// `evictAllForRepo(_:)` is itself `@MainActor`-isolated, so this
-    /// `assumeIsolated` is safe — Swift just can't see through the closure.
+    /// orchestrator singleton lives on `@MainActor`; we annotate the seam
+    /// itself `@MainActor` so the compiler enforces "main-only" rather than
+    /// relying on `MainActor.assumeIsolated` (which fatally traps if a
+    /// non-main caller ever reaches here through a future test seam).
+    @MainActor
     private static func defaultIsBusy(repo: String) -> Bool {
-        MainActor.assumeIsolated {
-            let orch = ReviewOrchestrator.shared
-            return orch.current?.state == "running" && orch.current?.repoFullName == repo
-        }
+        let orch = ReviewOrchestrator.shared
+        return orch.current?.state == "running" && orch.current?.repoFullName == repo
     }
 
     /// Returns the total size in bytes of every regular file reachable from

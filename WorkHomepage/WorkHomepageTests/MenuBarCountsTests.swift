@@ -130,16 +130,11 @@ final class MenuBarCountsTests: XCTestCase {
         XCTAssertEqual(counts.awaitingReviews, 0)
     }
 
-    // MARK: - Refresh-Reviews notification name exists
-
-    func testRefreshReviewsRequestedNotificationNameIsStable() {
-        // Sanity check: the constant exists with the expected raw value, so
-        // the future receiver knows what string to listen on.
-        XCTAssertEqual(
-            Notification.Name.refreshReviewsRequested.rawValue,
-            "refreshReviewsRequested"
-        )
-    }
+    // testRefreshReviewsRequestedNotificationNameIsStable removed — it
+    // re-asserted a literal string defined by the same module. If a notifier
+    // and observer ever drift on this name, an integration test that posts
+    // and listens (which would surface the drift end-to-end) is the right
+    // way to catch it; pinning the literal in isolation has no value.
 
     // MARK: - Helpers
 

@@ -83,13 +83,25 @@ struct ClaudeRunner {
     /// fires, or the consumer drops the stream (cancellation propagates via
     /// SIGTERM → SIGKILL).
     ///
+    /// Default deny-list. Production callers can override but the orchestrator
+    /// pins a read-only-with-narrow-Bash surface; this list is the safety net
+    /// for code paths that haven't opted into specifying allowed-tools strictly.
+    static let defaultDisallowedTools = "Bash,Write,Edit"
+
     /// `executableURL` defaults to whatever `BinaryResolver.resolve(.claude)`
     /// returns; tests inject a fake binary path.
+    ///
+    /// `disallowedTools` is forwarded to claude as `--disallowed-tools`. The
+    /// orchestrator pins read-only review territory by passing
+    /// `"Bash,Write,Edit"` here even though `allowedTools` already names a
+    /// narrow Bash sub-allow — defence-in-depth against future regressions
+    /// that might widen `allowedTools` without re-checking the deny side.
     static func run(
         prompt: String,
         schema: String,
         cwd: URL,
         allowedTools: String,
+        disallowedTools: String? = nil,
         timeout: Duration = .seconds(600),
         executableURL: URL? = nil
     ) throws -> AsyncThrowingStream<ClaudeEvent, Error> {
@@ -103,7 +115,7 @@ struct ClaudeRunner {
             throw ClaudeRunnerError.binaryNotFound
         }
 
-        let arguments = [
+        var arguments = [
             "-p", prompt,
             "--output-format", "stream-json",
             "--include-partial-messages",
@@ -111,6 +123,11 @@ struct ClaudeRunner {
             "--json-schema", schema,
             "--allowed-tools", allowedTools
         ]
+        let denies = disallowedTools ?? defaultDisallowedTools
+        if !denies.isEmpty {
+            arguments.append("--disallowed-tools")
+            arguments.append(denies)
+        }
 
         return makeStream(
             executable: resolvedExe,
@@ -330,12 +347,17 @@ struct ClaudeRunner {
     /// claude's tool calls can shell out to `gh` / `git`. Also includes the
     /// directory containing the resolved `claude` binary itself, in case
     /// `claude` resolves sibling binaries by relative lookups.
+    ///
+    /// The env is allow-listed: only HOME / USER / TERM, ANTHROPIC_*,
+    /// CLAUDE_* keys flow through. Everything else (AWS creds, generic API
+    /// keys, etc.) is dropped so a tool-call shell-out can't read them.
     static func buildClaudeEnv(executable: URL) -> [String: String] {
         var env: [String: String] = [:]
         let inherited = ProcessInfo.processInfo.environment
         if let home = inherited["HOME"] { env["HOME"] = home }
         if let user = inherited["USER"] { env["USER"] = user }
         if let term = inherited["TERM"] { env["TERM"] = term }
+        if let lang = inherited["LANG"] { env["LANG"] = lang }
 
         // Pass through any ANTHROPIC_* / CLAUDE_* env the user has set —
         // necessary for non-default model selection or alternative auth.

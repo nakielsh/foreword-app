@@ -57,12 +57,22 @@ struct SettingsView: View {
     @State private var pendingEvictRepo: String? = nil
     @State private var evictError: String? = nil
 
-    // Local repos (worktrees inside user-owned clones)
-    @State private var localRepoRoots: [URL] = LocalRepoIndex.roots
-    @State private var localRepoMapping: [String: URL] = LocalRepoIndex.mapping
-    @State private var localRepoOverrides: [String: URL] = LocalRepoIndex.overrides
+    // Local repos (worktrees inside user-owned clones).
+    //
+    // Initial value is empty — populated in `.task` so we pick up any
+    // background rescan results that landed after the property wrappers ran.
+    // Snapshotting `LocalRepoIndex.roots` at view init missed scans triggered
+    // from `WorkHomepageApp.refreshLocalRepoIndex`.
+    @State private var localRepoRoots: [URL] = []
+    @State private var localRepoMapping: [String: URL] = [:]
+    @State private var localRepoOverrides: [String: URL] = [:]
     @State private var isScanningLocalRepos: Bool = false
     @State private var localRepoScanStatus: String? = nil
+
+    /// Pending reviewPromptText save. We coalesce keystrokes into a single
+    /// UserDefaults write so each character doesn't blow through the
+    /// preferences daemon.
+    @State private var promptSaveTask: Task<Void, Never>? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -108,6 +118,22 @@ struct SettingsView: View {
         }
         .frame(minWidth: 520, idealWidth: 560, minHeight: 600, idealHeight: 720)
         .onAppear { loadAll() }
+        .task {
+            // Load LocalRepoIndex snapshot in `.task` rather than via
+            // property-wrapper init so we observe values written by the
+            // background rescan triggered at app launch.
+            localRepoRoots = LocalRepoIndex.roots
+            localRepoMapping = LocalRepoIndex.mapping
+            localRepoOverrides = LocalRepoIndex.overrides
+            // Tools status involves spawning subprocesses to probe binaries —
+            // explicitly hop off main so the UI doesn't freeze on first
+            // present. `loadAll()` already populated other fields; this just
+            // refreshes the slow one.
+            let probed = await Task.detached(priority: .userInitiated) {
+                BinaryResolver.validate()
+            }.value
+            toolStatus = probed
+        }
         .sheet(isPresented: $showRePasteTokenSheet) {
             TokenPromptSheet(reason: .reauth) {
                 showRePasteTokenSheet = false
@@ -218,7 +244,14 @@ struct SettingsView: View {
                 Text("Tools").font(Font.display(size: 14, weight: .bold))
                 Spacer()
                 Button("Re-detect all") {
-                    toolStatus = BinaryResolver.validate()
+                    // `validate()` spawns a `Process` per tool to probe
+                    // executability. Stay off main so the UI doesn't freeze.
+                    Task {
+                        let probed = await Task.detached(priority: .userInitiated) {
+                            BinaryResolver.validate()
+                        }.value
+                        toolStatus = probed
+                    }
                 }
             }
             ForEach(Tool.allCases, id: \.self) { tool in
@@ -254,7 +287,12 @@ struct SettingsView: View {
             if BinaryResolver.readOverride(tool, defaults: .standard) != nil {
                 Button("Clear") {
                     BinaryResolver.setOverride(tool, url: nil)
-                    toolStatus = BinaryResolver.validate()
+                    Task {
+                        let probed = await Task.detached(priority: .userInitiated) {
+                            BinaryResolver.validate()
+                        }.value
+                        toolStatus = probed
+                    }
                 }
             }
         }
@@ -398,7 +436,21 @@ struct SettingsView: View {
             reviewPromptText = ReviewPromptStore().current()
         }
         .onChange(of: reviewPromptText) { _, newValue in
-            ReviewPromptStore().setCurrent(newValue)
+            // Coalesce keystrokes — without this every typed character
+            // synchronously round-trips through `cfprefsd`, producing
+            // hundreds of UserDefaults writes per minute of editing.
+            promptSaveTask?.cancel()
+            promptSaveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 400_000_000) // 400ms
+                if Task.isCancelled { return }
+                ReviewPromptStore().setCurrent(newValue)
+            }
+        }
+        .onDisappear {
+            // Make sure the most recent edit is flushed when the user closes
+            // Settings without idling 400ms first.
+            promptSaveTask?.cancel()
+            ReviewPromptStore().setCurrent(reviewPromptText)
         }
     }
 
@@ -467,7 +519,10 @@ struct SettingsView: View {
                 Text("Search roots")
                     .font(Font.appBody(size: 12, weight: .semibold))
                     .foregroundStyle(Color.textMuted)
-                ForEach(Array(localRepoRoots.enumerated()), id: \.offset) { idx, root in
+                // Identify rows by their path so reorder / removal preserves
+                // identity. `\.offset` would shuffle ids when the array
+                // changes, breaking SwiftUI's diff and animations.
+                ForEach(localRepoRoots, id: \.path) { root in
                     HStack {
                         Text(root.path)
                             .font(.callout.monospaced())
@@ -476,8 +531,10 @@ struct SettingsView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
                         Button("Remove") {
-                            localRepoRoots.remove(at: idx)
-                            LocalRepoIndex.setRoots(localRepoRoots, defaults: .standard)
+                            if let idx = localRepoRoots.firstIndex(where: { $0.path == root.path }) {
+                                localRepoRoots.remove(at: idx)
+                                LocalRepoIndex.setRoots(localRepoRoots, defaults: .standard)
+                            }
                         }
                     }
                 }
@@ -885,7 +942,10 @@ struct SettingsView: View {
         jiraBaseURL = JiraConfig.getBaseURL() ?? ""
         jiraEmail = JiraConfig.getEmail() ?? ""
         jiraToken = JiraConfig.getToken() ?? ""
-        toolStatus = BinaryResolver.validate()
+        // Tools status is populated by the `.task` modifier on the body so we
+        // stay off main during binary probing. We seed an empty status here;
+        // rows render as "not found" until the async probe finishes (typically
+        // <100ms).
         concurrencyCap = AppSettings.concurrencyCap
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
         reviewPromptText = ReviewPromptStore().current()
@@ -910,7 +970,11 @@ struct SettingsView: View {
         defer { isReDetectingGitHub = false }
         // Force re-probe of `gh` first (clears cache, honours override).
         _ = BinaryResolver.reDetect()
-        toolStatus = BinaryResolver.validate()
+        // Probe binaries off the main thread so we don't block UI.
+        let probed = await Task.detached(priority: .userInitiated) {
+            BinaryResolver.validate()
+        }.value
+        toolStatus = probed
         if let token = await GitHubTokenBootstrap.bootstrap(), !token.isEmpty {
             KeychainStore.set(key: "github.token", value: token)
             hasGitHubToken = true
@@ -973,7 +1037,12 @@ struct SettingsView: View {
         panel.showsHiddenFiles = true
         if panel.runModal() == .OK, let url = panel.url {
             BinaryResolver.setOverride(tool, url: url)
-            toolStatus = BinaryResolver.validate()
+            Task {
+                let probed = await Task.detached(priority: .userInitiated) {
+                    BinaryResolver.validate()
+                }.value
+                toolStatus = probed
+            }
         }
     }
 }

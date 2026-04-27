@@ -35,6 +35,43 @@ struct MyPRsTab: View {
 
     private let client = GitHubClient()
 
+    /// Cap on per-PR review-state fan-out. 8 in-flight GraphQL calls is a
+    /// fair compromise: high enough to keep refreshes snappy on big PR lists,
+    /// low enough that we don't hammer GitHub's secondary rate limits.
+    private static let enrichmentConcurrency = 8
+
+    /// Fetch one PR's review state and assemble a row. Pulled out of the
+    /// task group body so the bounded-concurrency loop stays compact.
+    private static func fetchRow(
+        index: Int,
+        pr: AuthoredPR,
+        login: String,
+        client: GitHubClient
+    ) async -> (Int, MyPRRow) {
+        let state: PRReviewState
+        do {
+            state = try await client.fetchPRReviewState(
+                repo: pr.repoFullName,
+                number: pr.number,
+                currentUser: login
+            )
+        } catch {
+            state = .empty
+        }
+        let enrichedPR = AuthoredPR(
+            id: pr.id,
+            number: pr.number,
+            title: pr.title,
+            htmlURL: pr.htmlURL,
+            user: pr.user,
+            repositoryURL: pr.repositoryURL,
+            draft: pr.draft,
+            createdAt: pr.createdAt,
+            branchRef: state.branchRef
+        )
+        return (index, MyPRRow(pr: enrichedPR, reviewState: state))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let errorMessage = vm.errorMessage {
@@ -158,38 +195,43 @@ struct MyPRsTab: View {
             //    `PRReviewState.branchRef` carries `headRefName` from the
             //    GraphQL payload (already requested by the query) — copy it into
             //    `AuthoredPR.branchRef` so `JiraBadgeView` can render on cards.
+            //
+            //    Bound the fan-out to `Self.enrichmentConcurrency` so a 30-PR
+            //    refresh doesn't fire 30 concurrent GraphQL calls at once.
+            let clientRef = client
             let assembled = await withTaskGroup(of: (Int, MyPRRow).self) { group in
-                for (index, pr) in prs.enumerated() {
+                var nextIndex = 0
+                let total = prs.count
+                let cap = min(Self.enrichmentConcurrency, total)
+                while nextIndex < cap {
+                    let i = nextIndex
+                    let pr = prs[i]
                     group.addTask {
-                        let state: PRReviewState
-                        do {
-                            state = try await client.fetchPRReviewState(
-                                repo: pr.repoFullName,
-                                number: pr.number,
-                                currentUser: login
-                            )
-                        } catch {
-                            state = .empty
-                        }
-                        // Construct an updated AuthoredPR with branchRef populated
-                        // from the GraphQL headRefName so JiraBadgeView renders.
-                        let enrichedPR = AuthoredPR(
-                            id: pr.id,
-                            number: pr.number,
-                            title: pr.title,
-                            htmlURL: pr.htmlURL,
-                            user: pr.user,
-                            repositoryURL: pr.repositoryURL,
-                            draft: pr.draft,
-                            createdAt: pr.createdAt,
-                            branchRef: state.branchRef
+                        await Self.fetchRow(
+                            index: i,
+                            pr: pr,
+                            login: login,
+                            client: clientRef
                         )
-                        return (index, MyPRRow(pr: enrichedPR, reviewState: state))
                     }
+                    nextIndex += 1
                 }
                 var collected: [(Int, MyPRRow)] = []
-                for await result in group {
+                while let result = await group.next() {
                     collected.append(result)
+                    if nextIndex < total {
+                        let i = nextIndex
+                        let pr = prs[i]
+                        group.addTask {
+                            await Self.fetchRow(
+                                index: i,
+                                pr: pr,
+                                login: login,
+                                client: clientRef
+                            )
+                        }
+                        nextIndex += 1
+                    }
                 }
                 return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
             }

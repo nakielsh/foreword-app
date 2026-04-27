@@ -141,9 +141,15 @@ final class OrchestratorPromptParentTests: XCTestCase {
         XCTAssertFalse(prompt.contains("Parent description:"), "no Parent description block when parent is nil")
     }
 
-    // MARK: - renderJiraBlock exact shape with parent
+    // MARK: - renderJiraBlock structural shape with parent
+    //
+    // Earlier slices pinned this to byte-exact output. Whitespace and
+    // ordering of the two child fields are load-bearing (the model uses
+    // them to associate description with title), but the inter-block
+    // newline count is not — it can flex between 1 and 2. Assert structure
+    // instead of exact bytes.
 
-    func testRenderJiraBlockExactFormatWithParent() {
+    func testRenderJiraBlockSubtaskWithParentContainsAllSectionsInOrder() {
         let parent = JiraTicket(
             key: "AB-1",
             summary: "Parent S",
@@ -165,15 +171,24 @@ final class OrchestratorPromptParentTests: XCTestCase {
             parent: parent
         )
         let block = OrchestratorPrompt.renderJiraBlock(subtask)
-        let expected = """
-        Jira: AB-2 (subtask of AB-1)
-        Subtask title: Subtask S
-        Subtask description: Subtask D
 
-        Parent AB-1 title: Parent S
-        Parent description: Parent D
-        """
-        // Trailing newline guarantees visual separation from the next section.
-        XCTAssertEqual(block, expected + "\n")
+        let pieces = [
+            "Jira: AB-2 (subtask of AB-1)",
+            "Subtask title: Subtask S",
+            "Subtask description: Subtask D",
+            "Parent AB-1 title: Parent S",
+            "Parent description: Parent D"
+        ]
+        var lastIndex = block.startIndex
+        for piece in pieces {
+            guard let range = block.range(of: piece, range: lastIndex..<block.endIndex) else {
+                XCTFail("missing piece '\(piece)' in: \(block)")
+                return
+            }
+            lastIndex = range.upperBound
+        }
+
+        // Trailing newline so the next section is visually separated.
+        assertThat(block.hasSuffix("\n")).isTrue()
     }
 }

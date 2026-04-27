@@ -4,16 +4,22 @@
 //
 //  URLSession-backed REST client. Slice 01 only exposes review-requested PR fetch.
 //
+//  All HTTP plumbing now lives in `HTTPClient.swift` — the typed
+//  `GitHubError` cases (incl. `rateLimited`, `forbidden`, `notFound`,
+//  `graphqlPartial`) and the shared retry / ETag / rate-limit policy
+//  are defined there. Each `GitHubClient*` file constructs an
+//  `HTTPClient` per call so tests can inject a stubbed `URLSession`.
+//
 
-import Foundation
-
-enum GitHubError: Error, Equatable {
-    case missingToken
-    case unauthorized
-    case http(status: Int, body: String)
-    case decoding(String)
-    case transport(String)
-}
+import struct Foundation.Data
+import struct Foundation.URL
+import struct Foundation.URLRequest
+import struct Foundation.TimeInterval
+import class Foundation.URLSession
+import class Foundation.URLResponse
+import class Foundation.HTTPURLResponse
+import class Foundation.JSONDecoder
+import class Foundation.NSLock
 
 /// Counts consecutive 401s observed by GitHub clients before the cached token
 /// is wiped. A single spurious 401 (transient proxy glitch, edge-case endpoint
@@ -53,11 +59,10 @@ final class GitHub401Counter: @unchecked Sendable {
 }
 
 struct GitHubClient {
-    /// Default per-request timeout. URLSession's default is 60s, which on a
-    /// long-running app means a stuck socket (sleep/VPN reconnect) can pin a
-    /// refresh for a full minute. 15s is comfortably above GitHub's p99 and
-    /// short enough that a sleeping Mac doesn't appear hung on resume.
-    static let defaultRequestTimeout: TimeInterval = 15
+    /// Default per-request timeout. Kept here for back-compat with call
+    /// sites that read `GitHubClient.defaultRequestTimeout`. The
+    /// authoritative value lives on `HTTPClient`.
+    static let defaultRequestTimeout: TimeInterval = HTTPClient.defaultRequestTimeout
 
     private let session: URLSession
     private let tokenProvider: () -> String?
@@ -83,50 +88,14 @@ struct GitHubClient {
     /// Fetches PRs where the authenticated user is a requested reviewer.
     /// Mirrors index.html query: `is:pr+is:open+review-requested:@me`.
     func fetchReviewRequestedPRs() async throws -> [PullRequest] {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
-
-        let urlString = "https://api.github.com/search/issues?q=is:pr+is:open+review-requested:@me&sort=updated&order=desc&per_page=50"
-        guard let url = URL(string: urlString) else {
-            throw GitHubError.transport("Invalid URL")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw GitHubError.transport(error.localizedDescription)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw GitHubError.transport("Non-HTTP response")
-        }
-
-        if http.statusCode == 401 {
-            onUnauthorized()
-            throw GitHubError.unauthorized
-        }
-
-        if (200..<300).contains(http.statusCode) {
-            GitHub401Counter.shared.recordSuccess()
-        } else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw GitHubError.http(status: http.statusCode, body: body)
-        }
-
-        do {
-            let decoded = try JSONDecoder().decode(SearchResponse.self, from: data)
-            return decoded.items
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
+        let urlString = "https://api.github.com/search/issues?q=is:pr+is:open+review-requested:@me&sort=updated&order=desc&per_page=100"
+        let http = HTTPClient(
+            session: session,
+            tokenProvider: tokenProvider,
+            onUnauthorized: onUnauthorized
+        )
+        let envelope = try await http.getDecoded(SearchResponse.self, urlString: urlString)
+        return envelope.items
     }
 
     private struct SearchResponse: Decodable {

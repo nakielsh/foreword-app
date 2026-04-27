@@ -57,12 +57,47 @@ struct ReviewSheet: View {
     /// instead of the live orchestrator state. Selected from the History
     /// disclosure; cleared via "Back to current". Finding state mutations
     /// still work because findings are persisted on each Review row.
-    @State private var historicalReview: Review? = nil
+    ///
+    /// Stored as a `PersistentIdentifier`, not a direct `Review` reference:
+    /// holding a SwiftData object across long-lived `@State` turns into a
+    /// tombstone if the row is deleted (cascade from Review eviction, e.g.
+    /// when ClosedPRDetector sweeps), and any subsequent property access
+    /// crashes. Re-fetching by id is cheap and correct.
+    @State private var historicalReviewID: PersistentIdentifier? = nil
 
     /// Filter toggles persist across launches per PRD Q8d so the user
     /// doesn't have to re-hide noise each time they open a review.
     @AppStorage("findings.showResolved") private var showResolved: Bool = false
     @AppStorage("findings.showDismissed") private var showDismissed: Bool = false
+
+    /// Cached stores. Allocated once on first body invocation via
+    /// `.task`/`.onAppear` rather than reconstructed per render. Both are
+    /// `@MainActor` structs holding only a `ModelContext` reference, so this
+    /// is a pure ergonomic / GC-pressure win — and avoids duplicating the
+    /// SwiftData fetch path on every body invocation.
+    @State private var reviewStore: ReviewStore?
+    @State private var findingStateStore: FindingStateStore?
+
+    /// Cached decoded `jira_alignment.notes` for the displayed review. Re-
+    /// computed only when `rawResultJSON` changes via `.onChange`. Without
+    /// this, `jiraAlignmentBlock` re-decodes the full `ReviewSchema` from
+    /// the raw payload on every body invocation (ten times a second under
+    /// streaming).
+    @State private var cachedJiraNotes: String? = nil
+    @State private var cachedJiraNotesSourceJSON: String? = nil
+
+    /// Cached findings grouping. Recomputed only when the underlying findings
+    /// list changes (count, ids, or filter toggles). `FindingsGrouper.group`
+    /// allocates intermediate arrays per call; we previously paid that on
+    /// every body invocation.
+    @State private var cachedSections: [FindingsGrouper.Section] = []
+    @State private var cachedSectionsKey: String = ""
+
+    /// Throttled mirror of `review.partialStream` used to drive the live
+    /// stream view. Updated at most ~30 times per second via a sampling task,
+    /// not per claude-token, so the auto-scroll does not jitter when the
+    /// model emits hundreds of tokens per second.
+    @State private var throttledStream: String = ""
 
     // MARK: - Slice 09: launcher feedback
     //
@@ -75,19 +110,23 @@ struct ReviewSheet: View {
     @State private var launcherAlertMessage: String?
 
     /// Single source of truth for "which Review row is the body of this sheet
-    /// rendering?". Either the user-selected historical row, or the live
-    /// orchestrator's `current`. Slice 14 indirection — slices 07-13 read
-    /// `orchestrator.current` directly; we now route every read through this
-    /// computed so toggling history is one line of state instead of a fork
-    /// in every helper.
+    /// rendering?". Either the user-selected historical row (re-fetched via
+    /// its `PersistentIdentifier`), or the live orchestrator's `current`.
+    /// Slice 14 indirection — slices 07-13 read `orchestrator.current`
+    /// directly; we now route every read through this computed so toggling
+    /// history is one line of state instead of a fork in every helper.
     private var displayedReview: Review? {
-        historicalReview ?? orchestrator.current
+        if let id = historicalReviewID,
+           let fetched = modelContext.registeredModel(for: id) as Review? {
+            return fetched
+        }
+        return orchestrator.current
     }
 
     /// True iff the user is currently viewing a historical row (i.e. one
     /// other than the live `orchestrator.current`).
     private var isViewingHistorical: Bool {
-        historicalReview != nil
+        historicalReviewID != nil
     }
 
     var body: some View {
@@ -113,6 +152,45 @@ struct ReviewSheet: View {
             .padding()
         }
         .frame(minWidth: 720, minHeight: 560)
+        .task {
+            // Cache stores once per sheet presentation. Both wrap the live
+            // model context; allocation is cheap but caching avoids
+            // re-allocation on every body invocation, which mattered under
+            // streaming.
+            if reviewStore == nil {
+                reviewStore = ReviewStore(context: modelContext)
+            }
+            if findingStateStore == nil {
+                findingStateStore = FindingStateStore(context: modelContext)
+            }
+            // Seed the throttled stream mirror.
+            if let r = displayedReview {
+                throttledStream = r.partialStream
+            }
+        }
+        // Sampling task — coalesces stream-buffer changes into ~30 Hz UI
+        // updates. Avoids per-token `withAnimation` + scrollTo jitter.
+        // Re-fires when the displayed review id changes (sheet swap or
+        // history pivot).
+        .task(id: displayedReview?.id) {
+            guard let r = displayedReview else { return }
+            // Initial sync.
+            throttledStream = r.partialStream
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 33_000_000) // ~30 Hz
+                if Task.isCancelled { break }
+                let live = r.partialStream
+                if live != throttledStream {
+                    throttledStream = live
+                }
+                // Stop sampling once the run is terminal — there's nothing
+                // more to coalesce, and we don't want to keep an idle timer
+                // running while the sheet is parked on a completed review.
+                if r.state != "running" {
+                    break
+                }
+            }
+        }
         .overlay(alignment: .top) {
             if let toast = launcherToastMessage {
                 launcherToast(message: toast)
@@ -269,13 +347,13 @@ struct ReviewSheet: View {
 
     /// Pill rendered in the header strip while the user is viewing a
     /// historical Review row. Doubles as the "Back to current" affordance —
-    /// clicking it clears `historicalReview` and the sheet snaps back to
+    /// clicking it clears `historicalReviewID` and the sheet snaps back to
     /// `orchestrator.current`. Hidden when the live orchestrator has nothing
     /// to fall back to (rare; would mean no current run at all).
     @ViewBuilder
     private var historicalIndicator: some View {
         Button {
-            historicalReview = nil
+            historicalReviewID = nil
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "clock.arrow.circlepath")
@@ -439,18 +517,31 @@ struct ReviewSheet: View {
 
     /// Re-decode just the `jira_alignment.notes` out of the raw payload.
     /// Slice 07's `Review` model doesn't persist this field directly — only
-    /// summary and verdict — so we lazily pull it from `rawResultJSON`. The
-    /// decode is cheap and runs once per body invocation; if it ever shows
-    /// up in profiling the right fix is to add a dedicated field on
-    /// `Review`, not to cache it here.
+    /// summary and verdict — so we lazily pull it from `rawResultJSON`.
+    /// Result is memoised in `cachedJiraNotes`/`cachedJiraNotesSourceJSON`
+    /// — re-decode only when the underlying JSON string actually changes.
+    /// Profiling under streaming previously showed this running ten times
+    /// a second on every body invocation.
     private func jiraAlignmentNotes(for review: Review) -> String? {
-        guard let raw = review.rawResultJSON,
-              let data = raw.data(using: .utf8) else { return nil }
-        let decoder = JSONDecoder()
-        guard let schema = try? decoder.decode(ReviewSchema.self, from: data) else {
-            return nil
+        let raw = review.rawResultJSON
+        if cachedJiraNotesSourceJSON == raw {
+            return cachedJiraNotes
         }
-        return schema.jiraAlignment?.notes
+        // Recompute. Stash result + the source so subsequent reads short-
+        // circuit. We mutate `@State` from a view-builder helper which is
+        // safe under SwiftUI as long as we don't trigger a body re-eval
+        // synchronously — `@State` setters from inside body do schedule a
+        // re-eval, so we route through a small async hop.
+        let decoded: String? = {
+            guard let raw, let data = raw.data(using: .utf8) else { return nil }
+            return (try? JSONDecoder().decode(ReviewSchema.self, from: data))?.jiraAlignment?.notes
+        }()
+        let captured = raw
+        DispatchQueue.main.async {
+            cachedJiraNotesSourceJSON = captured
+            cachedJiraNotes = decoded
+        }
+        return decoded
     }
 
     // MARK: - Content
@@ -580,7 +671,10 @@ struct ReviewSheet: View {
                     if visible.isEmpty {
                         emptyFindingsMessage(review: review)
                     } else {
-                        let sections = FindingsGrouper.group(visible)
+                        // Use cached sections — recomputed via `.onChange`
+                        // only when the input set changes, so streaming
+                        // updates don't re-bucket on every body invocation.
+                        let sections = sectionsFor(visible: visible, review: review)
                         ForEach(sections, id: \.severity) { section in
                             severitySection(section: section)
                         }
@@ -595,6 +689,44 @@ struct ReviewSheet: View {
                 .padding()
             }
         }
+    }
+
+    /// Returns the (possibly cached) grouping for `visible`. The cache key is
+    /// derived from review id + finding ids/state ordinals + filter toggles.
+    /// On a miss, regroups synchronously and stashes the result for the next
+    /// body invocation.
+    private func sectionsFor(visible: [Finding], review: Review) -> [FindingsGrouper.Section] {
+        let key = sectionsCacheKey(visible: visible, review: review)
+        if key == cachedSectionsKey, !cachedSections.isEmpty {
+            return cachedSections
+        }
+        let grouped = FindingsGrouper.group(visible)
+        DispatchQueue.main.async {
+            cachedSections = grouped
+            cachedSectionsKey = key
+        }
+        return grouped
+    }
+
+    /// Build a cheap string key encoding the inputs that affect grouping.
+    /// Includes the finding state so toggle-triggered visibility changes
+    /// invalidate the cache.
+    private func sectionsCacheKey(visible: [Finding], review: Review) -> String {
+        var key = review.id.uuidString
+        key.reserveCapacity(key.count + visible.count * 40)
+        key.append("|R")
+        key.append(showResolved ? "1" : "0")
+        key.append("D")
+        key.append(showDismissed ? "1" : "0")
+        for f in visible {
+            key.append("|")
+            key.append(f.id.uuidString)
+            key.append(":")
+            key.append(f.severity)
+            key.append(":")
+            key.append(f.state)
+        }
+        return key
     }
 
     @ViewBuilder
@@ -689,6 +821,8 @@ struct ReviewSheet: View {
     @ViewBuilder
     private func severitySection(section: FindingsGrouper.Section) -> some View {
         let color = severityColor(section.severity)
+        // Reuse the cached store rather than allocating one per finding row.
+        let store = findingStateStore ?? FindingStateStore(context: modelContext)
         DisclosureGroup(
             isExpanded: .constant(true),
             content: {
@@ -696,7 +830,7 @@ struct ReviewSheet: View {
                     ForEach(section.items, id: \.id) { finding in
                         FindingRow(
                             finding: finding,
-                            store: FindingStateStore(context: modelContext),
+                            store: store,
                             onOpenInIntelliJ: { handleFindingClick(finding: finding) }
                         )
                     }
@@ -782,7 +916,7 @@ struct ReviewSheet: View {
     /// least two rows exist for the PR.
     @ViewBuilder
     private func historyDisclosure(review: Review) -> some View {
-        let store = ReviewStore(context: modelContext)
+        let store = reviewStore ?? ReviewStore(context: modelContext)
         let allVersions = store.versions(prKey: review.prKey)
         if allVersions.count >= 2 {
             DisclosureGroup("History  ·  \(allVersions.count) reviews") {
@@ -799,16 +933,16 @@ struct ReviewSheet: View {
 
     /// One History row — timestamp, short sha, verdict, finding count, state.
     /// The whole row is a button so the user can click anywhere on it to
-    /// switch the sheet's `historicalReview` binding.
+    /// switch the sheet's `historicalReviewID` binding.
     @ViewBuilder
     private func historyRow(entry: Review, isCurrent: Bool) -> some View {
         Button {
             // If this row is the live orchestrator current, clear the
             // historical override so the sheet re-binds to live state.
             if entry.id == orchestrator.current?.id {
-                historicalReview = nil
+                historicalReviewID = nil
             } else {
-                historicalReview = entry
+                historicalReviewID = entry.persistentModelID
             }
         } label: {
             HStack(spacing: 10) {
@@ -929,10 +1063,15 @@ struct ReviewSheet: View {
 
     @ViewBuilder
     private func streamView(review: Review) -> some View {
+        // Drives off `throttledStream` (sampled ~30Hz from `review.partialStream`)
+        // instead of the live property. Per-token `withAnimation` + scrollTo
+        // makes selection jitter when claude emits hundreds of tokens per
+        // second; 30Hz is the highest frame rate at which auto-scroll still
+        // looks smooth.
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(review.partialStream.isEmpty ? "(no output yet)" : review.partialStream)
+                    Text(throttledStream.isEmpty ? "(no output yet)" : throttledStream)
                         .font(.system(.body, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -940,7 +1079,7 @@ struct ReviewSheet: View {
                         .id("streamBottom")
                 }
             }
-            .onChange(of: review.partialStream) { _, _ in
+            .onChange(of: throttledStream) { _, _ in
                 withAnimation(.linear(duration: 0.1)) {
                     proxy.scrollTo("streamBottom", anchor: .bottom)
                 }

@@ -70,10 +70,11 @@ struct ReviewsTab: View {
     /// Slice 15 — error alert when a manual evict is refused (running review).
     @State private var manualEvictError: String?
 
-    /// Singleton orchestrator state, observed so the Review button on each
-    /// card can disable itself while another review is running and so the
-    /// modal sheet can pull live state.
-    @State private var orchestrator = ReviewOrchestrator.shared
+    /// Singleton orchestrator. `let` is correct for a long-lived shared
+    /// `@Observable` reference — `@State` would mislead SwiftUI's identity
+    /// diffing and adds no observation benefit since `@Observable` already
+    /// re-renders consumers on property reads.
+    private let orchestrator = ReviewOrchestrator.shared
 
     /// Slice 25 — Pre-Review Summary orchestrator. Shared across all PR cards
     /// so they participate in the same concurrency pool. Observed so
@@ -83,6 +84,12 @@ struct ReviewsTab: View {
     /// pull it from the environment in `body` and cache it the first time
     /// `startReview` runs.
     @Environment(\.modelContext) private var modelContext
+
+    /// Cached `ReviewStore` so we don't allocate per `body` invocation. Lazy
+    /// because `modelContext` isn't available at `init` — populated in `.task`.
+    /// `ReviewStore` is a `@MainActor` struct holding only a `ModelContext`
+    /// reference, so caching is safe and avoids per-card / per-render churn.
+    @State private var reviewStore: ReviewStore?
 
     private let client = GitHubClient()
 
@@ -115,12 +122,24 @@ struct ReviewsTab: View {
             // model context. Idempotent — safe on every task execution.
             summaryOrchestrator.configure(context: modelContext)
 
+            // Cache the ReviewStore once — created off the environment's
+            // model context, reused everywhere instead of being allocated
+            // per `body`.
+            if reviewStore == nil {
+                reviewStore = ReviewStore(context: modelContext)
+            }
+
             // Auto-fetch the first time the tab is shown. The vm survives
             // tab switches, so subsequent appearances skip the fetch and
             // just re-display the cached PRs.
             if !vm.hasFetchedOnce && !vm.isLoading {
                 await refresh()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reviewSheetOpenRequested)) { _ in
+            // Sidebar pill routed an "open the sheet" request here so we
+            // remain the single owner of `showReviewSheet`.
+            showReviewSheet = true
         }
         .sheet(isPresented: $showReauthSheet) {
             TokenPromptSheet(reason: .reauth) {
@@ -222,7 +241,7 @@ struct ReviewsTab: View {
             // untouched either way; the user can retry from the disk-usage
             // screen (slice 17) if the worktree dir is wedged.
         }
-        let store = ReviewStore(context: modelContext)
+        let store = reviewStore ?? ReviewStore(context: modelContext)
         store.dropForPR(prKey: evict.prKey)
         showCleanupNotice("Evicted review state for \(evict.prKey)")
     }
@@ -272,7 +291,7 @@ struct ReviewsTab: View {
         reviewError = nil
         do {
             let info = try await client.fetchPRBranchInfo(repo: repo, number: prNumber)
-            let store = ReviewStore(context: modelContext)
+            let store = reviewStore ?? ReviewStore(context: modelContext)
             let prKey = "\(repo)#\(prNumber)"
             let existing = store.latestForPRAtSha(prKey: prKey, headSha: info.headSha)
             if ReviewVersioning.shouldStartNewRun(existingForSha: existing, force: force) {
@@ -331,6 +350,11 @@ struct ReviewsTab: View {
     }
 
     // MARK: - Non-throwing fetch helpers (used inside withTaskGroup tasks)
+
+    /// Cap on per-PR enrichment fan-out (branch info + reviewer state). Without
+    /// this a 50-PR refresh would fan out 100+ concurrent GitHub requests; with
+    /// it we keep the burst at 16 in-flight requests at most.
+    private static let enrichmentConcurrency = 8
 
     /// Fetches branch info, swallowing errors. Nil means "not available".
     private static func safeFetchBranchInfo(repo: String, number: Int) async -> PRBranchInfo? {
@@ -559,7 +583,7 @@ struct ReviewsTab: View {
     @ViewBuilder
     fileprivate func latestVerdictBadge(repo: String, prNumber: Int) -> some View {
         let prKey = "\(repo)#\(prNumber)"
-        let store = ReviewStore(context: modelContext)
+        let store = reviewStore ?? ReviewStore(context: modelContext)
         if let latest = store.latestForPR(prKey: prKey) {
             Button {
                 // Open the existing review in the modal without spawning a
@@ -689,10 +713,21 @@ struct ReviewsTab: View {
             //    Both sub-fetches are fired concurrently inside each task via
             //    async let. Individual failures leave the affected field at its
             //    default — one bad PR does not discard the whole list.
+            //
+            //    Bound concurrency at `enrichmentConcurrency` so a 50-PR refresh
+            //    doesn't fan out 100+ requests at once. Pattern: prime the group
+            //    with the first N tasks, then for each completed task drain the
+            //    result and submit the next one.
             let enrichedPending: [PendingReviewPR] = await withTaskGroup(
                 of: (Int, PendingReviewPR).self
             ) { group in
-                for (index, pr) in p.enumerated() {
+                var nextIndex = 0
+                let prs = p
+                let total = prs.count
+                let cap = min(Self.enrichmentConcurrency, total)
+                while nextIndex < cap {
+                    let i = nextIndex
+                    let pr = prs[i]
                     group.addTask {
                         async let branchFetch = Self.safeFetchBranchInfo(
                             repo: pr.repoFullName, number: pr.number
@@ -719,12 +754,46 @@ struct ReviewsTab: View {
                             authorAvatarURL: pr.authorAvatarURL,
                             reviewerEntries: reviewState?.reviewers ?? []
                         )
-                        return (index, enriched)
+                        return (i, enriched)
                     }
+                    nextIndex += 1
                 }
                 var collected: [(Int, PendingReviewPR)] = []
-                for await result in group {
+                while let result = await group.next() {
                     collected.append(result)
+                    if nextIndex < total {
+                        let i = nextIndex
+                        let pr = prs[i]
+                        group.addTask {
+                            async let branchFetch = Self.safeFetchBranchInfo(
+                                repo: pr.repoFullName, number: pr.number
+                            )
+                            async let reviewFetch = Self.safeFetchReviewState(
+                                repo: pr.repoFullName, number: pr.number, currentUser: login
+                            )
+                            let (branchInfo, reviewState) = await (branchFetch, reviewFetch)
+                            let enriched = PendingReviewPR(
+                                id: pr.id,
+                                number: pr.number,
+                                title: pr.title,
+                                htmlURL: pr.htmlURL,
+                                authorLogin: pr.authorLogin,
+                                repoFullName: pr.repoFullName,
+                                createdAt: pr.createdAt,
+                                isDraft: pr.isDraft,
+                                approvalCount: pr.approvalCount,
+                                changesRequestedCount: pr.changesRequestedCount,
+                                isDismissed: pr.isDismissed,
+                                myPriorReviewState: pr.myPriorReviewState,
+                                branchRef: branchInfo?.headBranch,
+                                headSha: branchInfo?.headSha,
+                                authorAvatarURL: pr.authorAvatarURL,
+                                reviewerEntries: reviewState?.reviewers ?? []
+                            )
+                            return (i, enriched)
+                        }
+                        nextIndex += 1
+                    }
                 }
                 return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
             }
@@ -732,7 +801,13 @@ struct ReviewsTab: View {
             let enrichedReviewed: [ReviewedPR] = await withTaskGroup(
                 of: (Int, ReviewedPR).self
             ) { group in
-                for (index, pr) in r.enumerated() {
+                var nextIndex = 0
+                let prs = r
+                let total = prs.count
+                let cap = min(Self.enrichmentConcurrency, total)
+                while nextIndex < cap {
+                    let i = nextIndex
+                    let pr = prs[i]
                     group.addTask {
                         async let branchFetch = Self.safeFetchBranchInfo(
                             repo: pr.repoFullName, number: pr.number
@@ -760,12 +835,47 @@ struct ReviewsTab: View {
                             authorAvatarURL: pr.authorAvatarURL,
                             reviewerEntries: reviewState?.reviewers ?? []
                         )
-                        return (index, enriched)
+                        return (i, enriched)
                     }
+                    nextIndex += 1
                 }
                 var collected: [(Int, ReviewedPR)] = []
-                for await result in group {
+                while let result = await group.next() {
                     collected.append(result)
+                    if nextIndex < total {
+                        let i = nextIndex
+                        let pr = prs[i]
+                        group.addTask {
+                            async let branchFetch = Self.safeFetchBranchInfo(
+                                repo: pr.repoFullName, number: pr.number
+                            )
+                            async let reviewFetch = Self.safeFetchReviewState(
+                                repo: pr.repoFullName, number: pr.number, currentUser: login
+                            )
+                            let (branchInfo, reviewState) = await (branchFetch, reviewFetch)
+                            let enriched = ReviewedPR(
+                                id: pr.id,
+                                number: pr.number,
+                                title: pr.title,
+                                htmlURL: pr.htmlURL,
+                                authorLogin: pr.authorLogin,
+                                repoFullName: pr.repoFullName,
+                                createdAt: pr.createdAt,
+                                isDraft: pr.isDraft,
+                                approvalCount: pr.approvalCount,
+                                changesRequestedCount: pr.changesRequestedCount,
+                                myLastReviewState: pr.myLastReviewState,
+                                myLastReviewSubmittedAt: pr.myLastReviewSubmittedAt,
+                                newCommitsSinceReview: pr.newCommitsSinceReview,
+                                branchRef: branchInfo?.headBranch,
+                                headSha: branchInfo?.headSha,
+                                authorAvatarURL: pr.authorAvatarURL,
+                                reviewerEntries: reviewState?.reviewers ?? []
+                            )
+                            return (i, enriched)
+                        }
+                        nextIndex += 1
+                    }
                 }
                 return collected.sorted { $0.0 < $1.0 }.map { $0.1 }
             }
@@ -783,7 +893,7 @@ struct ReviewsTab: View {
             openKeys.reserveCapacity(p.count + r.count)
             for pr in p { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
             for pr in r { openKeys.insert("\(pr.repoFullName)#\(pr.number)") }
-            let store = ReviewStore(context: modelContext)
+            let store = reviewStore ?? ReviewStore(context: modelContext)
             let summaryStore = PreReviewSummaryStore(context: modelContext)
             let detector = ClosedPRDetector(store: store, summaryStore: summaryStore)
             let cleaned = detector.cleanupClosedPRs(openPRKeys: openKeys)
@@ -1489,8 +1599,13 @@ struct SummarizeView: View {
     // MARK: - Body
 
     var body: some View {
-        /// Re-evaluate whenever orchestrator.states changes so the card
-        /// reflects the latest run state without needing a local @State mirror.
+        // Force a read of `orchestrator.states` so the view re-renders when
+        // the dictionary changes. `displayState` accesses it through a
+        // computed property which the ObservableObject machinery does not
+        // see; removing this line breaks live state updates.
+        // TODO(ui-followup): drop this once PreReviewSummaryOrchestrator
+        // migrates from ObservableObject to @Observable (Services-side
+        // change, out of scope for this UI pass).
         let _ = orchestrator.states
         Group {
             switch displayState {

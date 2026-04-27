@@ -9,6 +9,16 @@
 //
 
 import SwiftUI
+import Foundation
+
+extension Notification.Name {
+    /// Fired by SidebarView's "Active review" pill to ask the foregrounded
+    /// `ReviewsTab` to open the review sheet. Single owner of the sheet
+    /// `@State` is `ReviewsTab`; the sidebar pill routes through this
+    /// notification so we don't end up with two competing
+    /// `.sheet(isPresented:)` modifiers fighting over dismiss events.
+    static let reviewSheetOpenRequested = Notification.Name("reviewSheetOpenRequested")
+}
 
 enum AppTab: String, CaseIterable, Identifiable {
     case reviews = "Reviews"
@@ -32,13 +42,10 @@ struct SidebarView: View {
     @State private var selection: AppTab = .reviews
     /// Bumped on toolbar Refresh; ReviewsTab observes via `.onChange` to trigger a fetch.
     @State private var refreshTick: Int = 0
-    /// Singleton orchestrator. Drives the active-review pill and re-opens
-    /// the modal sheet from there.
-    @State private var orchestrator = ReviewOrchestrator.shared
-    /// True when the active-review modal is up via the pill click. ReviewsTab
-    /// has its own boolean for the per-card path; both present the same
-    /// orchestrator-driven sheet, so racing them is harmless.
-    @State private var showReviewSheet: Bool = false
+    /// Singleton orchestrator. Drives the active-review pill — `let` because
+    /// `@Observable` instances don't need (and shouldn't have) `@State`'s
+    /// identity bookkeeping when the value is a long-lived shared singleton.
+    private let orchestrator = ReviewOrchestrator.shared
 
     /// Per-tab data containers. Held here (not in the tab views) so loaded
     /// state survives sidebar switches — SwiftUI tears down a tab's view tree
@@ -68,7 +75,22 @@ struct SidebarView: View {
                         ToolbarItem(placement: .primaryAction) {
                             ActiveReviewPill(
                                 orchestrator: orchestrator,
-                                onOpen: { showReviewSheet = true }
+                                onOpen: {
+                                    // Route the pill click through a notification
+                                    // so ReviewsTab — the canonical owner of
+                                    // `showReviewSheet` — opens the sheet. Avoids
+                                    // two competing `.sheet(isPresented:)` modifiers
+                                    // that would race on dismiss events.
+                                    // Switch to the Reviews tab first so the
+                                    // observer is alive when the post lands.
+                                    selection = .reviews
+                                    DispatchQueue.main.async {
+                                        NotificationCenter.default.post(
+                                            name: .reviewSheetOpenRequested,
+                                            object: nil
+                                        )
+                                    }
+                                }
                             )
                         }
                     }
@@ -80,9 +102,6 @@ struct SidebarView: View {
                         }
                         .help("Refresh the active tab")
                     }
-                }
-                .sheet(isPresented: $showReviewSheet) {
-                    ReviewSheet(orchestrator: orchestrator)
                 }
         }
     }

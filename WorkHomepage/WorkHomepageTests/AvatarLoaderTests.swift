@@ -3,174 +3,118 @@
 //  WorkHomepageTests
 //
 //  Slice 21 — Cache-hit, nil-URL fallback, non-2xx fallback, and cancellation
-//  tests for AvatarLoader.
-//
-//  Uses a private URLProtocol stub (AvatarStubURLProtocol) to intercept
-//  network requests without hitting the network, matching the convention used
-//  by JiraCacheTests (per-file stub named after the feature under test).
+//  tests for the real `AvatarLoader`. Earlier slices tested an
+//  `AvatarLoaderSUT` reimplementation; we now drive the production type
+//  through its `init(session:)` test seam, with `URLSession` wired through
+//  the unified `URLProtocolStub`.
 //
 
 import XCTest
 import AppKit
 @testable import WorkHomepage
 
-// MARK: - AvatarLoaderTests
-
+@MainActor
 final class AvatarLoaderTests: XCTestCase {
+
+    override func setUp() {
+        super.setUp()
+        URLProtocolStub.reset()
+    }
+
+    override func tearDown() {
+        URLProtocolStub.reset()
+        super.tearDown()
+    }
 
     // MARK: - Nil URL → monogram
 
-    @MainActor
-    func testNilURLReturnsMono() async {
+    func testNilURLReturnsMonogram() async {
+        // Singleton is fine here — no network involved when URL is nil.
         let result = await AvatarLoader.shared.image(for: nil, login: "alice")
         let expected = MonogramRenderer.render(login: "alice", size: 48)
-        XCTAssertEqual(
-            result.tiffRepresentation,
-            expected.tiffRepresentation,
-            "Nil URL should return monogram matching MonogramRenderer.render(login:size:)"
-        )
+        XCTAssertEqual(result.tiffRepresentation, expected.tiffRepresentation,
+                       "Nil URL must return the matching monogram")
     }
 
-    // MARK: - Non-2xx HTTP → monogram (via AvatarLoaderSUT)
+    // MARK: - Non-2xx HTTP → monogram
 
-    @MainActor
-    func testNon2xxHTTPReturnsMono() async {
-        let sut = AvatarLoaderSUT(statusCode: 404, data: Data(), simulateError: false)
+    func testNon2xxHTTPReturnsMonogram() async {
+        URLProtocolStub.respond { req in
+            .success(URLProtocolStub.http(404, url: req.url!), Data())
+        }
+        let loader = AvatarLoader(session: URLProtocolStub.makeSession())
         let url = URL(string: "https://example.com/avatar.png")!
-        let result = await sut.image(for: url, login: "bob")
+        let result = await loader.image(for: url, login: "bob")
         let expected = MonogramRenderer.render(login: "bob", size: 48)
-        XCTAssertEqual(
-            result.tiffRepresentation,
-            expected.tiffRepresentation,
-            "Non-2xx response should fall back to monogram"
-        )
+        XCTAssertEqual(result.tiffRepresentation, expected.tiffRepresentation,
+                       "Non-2xx must fall back to monogram")
     }
 
     // MARK: - Network error → monogram
 
-    @MainActor
-    func testNetworkErrorReturnsMono() async {
-        let sut = AvatarLoaderSUT(statusCode: 200, data: Data(), simulateError: true)
+    func testNetworkErrorReturnsMonogram() async {
+        URLProtocolStub.failWith(URLError(.notConnectedToInternet))
+        let loader = AvatarLoader(session: URLProtocolStub.makeSession())
         let url = URL(string: "https://example.com/avatar.png")!
-        let result = await sut.image(for: url, login: "carol")
+        let result = await loader.image(for: url, login: "carol")
         let expected = MonogramRenderer.render(login: "carol", size: 48)
-        XCTAssertEqual(
-            result.tiffRepresentation,
-            expected.tiffRepresentation,
-            "Network error should fall back to monogram"
-        )
+        XCTAssertEqual(result.tiffRepresentation, expected.tiffRepresentation,
+                       "Network error must fall back to monogram")
+    }
+
+    // MARK: - Successful fetch
+
+    func testSuccessfulFetchReturnsRealImage() async {
+        URLProtocolStub.respond { req in
+            .success(URLProtocolStub.http(200, url: req.url!), Self.minimal1x1PNG())
+        }
+        let loader = AvatarLoader(session: URLProtocolStub.makeSession())
+        let url = URL(string: "https://example.com/cached.png")!
+        let result = await loader.image(for: url, login: "dave")
+        // Successful fetch returns the decoded NSImage, NOT a monogram —
+        // distinguishable by tiffRepresentation byte-equality.
+        let monogram = MonogramRenderer.render(login: "dave", size: 48)
+        XCTAssertNotEqual(result.tiffRepresentation, monogram.tiffRepresentation,
+                          "Successful fetch must NOT fall back to monogram")
     }
 
     // MARK: - Cache hit returns same NSImage reference
 
-    @MainActor
     func testCacheHitReturnsSameReference() async {
-        let sut = AvatarLoaderSUT(statusCode: 200, data: minimal1x1PNG(), simulateError: false)
-        let url = URL(string: "https://example.com/cached.png")!
-        let first = await sut.image(for: url, login: "dave")
-        let second = await sut.image(for: url, login: "dave")
+        URLProtocolStub.respond { req in
+            .success(URLProtocolStub.http(200, url: req.url!), Self.minimal1x1PNG())
+        }
+        let loader = AvatarLoader(session: URLProtocolStub.makeSession())
+        let url = URL(string: "https://example.com/cached2.png")!
+        let first = await loader.image(for: url, login: "eve")
+        let second = await loader.image(for: url, login: "eve")
         XCTAssertTrue(first === second,
-                      "Second call with same URL should return the cached NSImage reference")
+                      "Second call with the same URL must return the cached NSImage reference")
     }
 
-    // MARK: - Cancellation does not crash
+    // MARK: - Cancellation
 
-    @MainActor
     func testCancellationDoesNotCrash() async {
-        let sut = AvatarLoaderSUT(statusCode: 200, data: minimal1x1PNG(), simulateError: false)
+        URLProtocolStub.respond { req in
+            .success(URLProtocolStub.http(200, url: req.url!), Self.minimal1x1PNG())
+        }
+        let loader = AvatarLoader(session: URLProtocolStub.makeSession())
         let url = URL(string: "https://example.com/cancel-test.png")!
         let task = Task { @MainActor in
-            _ = await sut.image(for: url, login: "eve")
+            _ = await loader.image(for: url, login: "frank")
         }
         task.cancel()
-        // Awaiting the value ensures the task fully exits (either completes or
-        // propagates cancellation) without crashing.
+        // Awaiting fully-exits the task either via completion or cooperative
+        // cancellation; we only care that no crash fires.
         await task.value
     }
 
     // MARK: - Helpers
 
     /// Minimal valid 1×1 PNG (67 bytes).
-    private func minimal1x1PNG() -> Data {
+    private static func minimal1x1PNG() -> Data {
         // swiftlint:disable:next line_length
         let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         return Data(base64Encoded: base64)!
     }
-}
-
-// MARK: - AvatarLoaderSUT
-
-/// Test-only loader that mirrors AvatarLoader's logic but uses an injected
-/// URLSession built from AvatarStubURLProtocol. Avoids touching URLSession.shared
-/// or the singleton's private cache — tests are fully isolated.
-@MainActor
-final class AvatarLoaderSUT {
-
-    private let session: URLSession
-    private let cache = NSCache<NSURL, NSImage>()
-
-    init(statusCode: Int, data: Data, simulateError: Bool) {
-        AvatarStubURLProtocol.responseStatusCode = statusCode
-        AvatarStubURLProtocol.responseData = data
-        AvatarStubURLProtocol.simulateError = simulateError
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [AvatarStubURLProtocol.self]
-        session = URLSession(configuration: config)
-        cache.countLimit = 200
-    }
-
-    func image(for url: URL?, login: String) async -> NSImage {
-        guard let url else {
-            return MonogramRenderer.render(login: login, size: 48)
-        }
-        let nsURL = url as NSURL
-        if let cached = cache.object(forKey: nsURL) {
-            return cached
-        }
-        do {
-            let (data, response) = try await session.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return MonogramRenderer.render(login: login, size: 48)
-            }
-            guard let image = NSImage(data: data) else {
-                return MonogramRenderer.render(login: login, size: 48)
-            }
-            cache.setObject(image, forKey: nsURL)
-            return image
-        } catch {
-            return MonogramRenderer.render(login: login, size: 48)
-        }
-    }
-}
-
-// MARK: - AvatarStubURLProtocol
-
-/// Per-file URLProtocol stub. Uses static state set per-test by AvatarLoaderSUT,
-/// following the same pattern as JiraCacheStubURLProtocol (JiraCacheTests.swift).
-final class AvatarStubURLProtocol: URLProtocol {
-
-    static var responseData: Data = Data()
-    static var responseStatusCode: Int = 200
-    static var simulateError: Bool = false
-
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        if AvatarStubURLProtocol.simulateError {
-            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
-            return
-        }
-        let response = HTTPURLResponse(
-            url: request.url!,
-            statusCode: AvatarStubURLProtocol.responseStatusCode,
-            httpVersion: nil,
-            headerFields: nil
-        )!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: AvatarStubURLProtocol.responseData)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
 }

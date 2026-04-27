@@ -244,39 +244,5 @@ final class IntelliJLauncherTests: XCTestCase {
     }
 }
 
-// MARK: - Tiny AssertJ-style fluent helpers
-//
-// The user's global guidance is "always for test use assertJ instead of
-// jupiter". Swift doesn't have AssertJ; we mirror its fluent shape with a
-// thin wrapper that delegates to XCTest's assertions so we still get good
-// failure reporting in the Xcode log.
-
-private struct FluentAssertion<T> {
-    let value: T?
-    let file: StaticString
-    let line: UInt
-}
-
-private func assertThat<T>(
-    _ value: T?,
-    file: StaticString = #file,
-    line: UInt = #line
-) -> FluentAssertion<T> {
-    FluentAssertion(value: value, file: file, line: line)
-}
-
-extension FluentAssertion where T: Equatable {
-    func isEqualTo(_ expected: T?) {
-        XCTAssertEqual(value, expected, file: file, line: line)
-    }
-}
-
-extension FluentAssertion where T == Bool {
-    func isTrue() {
-        XCTAssertEqual(value, true, file: file, line: line)
-    }
-
-    func isFalse() {
-        XCTAssertEqual(value, false, file: file, line: line)
-    }
-}
+// AssertJ-flavoured helpers consolidated into Helpers/Assertions.swift —
+// the per-file FluentAssertion shim has been removed.

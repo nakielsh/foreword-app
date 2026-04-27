@@ -10,6 +10,8 @@
 //  `GitHubClient+Reviews.swift`: a `PRBranchAPI` struct owns the plumbing,
 //  the `GitHubClient` extension is a one-line delegate.
 //
+//  All HTTP plumbing lives in `HTTPClient.swift`.
+//
 
 import struct Foundation.URL
 import struct Foundation.URLRequest
@@ -48,40 +50,12 @@ struct PRBranchAPI {
     static func `default`() -> PRBranchAPI { PRBranchAPI() }
 
     func fetchPRBranchInfo(repo: String, number: Int) async throws -> PRBranchInfo {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
         let urlString = "https://api.github.com/repos/\(repo)/pulls/\(number)"
-        guard let url = URL(string: urlString) else {
-            throw GitHubError.transport("Invalid URL")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw GitHubError.transport(error.localizedDescription)
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw GitHubError.transport("Non-HTTP response")
-        }
-        if http.statusCode == 401 {
-            onUnauthorized()
-            throw GitHubError.unauthorized
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw GitHubError.http(status: http.statusCode, body: body)
-        }
-        do {
-            return try JSONDecoder().decode(PRBranchInfo.self, from: data)
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
+        let http = HTTPClient(
+            session: session,
+            tokenProvider: tokenProvider,
+            onUnauthorized: onUnauthorized
+        )
+        return try await http.getDecoded(PRBranchInfo.self, urlString: urlString)
     }
 }

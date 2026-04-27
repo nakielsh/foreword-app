@@ -69,3 +69,9 @@ const SERVICES = ['account', 'worker', 'rental', ...];
 
 - The GitHub token lives only in your browser's `localStorage` — it is never written to disk.
 - `claude-sessions.js` is generated locally from `~/.claude/sessions/` and `~/.claude/history.jsonl`. It stays on your machine and is not sent anywhere.
+
+## macOS app: Homebrew/PATH trust assumptions
+
+The companion macOS app (under `WorkHomepage/`) shells out to a small set of binaries — `git`, `claude`, IntelliJ's `idea` launcher — resolved via `BinaryResolver`. Resolution searches the standard system locations plus `/usr/local/bin` and `/opt/homebrew/bin`, and the `IntelliJLauncher` PATH propagated to git's child processes also includes `/usr/local/bin`. Both directories are writable by the local user on Intel Macs running a default Homebrew install, which means anything that can write into `/usr/local/bin` can substitute the binary the app launches. The app trusts whichever `git` / `claude` / `idea` is first on that PATH.
+
+In practice this is the same trust model as your terminal, where `~/.zshrc` already prepends Homebrew to PATH. If you don't trust everything writable to `/usr/local/bin`, lock those binaries to fixed paths (e.g. `/usr/bin/git`, `/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea`) before running the macOS app. A future hardening pass may add `kSecCodeSign` validity checks on resolved binaries; that's not in place today.

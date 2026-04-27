@@ -30,9 +30,11 @@ enum MenuBarWindowID {
 }
 
 /// The `MenuBarExtra`'s label. Re-renders whenever `MenuBarCounts.shared`
-/// changes thanks to `@Observable`.
+/// changes thanks to `@Observable`. Use `let` for the singleton — `@State`
+/// for an externally-owned `@Observable` is an antipattern that misleads
+/// SwiftUI's identity diffing without buying observation.
 struct MenuBarLabel: View {
-    @State private var counts = MenuBarCounts.shared
+    private let counts = MenuBarCounts.shared
 
     var body: some View {
         HStack(spacing: 4) {

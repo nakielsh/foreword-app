@@ -109,12 +109,9 @@ final class ReviewPromptStoreTests: XCTestCase {
         XCTAssertEqual(store2.current(), ReviewPromptStore.defaultTemplate)
     }
 
-    // MARK: - knownVariableKeys
-
-    func testKnownVariableKeysContainsExpectedFour() {
-        XCTAssertEqual(
-            ReviewPromptStore.knownVariableKeys,
-            Set(["repo", "prNumber", "branch", "sha"])
-        )
-    }
+    // testKnownVariableKeysContainsExpectedFour removed — it re-asserted
+    // the same constant the production code defines, with no transformation
+    // in between. `testDefaultTemplateContainsAllFourPlaceholders` covers
+    // the actually-load-bearing claim that the default template references
+    // each known key.
 }

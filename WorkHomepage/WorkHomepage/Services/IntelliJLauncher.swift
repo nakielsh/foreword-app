@@ -198,7 +198,13 @@ enum IntelliJLauncher {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
-        var env = ShellEnvironment.userInteractiveEnv()
+        // Pull the captured shell env through the allow-list. Only keys
+        // IntelliJ + the gradle daemon actually need (JAVA_HOME, GRADLE_*,
+        // MAVEN_*, REPO_USER, PATH, locale, SSH_AUTH_SOCK, …) flow through.
+        // Drops generic `*_TOKEN`/`*_KEY`/`ANTHROPIC_API_KEY`/AWS creds the
+        // user may have exported in `~/.zshrc` — gradle had no business
+        // seeing those, but the previous wholesale forward gave them anyway.
+        var env = ShellEnvironment.filteredForChildren()
         if let home = ProcessInfo.processInfo.environment["HOME"] { env["HOME"] = home }
         if let user = ProcessInfo.processInfo.environment["USER"] { env["USER"] = user }
         // Only set a fallback PATH if the shell didn't export one — the

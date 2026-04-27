@@ -44,18 +44,10 @@ final class AppearanceTests: XCTestCase {
         XCTAssertNil(Appearance.system.colorScheme)
     }
 
-    func testIdentifiable() {
-        XCTAssertEqual(Appearance.light.id, "light")
-        XCTAssertEqual(Appearance.dark.id, "dark")
-        XCTAssertEqual(Appearance.system.id, "system")
-    }
-
-    func testRawValueRoundTrip() {
-        for appearance in Appearance.allCases {
-            let reconstructed = Appearance(rawValue: appearance.rawValue)
-            XCTAssertEqual(reconstructed, appearance)
-        }
-    }
+    // testIdentifiable + testRawValueRoundTrip removed — they round-tripped
+    // a String enum through itself, effectively testing the compiler. The
+    // remaining cases (`testAllCasesCount`, `testColorSchemeMapping`,
+    // `testLabelValues`) cover the load-bearing surface.
 
     // MARK: - AppSettings.appearance UserDefaults round-trip
 

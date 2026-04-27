@@ -108,14 +108,22 @@ struct WorkHomepageApp: App {
         if KeychainStore.get(key: "github.token") != nil {
             return
         }
-        if let token = await GitHubTokenBootstrap.bootstrap() {
-            KeychainStore.set(key: "github.token", value: token)
-            return
+        // Consent gate: do NOT silently shell out to `gh auth token` on
+        // first launch. The first-run wizard now owns that path — its
+        // GitHub section explains what the bootstrap does and only fires
+        // it when the user clicks "Try gh auth token". For users who
+        // already finished the wizard but somehow ended up tokenless
+        // (cleared keychain, fresh sandbox container, etc.), fall through
+        // to the existing `TokenPromptSheet` so they can paste a token.
+        let firstRunDone = UserDefaults.standard.bool(forKey: FirstRunWizard.firstRunCompletedKey)
+        if firstRunDone {
+            await MainActor.run {
+                showFirstLaunchTokenPrompt = true
+            }
         }
-        // Still no token — prompt the user.
-        await MainActor.run {
-            showFirstLaunchTokenPrompt = true
-        }
+        // If the wizard hasn't run yet, `maybeShowFirstRunWizard` will
+        // present it; the wizard's GitHub section drives the consented
+        // bootstrap path.
     }
 
     /// Walks the configured search roots (default `~/src`) and refreshes the

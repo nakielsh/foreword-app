@@ -17,6 +17,8 @@
 //  The "awaiting you" vs "awaiting others" derivation is a pure static function
 //  on `MyPRsAPI` so tests can hit it directly without URLSession.
 //
+//  All HTTP plumbing lives in `HTTPClient.swift`.
+//
 
 import struct Foundation.URL
 import struct Foundation.URLRequest
@@ -26,6 +28,7 @@ import class Foundation.URLResponse
 import class Foundation.JSONDecoder
 import class Foundation.JSONSerialization
 import struct Foundation.Data
+import func Foundation.NSLog
 
 // MARK: - Public surface on GitHubClient
 
@@ -81,62 +84,33 @@ struct MyPRsAPI {
     /// Production defaults: shared session + keychain-backed token + 401-clears-keychain.
     static func `default`() -> MyPRsAPI { MyPRsAPI() }
 
+    private var http: HTTPClient {
+        HTTPClient(
+            session: session,
+            tokenProvider: tokenProvider,
+            onUnauthorized: onUnauthorized
+        )
+    }
+
     // MARK: - Current user (REST)
 
     /// Fetches the authenticated user's login from `/user`. The login is
     /// required as input to `fetchPRReviewState` to derive "awaiting you" vs
     /// "awaiting others".
     func fetchCurrentUserLogin() async throws -> String {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
-        guard let url = URL(string: "https://api.github.com/user") else {
-            throw GitHubError.transport("Invalid URL")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-        let (data, response) = try await performRequest(request)
-        try checkResponse(response, data: data)
-
-        do {
-            let decoded = try JSONDecoder().decode(CurrentUserResponse.self, from: data)
-            return decoded.login
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
+        let resp = try await http.getDecoded(
+            CurrentUserResponse.self,
+            urlString: "https://api.github.com/user"
+        )
+        return resp.login
     }
 
     // MARK: - Authored PRs (REST)
 
     func fetchAuthoredPRs() async throws -> [AuthoredPR] {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
-
-        let urlString = "https://api.github.com/search/issues?q=author:@me+is:pr+is:open&sort=updated&order=desc&per_page=50"
-        guard let url = URL(string: urlString) else {
-            throw GitHubError.transport("Invalid URL")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-
-        let (data, response) = try await performRequest(request)
-        try checkResponse(response, data: data)
-
-        do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let decoded = try decoder.decode(AuthoredSearchResponse.self, from: data)
-            return decoded.items
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
+        let urlString = "https://api.github.com/search/issues?q=author:@me+is:pr+is:open&sort=updated&order=desc&per_page=100"
+        let resp = try await http.getDecoded(AuthoredSearchResponse.self, urlString: urlString)
+        return resp.items
     }
 
     // MARK: - Review state (GraphQL)
@@ -197,13 +171,45 @@ struct MyPRsAPI {
             variables: variables
         )
 
-        if let firstError = response.errors?.first {
-            throw GitHubError.http(status: 200, body: firstError.message)
+        // GraphQL 200-with-errors handling. Three cases:
+        //  1. errors empty + data present     → happy path.
+        //  2. errors non-empty + data present → log + return data; partial
+        //     responses (e.g. one missing field on a sub-type) shouldn't
+        //     blank the whole tab.
+        //  3. errors non-empty + data nil     → throw `.graphqlPartial`.
+        //  4. errors empty + data nil         → unreachable per spec; we
+        //     treat as `.graphqlPartial([])` rather than a generic decode
+        //     error so callers can distinguish it from a malformed body.
+        let errors = response.errors ?? []
+        let messages = errors.map(\.message)
+
+        if let pr = response.data?.repository?.pullRequest {
+            if !errors.isEmpty {
+                NSLog("[MyPRsAPI] GraphQL returned partial data with errors: \(messages)")
+            }
+            return Self.makePRReviewState(payload: pr, currentUser: currentUser)
         }
-        guard let pr = response.data?.repository?.pullRequest else {
-            throw GitHubError.decoding("Missing pullRequest in GraphQL payload")
+
+        // No `pullRequest`. Inspect the errors and the `repository` slot to
+        // pick the most specific typed error.
+        if response.data?.repository == nil, !errors.isEmpty {
+            // `data.repository = null` on GitHub's GraphQL is the
+            // canonical shape for "you can't see this repo" — forbidden
+            // (private repo without scope) or notFound (deleted / typo).
+            // We can't always tell which, but the error messages usually
+            // contain `NOT_FOUND` / `FORBIDDEN`.
+            let lower = messages.joined(separator: " ").lowercased()
+            if lower.contains("not_found") || lower.contains("could not resolve") {
+                throw GitHubError.notFound(body: messages.joined(separator: "; "))
+            }
+            if lower.contains("forbidden") || lower.contains("permission") {
+                throw GitHubError.forbidden(body: messages.joined(separator: "; "))
+            }
         }
-        return Self.makePRReviewState(payload: pr, currentUser: currentUser)
+        if !errors.isEmpty {
+            throw GitHubError.graphqlPartial(errors: messages)
+        }
+        throw GitHubError.graphqlPartial(errors: ["Missing pullRequest in GraphQL payload"])
     }
 
     /// Pure assembly: turns a decoded GraphQL payload + the viewer login into a
@@ -299,57 +305,19 @@ struct MyPRsAPI {
         query: String,
         variables: [String: Any]
     ) async throws -> GraphQLResponse<T> {
-        guard let token = tokenProvider() else { throw GitHubError.missingToken }
-
-        guard let url = URL(string: "https://api.github.com/graphql") else {
-            throw GitHubError.transport("Invalid URL")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = GitHubClient.defaultRequestTimeout
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-
         let body: [String: Any] = ["query": query, "variables": variables]
+        let bodyData: Data
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
+            bodyData = try JSONSerialization.data(withJSONObject: body, options: [])
         } catch {
             throw GitHubError.transport("Failed to encode GraphQL body: \(error.localizedDescription)")
         }
 
-        let (data, response) = try await performRequest(request)
-        try checkResponse(response, data: data)
-
-        do {
-            return try JSONDecoder().decode(GraphQLResponse<T>.self, from: data)
-        } catch {
-            throw GitHubError.decoding(String(describing: error))
-        }
-    }
-
-    private func performRequest(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch {
-            throw GitHubError.transport(error.localizedDescription)
-        }
-    }
-
-    private func checkResponse(_ response: URLResponse, data: Data) throws {
-        guard let http = response as? HTTPURLResponse else {
-            throw GitHubError.transport("Non-HTTP response")
-        }
-        if http.statusCode == 401 {
-            onUnauthorized()
-            throw GitHubError.unauthorized
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw GitHubError.http(status: http.statusCode, body: body)
-        }
-        GitHub401Counter.shared.recordSuccess()
+        return try await http.postDecoded(
+            GraphQLResponse<T>.self,
+            urlString: "https://api.github.com/graphql",
+            body: bodyData
+        )
     }
 }
 

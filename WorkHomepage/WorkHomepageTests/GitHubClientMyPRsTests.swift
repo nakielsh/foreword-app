@@ -287,7 +287,12 @@ final class GitHubClientMyPRsTests: XCTestCase {
         }
     }
 
-    func testFetchPRReviewStateMissingPullRequestThrowsDecoding() async {
+    func testFetchPRReviewStateMissingPullRequestThrowsGraphqlPartial() async {
+        // No `pullRequest` and no `errors` array → typed `.graphqlPartial`
+        // with the synthetic "Missing pullRequest" message. This used to
+        // throw `.decoding`; the wave-1 fix split forbidden / notFound /
+        // graphqlPartial out so the receiver can render a typed message
+        // instead of "decode error".
         let body = """
         { "data": { "repository": null } }
         """
@@ -303,15 +308,20 @@ final class GitHubClientMyPRsTests: XCTestCase {
         )
         do {
             _ = try await api.fetchPRReviewState(repo: "a/b", number: 1, currentUser: "v")
-            XCTFail("expected decoding error")
-        } catch GitHubError.decoding {
-            // expected
+            XCTFail("expected graphqlPartial error")
+        } catch GitHubError.graphqlPartial(let errors) {
+            XCTAssertEqual(errors.count, 1)
+            XCTAssertTrue(errors[0].contains("Missing pullRequest"))
         } catch {
             XCTFail("wrong error \(error)")
         }
     }
 
-    func testFetchPRReviewStateGraphQLErrorsSurfaceAsHttp() async {
+    func testFetchPRReviewStateGraphQLErrorsSurfaceAsNotFound() async {
+        // `data.repository = null` + an errors array containing "Could not
+        // resolve" → typed `.notFound`. Wave-1 wired the GraphQL error
+        // handler to inspect the error text and pick the most-specific
+        // typed case; the test was written before that landed.
         let body = """
         {
           "data": null,
@@ -329,9 +339,9 @@ final class GitHubClientMyPRsTests: XCTestCase {
         )
         do {
             _ = try await api.fetchPRReviewState(repo: "a/b", number: 999, currentUser: "v")
-            XCTFail("expected http error")
-        } catch GitHubError.http(_, let message) {
-            XCTAssertTrue(message.contains("Could not resolve"))
+            XCTFail("expected notFound error")
+        } catch GitHubError.notFound(let body) {
+            XCTAssertTrue(body.contains("Could not resolve"))
         } catch {
             XCTFail("wrong error \(error)")
         }

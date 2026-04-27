@@ -56,6 +56,10 @@ struct JiraClient {
         case unauthorized
         case http(Int, String)
         case ticketNotFound
+        /// JSON decode / shape failure. Distinct from `.http(0, …)` so
+        /// the cache layer knows not to serve stale data — a malformed
+        /// response is an upstream incident, not transport flakiness.
+        case decoding(String)
     }
 
     private let session: URLSession
@@ -192,10 +196,11 @@ struct JiraClient {
             return fresh
 
         case .failure(let error):
-            // Auth / 404 / decoded HTTP errors are real signals — propagate.
+            // Auth / 404 / HTTP / decode errors are real signals — propagate.
+            // Only pure transport failures fall through to the stale-cache path.
             if let jiraError = error as? JiraError {
                 switch jiraError {
-                case .notConfigured, .unauthorized, .ticketNotFound, .http:
+                case .notConfigured, .unauthorized, .ticketNotFound, .http, .decoding:
                     throw jiraError
                 }
             }
@@ -214,9 +219,18 @@ struct JiraClient {
     /// Fetch only the `updated` field for `key`. Pure network — never touches
     /// the cache. Throws the same errors as `fetchTicketRaw` so the caller
     /// can branch on auth vs transport vs not-found.
+    ///
+    /// Decode failures throw `JiraError.decoding` (not `.http(0,…)`) so the
+    /// cache layer can distinguish "Jira returned 200 with garbage" from
+    /// "the network dropped". The former is an upstream incident — serving
+    /// stale data masks it. The latter is recoverable, and stale data is
+    /// the right call.
     private func fetchUpdated(key: String) async throws -> String {
         let request = try makeRequest(key: key, fields: "updated")
 
+        // session.data throws URLError on transport failures. We let those
+        // bubble untouched so `resolveTicket` can detect them as
+        // non-JiraError and fall through to the stale-cache path.
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw JiraError.http(0, "No HTTP response")
@@ -224,13 +238,23 @@ struct JiraClient {
 
         switch http.statusCode {
         case 200..<300:
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let fields = json["fields"] as? [String: Any],
-                  let updated = fields["updated"] as? String
-            else {
-                throw JiraError.http(0, "Missing `updated` in fields-only response")
+            do {
+                let parsed = try JSONSerialization.jsonObject(with: data)
+                guard let json = parsed as? [String: Any] else {
+                    throw JiraError.decoding("cheap-fetch response is not a JSON object")
+                }
+                guard let fields = json["fields"] as? [String: Any] else {
+                    throw JiraError.decoding("cheap-fetch response missing `fields`")
+                }
+                guard let updated = fields["updated"] as? String else {
+                    throw JiraError.decoding("cheap-fetch response missing `fields.updated`")
+                }
+                return updated
+            } catch let jiraError as JiraError {
+                throw jiraError
+            } catch {
+                throw JiraError.decoding("cheap-fetch JSON parse failed: \(error.localizedDescription)")
             }
-            return updated
         case 401:
             throw JiraError.unauthorized
         case 404:
@@ -307,12 +331,27 @@ struct JiraClient {
 
     /// Decodes the Atlassian Cloud `GET /rest/api/3/issue/<key>` response.
     /// Pulled out so tests can exercise it without spinning up URLSession.
+    ///
+    /// Throws `JiraError.decoding` when the response body is structurally
+    /// invalid (not a JSON object, or missing the `key` field). Other
+    /// fields stay defaulted — only `key` is load-bearing because the
+    /// cache and downstream features are keyed on it.
     static func decodeTicket(data: Data) throws -> JiraTicket {
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw JiraError.http(0, "Response is not a JSON object")
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw JiraError.decoding("Response JSON parse failed: \(error.localizedDescription)")
+        }
+        guard let json = parsed as? [String: Any] else {
+            throw JiraError.decoding("Response is not a JSON object")
         }
 
-        let key = json["key"] as? String ?? ""
+        let rawKey = (json["key"] as? String) ?? ""
+        let key = rawKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.isEmpty {
+            throw JiraError.decoding("Ticket payload missing `key`")
+        }
         let fields = json["fields"] as? [String: Any] ?? [:]
 
         let summary = fields["summary"] as? String ?? ""
@@ -377,6 +416,12 @@ struct JiraClient {
         "mediaGroup"
     ]
 
+    /// Recursion depth ceiling for ADF traversal. Pathological inputs
+    /// (deeply nested lists / panels / tables) could otherwise blow the
+    /// stack on the main thread when a ticket description is rendered.
+    /// 64 is well above any human-authored ticket but cheap to enforce.
+    static let maxADFDepth: Int = 64
+
     /// Walk an ADF document recursively, concatenating `text` fields and
     /// emitting `\n\n` between top-level paragraph / heading / list-item
     /// boundaries.
@@ -393,7 +438,7 @@ struct JiraClient {
         // bare string. Surface it verbatim — better than dropping it.
         if let s = input as? String { return s.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-        let raw = walk(input)
+        let raw = walk(input, depth: 0)
 
         // Collapse runs of 3+ newlines down to exactly two.
         var collapsed = raw
@@ -404,7 +449,10 @@ struct JiraClient {
     }
 
     /// Returns the inline text + trailing block-break for a single node.
-    private static func walk(_ node: Any) -> String {
+    /// `depth` tracks nesting; once it exceeds `maxADFDepth` we stop
+    /// descending and return an empty string. Hard cap on stack growth.
+    private static func walk(_ node: Any, depth: Int) -> String {
+        if depth > maxADFDepth { return "" }
         guard let dict = node as? [String: Any] else {
             // Unknown node shape (e.g. an array at the top of `walk` —
             // only walkChildren passes those through). Drop it.
@@ -441,7 +489,7 @@ struct JiraClient {
             return ""
         }
 
-        let children = walkChildren(dict["content"])
+        let children = walkChildren(dict["content"], depth: depth + 1)
 
         if blockTypes.contains(type) {
             // Block-level: end with a paragraph break so siblings stack
@@ -455,11 +503,12 @@ struct JiraClient {
     }
 
     /// Walk a `content` array and concatenate the result of each child.
-    private static func walkChildren(_ content: Any?) -> String {
+    private static func walkChildren(_ content: Any?, depth: Int) -> String {
+        if depth > maxADFDepth { return "" }
         guard let array = content as? [Any] else { return "" }
         var out = ""
         for child in array {
-            out += walk(child)
+            out += walk(child, depth: depth)
         }
         return out
     }
@@ -481,29 +530,34 @@ extension JiraClient {
     /// happen here so the rest of `JiraClient` can stay nonisolated and
     /// continue to do network work off the main thread.
     ///
+    /// Marking the class `@MainActor` (rather than the previous
+    /// `@unchecked Sendable` wrapper around `MainActor.run`) makes the
+    /// isolation explicit to the compiler: `ModelContext` is captured
+    /// here and only ever touched on the main actor. Off-main callers
+    /// must `await` `lookup` / `upsert`.
+    ///
     /// Errors inside the cache are deliberately swallowed: a broken cache
     /// must never break a review. The worst case is "we re-fetch every
     /// time", which is the slice-10 baseline.
-    fileprivate final class Cache: @unchecked Sendable {
+    @MainActor
+    fileprivate final class Cache {
         private let context: ModelContext
 
         init(context: ModelContext) {
             self.context = context
         }
 
-        /// Async wrapper around the main-actor SwiftData read. Network code
-        /// runs nonisolated, so we hop to `@MainActor` only for cache I/O.
-        func lookup(key: String) async -> CachedSnapshot? {
-            await MainActor.run { self.lookupOnMain(key: key) }
+        /// Main-actor SwiftData read. Off-main callers `await` this to
+        /// hop onto the main actor for cache I/O.
+        func lookup(key: String) -> CachedSnapshot? {
+            lookupOnMain(key: key)
         }
 
-        /// Async wrapper around the main-actor SwiftData write. See
-        /// `lookup` above.
-        func upsert(ticket: JiraTicket, updated: String) async {
-            await MainActor.run { self.upsertOnMain(ticket: ticket, updated: updated) }
+        /// Main-actor SwiftData write. See `lookup` above.
+        func upsert(ticket: JiraTicket, updated: String) {
+            upsertOnMain(ticket: ticket, updated: updated)
         }
 
-        @MainActor
         private func lookupOnMain(key: String) -> CachedSnapshot? {
             do {
                 let predicate = #Predicate<CachedJiraTicket> { $0.key == key }
@@ -529,7 +583,6 @@ extension JiraClient {
             }
         }
 
-        @MainActor
         private func upsertOnMain(ticket: JiraTicket, updated: String) {
             do {
                 let key = ticket.key

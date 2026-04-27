@@ -107,43 +107,102 @@ enum IdeaProjectSync {
         rewriteGradleJvmToProjectSDK(destIdea: destIdea)
     }
 
-    /// If `<destIdea>/gradle.xml` references `#JAVA_HOME` and
-    /// `<destIdea>/misc.xml` declares a `project-jdk-name`, rewrites the
-    /// reference to point at that JDK by name. Silent on any failure —
-    /// the worst case is the user fixing the Gradle JVM dropdown once.
+    /// If `<destIdea>/gradle.xml` has a `gradleJvm` option referencing the
+    /// `#JAVA_HOME` macro and `<destIdea>/misc.xml` declares a
+    /// `project-jdk-name`, rewrites the option to point at that JDK by name.
+    /// Silent on any failure — the worst case is the user fixing the Gradle
+    /// JVM dropdown once.
+    ///
+    /// Implementation note: the previous version did a regex/string replace
+    /// on the file content. That worked for IntelliJ's canonical layout but
+    /// was fragile against attribute reordering, single vs. double quotes,
+    /// embedded comments, or any future formatting drift. This version
+    /// parses both files with `XMLDocument`, mutates the relevant attribute
+    /// node directly, and re-serialises — so any structural shape that
+    /// preserves the documented `<option name="gradleJvm" value="..."/>`
+    /// element will survive a round-trip cleanly.
     private static func rewriteGradleJvmToProjectSDK(destIdea: URL) {
         let miscURL = destIdea.appendingPathComponent("misc.xml")
         let gradleURL = destIdea.appendingPathComponent("gradle.xml")
         guard
             let miscContent = try? String(contentsOf: miscURL, encoding: .utf8),
-            let gradleContent = try? String(contentsOf: gradleURL, encoding: .utf8),
-            gradleContent.contains(##"value="#JAVA_HOME""##),
             let jdkName = extractProjectJdkName(from: miscContent),
             !jdkName.isEmpty
         else {
             return
         }
-        let updated = gradleContent.replacingOccurrences(
-            of: ##"value="#JAVA_HOME""##,
-            with: "value=\"\(jdkName)\""
-        )
-        try? updated.write(to: gradleURL, atomically: true, encoding: .utf8)
+        guard
+            let gradleData = try? Data(contentsOf: gradleURL),
+            let gradleDoc = try? XMLDocument(data: gradleData, options: [.nodePreserveAll])
+        else {
+            return
+        }
+        guard rewriteGradleJvmOption(in: gradleDoc, replacement: jdkName) else {
+            return
+        }
+        let serialised = gradleDoc.xmlData(options: [.nodePreserveAll])
+        try? serialised.write(to: gradleURL)
+    }
+
+    /// Walks every `<option>` element in `doc` and, when it finds one whose
+    /// `name` attribute is `gradleJvm` and whose `value` attribute is
+    /// `#JAVA_HOME`, replaces that `value` with `replacement`. Returns
+    /// `true` iff at least one such option was rewritten.
+    ///
+    /// IntelliJ's gradle.xml puts the option deeply nested inside
+    /// `project › component › option › GradleProjectSettings › option`,
+    /// but it could in principle live elsewhere. We don't pin the path —
+    /// we match by `(name, value)` and let the structure be whatever the
+    /// IDE wrote.
+    private static func rewriteGradleJvmOption(in doc: XMLDocument, replacement: String) -> Bool {
+        guard let root = doc.rootElement() else { return false }
+        var didRewrite = false
+        var stack: [XMLElement] = [root]
+        while let element = stack.popLast() {
+            if element.name == "option",
+               let nameAttr = element.attribute(forName: "name")?.stringValue,
+               nameAttr == "gradleJvm",
+               let valueAttr = element.attribute(forName: "value"),
+               valueAttr.stringValue == "#JAVA_HOME" {
+                valueAttr.stringValue = replacement
+                didRewrite = true
+            }
+            for child in element.children ?? [] {
+                if let childElement = child as? XMLElement {
+                    stack.append(childElement)
+                }
+            }
+        }
+        return didRewrite
     }
 
     /// Pulls `project-jdk-name="..."` out of `misc.xml`. Returns `nil` if
-    /// the attribute is absent or unparsable.
+    /// the attribute is absent or the document is unparsable.
+    ///
+    /// Walks the parsed tree looking for a `project-jdk-name` attribute on
+    /// any element. IntelliJ canonically puts it on
+    /// `<component name="ProjectRootManager">`, but matching by attribute
+    /// name keeps us tolerant to minor schema drift.
     static func extractProjectJdkName(from miscXML: String) -> String? {
-        let pattern = #"project-jdk-name="([^"]+)""#
         guard
-            let regex = try? NSRegularExpression(pattern: pattern),
-            let match = regex.firstMatch(
-                in: miscXML,
-                range: NSRange(miscXML.startIndex..., in: miscXML)
-            ),
-            let range = Range(match.range(at: 1), in: miscXML)
+            let data = miscXML.data(using: .utf8),
+            let doc = try? XMLDocument(data: data, options: [.nodePreserveAll]),
+            let root = doc.rootElement()
         else {
             return nil
         }
-        return String(miscXML[range])
+        var stack: [XMLElement] = [root]
+        while let element = stack.popLast() {
+            if let value = element.attribute(forName: "project-jdk-name")?.stringValue,
+               !value.isEmpty {
+                return value
+            }
+            for child in element.children ?? [] {
+                if let childElement = child as? XMLElement {
+                    stack.append(childElement)
+                }
+            }
+        }
+        return nil
     }
 }

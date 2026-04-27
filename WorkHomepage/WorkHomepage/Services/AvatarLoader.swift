@@ -49,11 +49,33 @@ final class AvatarLoader {
     /// share one network fetch instead of starting N redundant requests.
     private var inFlight: [NSURL: Task<NSImage, Never>] = [:]
 
+    /// URLSession used for image GETs. Production wires `URLSession.shared`;
+    /// tests inject an `URLSessionConfiguration.ephemeral` session that
+    /// routes through `URLProtocolStub`. Stored on the instance so the
+    /// singleton stays unchanged across test runs.
+    private let session: URLSession
+
     // MARK: - Init
 
-    private init() {}
+    private init() {
+        self.session = URLSession.shared
+    }
+
+    /// Test-only initialiser. Lets a test construct a fresh `AvatarLoader`
+    /// with an injected URLSession (typically `URLProtocolStub`-backed)
+    /// and exercise the real type rather than a hand-rolled lookalike.
+    init(session: URLSession) {
+        self.session = session
+    }
 
     // MARK: - Public API
+
+    /// GitHub avatar size (in CSS px) we ask the CDN to serve. The UI renders
+    /// at 48pt, so 96px covers up-to-2x Retina without paying for the default
+    /// 460-ish-px source. Capping the size also caps decoded NSImage RAM —
+    /// 96×96 ≈ 36KB after RGBA expansion vs. 800KB+ for an unrequested
+    /// avatar. Cache cost stays predictable across a multi-day session.
+    private static let githubAvatarPixelSize = 96
 
     /// Returns a 48x48 NSImage for `url`. Falls back to a monogram image
     /// when `url` is nil, the request fails, or the server returns non-2xx.
@@ -65,7 +87,8 @@ final class AvatarLoader {
             return MonogramRenderer.render(login: login, size: 48)
         }
 
-        let nsURL = url as NSURL
+        let sizedURL = Self.appendingSizeParam(to: url, size: Self.githubAvatarPixelSize)
+        let nsURL = sizedURL as NSURL
         if let cached = cache.object(forKey: nsURL) {
             return cached
         }
@@ -74,8 +97,9 @@ final class AvatarLoader {
             return await existing.value
         }
 
-        let task = Task<NSImage, Never> { [weak self] in
-            await Self.fetchImage(url: url, login: login)
+        let session = self.session
+        let task = Task<NSImage, Never> {
+            await Self.fetchImage(session: session, url: sizedURL, login: login)
         }
         inFlight[nsURL] = task
         let image = await task.value
@@ -92,11 +116,27 @@ final class AvatarLoader {
         return image
     }
 
-    private static func fetchImage(url: URL, login: String) async -> NSImage {
+    /// Returns `url` with `s=<size>` merged into its query. If a different
+    /// `s` value is already present we overwrite it; any other query items
+    /// are preserved. Falls back to the original URL on parse failure so a
+    /// bad URL still returns *something* parseable to URLSession (which will
+    /// then fail and trigger the monogram fallback).
+    static func appendingSizeParam(to url: URL, size: Int) -> URL {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url
+        }
+        var items = components.queryItems ?? []
+        items.removeAll { $0.name == "s" }
+        items.append(URLQueryItem(name: "s", value: String(size)))
+        components.queryItems = items
+        return components.url ?? url
+    }
+
+    private static func fetchImage(session: URLSession, url: URL, login: String) async -> NSImage {
         var request = URLRequest(url: url)
         request.timeoutInterval = AvatarLoader.requestTimeout
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 return MonogramRenderer.render(login: login, size: 48)
             }

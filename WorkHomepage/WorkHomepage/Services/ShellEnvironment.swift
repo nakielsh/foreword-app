@@ -41,6 +41,49 @@ enum ShellEnvironment {
         return captured
     }
 
+    /// Returns the captured env filtered through the safe allow-list. This is
+    /// what we pass to spawned children (IntelliJ, gradle daemon, etc.) so
+    /// secrets like `ANTHROPIC_API_KEY`, AWS creds, npm tokens, and arbitrary
+    /// `*_TOKEN` / `*_KEY` env vars set in the user's `~/.zshrc` don't leak
+    /// into every child process we launch.
+    ///
+    /// What's allowed: a curated set of variables IntelliJ and gradle
+    /// realistically need (HOME, USER, PATH, JAVA_*, GRADLE_*, MAVEN_*,
+    /// REPO_USER, locale and tz keys, SSH_AUTH_SOCK, TMPDIR, LOGNAME). Plus
+    /// LC_* prefix for locale completeness.
+    static func filteredForChildren() -> [String: String] {
+        filter(userInteractiveEnv())
+    }
+
+    /// The canonical allow-list of env var keys (or prefixes) we forward to
+    /// spawned children. Pure function exposed for testing.
+    static func filter(_ env: [String: String]) -> [String: String] {
+        var out: [String: String] = [:]
+        for (k, v) in env where isAllowed(k) {
+            out[k] = v
+        }
+        return out
+    }
+
+    private static let allowedKeys: Set<String> = [
+        "HOME", "USER", "LOGNAME", "PATH", "SHELL",
+        "LANG", "TZ", "TMPDIR", "TERM",
+        "JAVA_HOME", "REPO_USER",
+        "SSH_AUTH_SOCK", "SSH_AGENT_PID"
+    ]
+
+    private static let allowedPrefixes: [String] = [
+        "JAVA_", "GRADLE_", "MAVEN_", "LC_"
+    ]
+
+    static func isAllowed(_ key: String) -> Bool {
+        if allowedKeys.contains(key) { return true }
+        for prefix in allowedPrefixes where key.hasPrefix(prefix) {
+            return true
+        }
+        return false
+    }
+
     /// Test seam: forget the cached env so the next call re-runs capture.
     /// Not used in production — but unit tests that exercise multiple
     /// fixtures need to reset state between cases.
