@@ -4,61 +4,115 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A single-page HTML dashboard for developer productivity. It displays GitHub PR data (reviews, authored PRs, deployments) and active Claude Code sessions. Runs as a local `file://` page — no build step, no framework, no dependencies.
+Two coexisting apps in one repo:
 
-## Architecture
+1. **`index.html` + `refresh-sessions.*`** — original single-page HTML dashboard. Runs as a local `file://` page, no build step.
+2. **`WorkHomepage/`** — SwiftUI + SwiftData macOS app. The active surface most new work targets. Adds Claude-driven PR reviews, Jira context, IntelliJ launcher, pre-review summaries, settings, and a menu-bar companion on top of what the HTML page does.
 
-**`index.html`** — The entire app: HTML, CSS (in `<style>`), and JS (in `<script>`). Uses the Botanical Garden theme (Libre Baskerville + Source Sans 3 fonts, fern green/marigold/terracotta/cream palette).
+Both target the same domain (GitHub PRs, deployments, Claude Code sessions). The macOS app is the strategic direction; the HTML page is kept around because it's still useful and zero-cost to maintain.
+
+For domain vocabulary (Review vs. GitHub review, Pre-Review Summary, Worktree, Jira Ticket / Parent, Review Prompt Template), see `CONTEXT.md`. For architecture decisions, see `docs/adr/`. For slice-by-slice implementation history, see `docs/issues/`.
+
+## HTML dashboard
+
+**`index.html`** — Entire app: HTML, CSS (in `<style>`), and JS (in `<script>`). Botanical Garden theme (Libre Baskerville + Source Sans 3 fonts, fern green / marigold / terracotta / cream palette).
 
 Four tabs:
 
-- **Reviews** — PRs assigned to the user for review (`review-requested:@me`).
-  - Filter bar: "Hide PRs with >= N approvals" dropdown (threshold 1–5, default 2) and "Show my dismissed reviews" toggle.
-  - Stats bar: counts for awaiting / with approvals / drafts / dismissed / currently showing.
-  - Main grid of pending review-requested PRs.
-  - Three sub-sections for PRs from `reviewed-by:@me` that are no longer pending review:
-    - **Changes Requested** — your last review was CHANGES_REQUESTED.
-    - **My Comments** — your last review was COMMENTED.
-    - **Already Approved** — your last review was APPROVED.
-  - Each reviewed PR shows a "N new commits since your review" badge when commits were pushed after your last review, and a re-review indicator showing your prior review state.
+- **Reviews** — PRs assigned for review (`review-requested:@me`). Filter dropdown ("Hide PRs with >= N approvals"), dismissed-reviews toggle, stats bar, sub-sections for `reviewed-by:@me` (Changes Requested, My Comments, Already Approved), "N new commits since your review" badge.
+- **My PRs** — Authored open PRs. Per-reviewer status badges, unresolved-thread counts (GraphQL), total comment counts.
+- **Claude Code** — Active sessions from `claude-sessions.js` (`window.__claudeSessions`).
+- **Deployments** — Latest deploy per service / environment via GitHub Actions workflow runs.
 
-- **My PRs** — User's authored open PRs (`author:@me+is:pr+is:open`).
-  - Per-reviewer status badges (approved / changes requested / commented / pending / re-requested).
-  - Unresolved thread counts via GitHub GraphQL API, split into "awaiting you" vs "awaiting others".
-  - Total comment counts.
-  - Stats bar: with approvals / changes requested / awaiting your reply / drafts / total.
+Data: GitHub REST + GraphQL; token in `localStorage`; filter state + active tab also in `localStorage`. Org / workflow / services configured near `index.html:1764` (`DEPLOY_ORG`, `DEPLOY_WORKFLOW`, `SERVICES`).
 
-- **Claude Code** — Active Claude Code sessions read from `claude-sessions.js` (`window.__claudeSessions`).
-  - Cards show entrypoint (CLI vs VS Code), running duration, cwd, session name or last prompt, PID, and start time.
-  - File is reloaded dynamically with cache-busting via `reloadSessionsScript()`.
+**Refresh pipeline** for the Claude Code tab:
 
-- **Deployments** — Deployment status per service for the `Ala-com` GitHub org.
-  - Queries GitHub Actions workflow runs for each service in the hardcoded `SERVICES` array, looking for the workflow named in `DEPLOY_WORKFLOW`.
-  - `parseDeployRun(run)` extracts environment (prod/dev) and version from run names (e.g., `[dev] Deploy v1.21.1-feature-xyz-snapshot`).
-  - `fetchDeployEnvMap()` pages through up to 200 runs to avoid prod info being buried by frequent dev deploys.
-  - Uses progressive rendering: skeleton cards appear immediately, each fills as its API call resolves.
-  - Org/workflow/services are configured near `index.html:1764` via `DEPLOY_ORG`, `DEPLOY_WORKFLOW`, and `SERVICES`.
+- `refresh-sessions.py` reads `~/.claude/sessions/*.json`, validates PIDs via `os.kill(pid, 0)`, pulls the last user prompt per session from `~/.claude/history.jsonl` (truncated to 200 chars), writes `claude-sessions.js` next to itself.
+- `refresh-sessions.sh` is the portable wrapper invoked by launchd.
+- `refresh-claude-sessions.plist.template` is the LaunchAgent template — replace `__INSTALL_DIR__` and `launchctl load`. Runs every 120s + on login. Logs to `/tmp/refresh-claude-sessions.log`.
 
-Data sources:
-- GitHub REST API (`api.github.com`) for PR search, reviews, and workflow runs.
-- GitHub GraphQL API for review threads and requested reviewers (My PRs tab only).
-- Token stored in `localStorage`, obtained via `gh auth token`.
-- Filter state and active tab persisted in `localStorage`.
+## macOS app
 
-**`refresh-sessions.py`** — Reads `~/.claude/sessions/*.json`, validates PIDs are alive via `os.kill(pid, 0)`, pulls the last user prompt per session from `~/.claude/history.jsonl` (truncated to 200 chars), and writes `claude-sessions.js` next to itself. Output is `window.__claudeSessions = [...]` sorted newest-first.
+Xcode project at `WorkHomepage/WorkHomepage.xcodeproj`. SwiftUI scenes + SwiftData persistence. Uses synchronized folder groups, so files added under `WorkHomepage/WorkHomepage/`, `WorkHomepageTests/`, `WorkHomepageUITests/` are auto-included.
 
-**`refresh-sessions.sh`** — Portable shell wrapper that resolves its own directory and invokes `refresh-sessions.py` via `/usr/bin/python3`. Used by launchd. No hardcoded paths — colleagues can run it from any working directory.
+### Scenes (`WorkHomepageApp.swift`)
 
-**`refresh-claude-sessions.plist.template`** — Template LaunchAgent plist. Replace the `__INSTALL_DIR__` placeholder with the absolute path to this project directory, copy to `~/Library/LaunchAgents/`, and load with `launchctl load`. See README.md for the one-liner setup command.
+- Main `WindowGroup` mounts `SidebarView` (tab host).
+- `Settings { SettingsView() }` for the standard `⌘,` panel.
+- `MenuBarExtra` companion with at-a-glance counts (`MenuBarCounts.shared`).
+- Single `ModelContainer` for `[Review, Finding, CachedJiraTicket, PreReviewSummary]`. On-disk store; falls back to in-memory if the on-disk container fails to load.
 
-**LaunchAgent** — Runs `refresh-sessions.sh` every 120 seconds and once on login (`RunAtLoad true`). Stdout and stderr both go to `/tmp/refresh-claude-sessions.log`. No `WorkingDirectory` is set; the script uses absolute paths derived at runtime.
+### Tabs (`Views/`)
 
-## Key Patterns
+- `ReviewsTab.swift` — review-requested PRs + a "Review" action that opens the review modal.
+- `MyPRsTab.swift` — authored PRs with reviewer + thread state.
+- `DeploysTab.swift` — workflow-run-derived deploy table.
+- `SessionsTab.swift` — native session reader (no `claude-sessions.js` round-trip; reads `~/.claude/sessions/` directly).
+- `ReviewSheet.swift` — modal showing the live stream, findings list, and Jira/summary panels. Click on a finding → `IntelliJLauncher.openWithFallback`.
+- `SettingsView.swift` — first-run + reconfiguration surface (binary paths, Jira creds, review prompt template editor, concurrency cap, disk usage / per-repo evict).
+- `FirstRunWizard.swift`, `TokenPromptSheet.swift` — onboarding.
 
-- All CSS uses custom properties defined in `:root`. Theme changes only require updating variables and hardcoded `rgba()` values.
-- Card rendering is done via DOM creation in JS (no templating library). `renderReviewCards(grid, prs)` is shared between the pending reviews section and all three sub-sections (Changes Requested, My Comments, Already Approved).
-- GitHub API calls go through `ghFetch()` (REST) and `ghGraphQL()` (GraphQL), both handling 401 → token clear.
-- `formatCwd(cwd)` replaces `/Users/<username>` with `~` for display and dims the path prefix.
-- `reloadSessionsScript()` replaces the `<script>` tag for `claude-sessions.js` with a cache-busting query param, returning a Promise. Works with `file://` protocol.
-- `fetchDeployEnvMap(service)` pages through up to 2 pages of 100 workflow runs to find the latest deploy per environment, avoiding the problem where frequent dev deploys push prod off the first page.
-- `parseDeployRun(run)` parses workflow run names via regex to extract environment and version.
+### Review pipeline (`Services/ReviewOrchestrator.swift`)
+
+`runRealPipeline(input:)`:
+
+1. `WorktreeManager.prepare` — bare clone + worktree at `~/.work-homepage/repos/<org>/<repo>.git` and `~/.work-homepage/worktrees/<org>/<repo>/<pr#>`.
+2. `TicketKeyExtractor.extract(branchName:)` → `JiraClient.fetchTicket` (cached in `CachedJiraTicket`).
+3. `fetchChangedFiles(repo:prNumber:)` shells `gh pr view --json files --jq '.files[].path'` for the prompt allowlist (degrades to no-allowlist on failure).
+4. `OrchestratorPrompt.build` composes: Jira block → user template (interpolated `{{repo}} {{prNumber}} {{branch}} {{sha}}`) → schema directive → allowlist block.
+5. `ClaudeRunner.run` spawns `claude` with `cwd = worktree`, `allowedTools = "Read,Grep,Glob,Bash(gh:*),Bash(git:*)"`, `disallowedTools = "Bash,Write,Edit"`. Yields a stream of `ClaudeEvent`.
+6. `ReviewStore.markCompleted` parses the final result against `ReviewSchema`, filters findings whose `file` is missing in the worktree (or absolute / empty), persists kept findings, surfaces drop count via `Review.errorMessage`.
+
+Cancellation flows through `CancellationContext` → `CancellationFlag` (lock-backed) → SIGTERM via `ProcessBox`. Concurrency capped per `AppSettings.concurrencyCap` with queue + drain in the orchestrator.
+
+### Pre-Review Summary pipeline (`Services/PreReviewSummary*.swift`)
+
+Separate from the review pipeline (see `docs/adr/0002-pre-review-summary-separate-pipeline.md`). No worktree. `Bash(gh:*)` only. Cached forever per `headSha` in `PreReviewSummary`. Runs on its own concurrency pool.
+
+### Critical paths
+
+- Worktree layout: `~/.work-homepage/repos/<org>/<repo>.git` (bare) and `~/.work-homepage/worktrees/<org>/<repo>/<pr#>/` (per-PR). `WorktreePath.url(for:prNumber:)` is the single source of truth.
+- Shelled binaries: `git`, `gh`, `claude`, `idea`, `/usr/bin/python3`. All resolved via `BinaryResolver` (no shell PATH inheritance — the app is GUI-launched).
+- Child env: `ShellEnvironment.filteredForChildren()` captures the user's interactive zsh env via `$SHELL -ilc env`, then allow-lists keys for forwarding. Allow-list currently passes `HOME, USER, PATH, SHELL, LANG, TZ, TMPDIR, TERM, JAVA_HOME, REPO_USER, REPO_PASSWORD, SSH_AUTH_SOCK, SSH_AGENT_PID` plus `JAVA_*`, `GRADLE_*`, `MAVEN_*`, `LC_*`, `ARTIFACTORY_*` prefixes. Anything else (e.g. `ANTHROPIC_API_KEY`, AWS creds) is intentionally dropped.
+
+## Build, install, test
+
+```sh
+# Build + copy to /Applications + reset IconServices cache so Stage Manager picks up new app icon.
+make local-install
+
+# Quick build only.
+make build
+
+# Run the full XCTest suite.
+make test
+
+# Run a targeted suite.
+xcodebuild test \
+  -project WorkHomepage/WorkHomepage.xcodeproj \
+  -scheme WorkHomepage \
+  -only-testing:WorkHomepageTests/ReviewStoreFilterTests
+```
+
+Release / DMG pipeline (signing, notarization, Barto upload) is documented in `docs/release.md`. Phase 1 (`make local-install`) is enough for this laptop; Phase 2 covers distribution.
+
+## Conventions
+
+- **Static imports only** — no wildcard imports anywhere. See user-global preference.
+- **Tests use AssertJ-style helpers** in `WorkHomepageTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`). Prefer over raw `XCTAssertEqual` where a chain reads cleaner.
+- **Models live in `WorkHomepage/WorkHomepage/Models/`**; SwiftData `@Model` classes only there. Decoded API shapes (e.g. `ReviewSchema`, `SchemaFinding`) live in `Services/` next to the code that produces them.
+- **GitHub API calls** go through `GitHubClient` (REST) with topic extensions (`+MyPRs`, `+Reviews`, `+Workflows`, `+PRBranch`).
+- **Untrusted content** (branch names, Jira summaries / descriptions, parent description, anything user-controlled or upstream-controlled) is wrapped via `UntrustedContent.fence(_:label:)` / `.sanitise(_:)` before it reaches the prompt builder. Defence-in-depth on top of `--allowed-tools` / `--disallowed-tools`.
+- **Card rendering in `index.html`** uses DOM creation, not templates. `renderReviewCards(grid, prs)` is shared between the pending-reviews section and the three reviewed-by-me sub-sections.
+- **Theme tokens** (HTML) live in `:root` custom properties; the macOS app exposes the same palette via `Color.appBody` / `Color.bgSurface` etc. in extensions.
+- **Don't post to GitHub** — Reviews stay local-only by design. The orchestrator writes to SwiftData and that's it.
+
+## Where to look
+
+- Domain glossary → `CONTEXT.md`.
+- Product story → `docs/PRD.md`.
+- Architecture decisions → `docs/adr/`.
+- Slice-by-slice implementation history → `docs/issues/`.
+- Code-review follow-ups & known TODOs → `docs/review-followups.md`.
+- Release pipeline (DMG, signing, Barto) → `docs/release.md`.
