@@ -272,7 +272,11 @@ struct ReviewSheet: View {
         case .openedWithoutLineJump:
             showToast("idea CLI not found — opened without line jump")
         case .fileMissing(let url):
-            launcherAlertMessage = "File not found in worktree: \(url.path)"
+            var message = "File not found in worktree: \(url.path)"
+            if let hint = IntelliJLauncher.missingFileHint(worktree: worktree, file: finding.file) {
+                message += "\n\n\(hint)"
+            }
+            launcherAlertMessage = message
         case .failed(let msg):
             launcherAlertMessage = "Could not open file: \(msg)"
         }

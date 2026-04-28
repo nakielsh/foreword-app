@@ -242,6 +242,65 @@ final class IntelliJLauncherTests: XCTestCase {
         let expectedURL = worktree.appending(path: missing)
         assertThat(result).isEqualTo(.fileMissing(expectedURL))
     }
+
+    // MARK: - missingFileHint
+
+    func testMissingFileHintListsClosestSiblingsWhenParentExists() throws {
+        let (worktree, _) = try makeWorktree(withFile: "src/app/ConfluencePageSyncService.kt")
+        let parent = worktree.appending(path: "src/app")
+        try "// other".write(
+            to: parent.appendingPathComponent("ConfluenceSyncService.kt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "// other".write(
+            to: parent.appendingPathComponent("ConfluenceTokenProvider.kt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let hint = IntelliJLauncher.missingFileHint(
+            worktree: worktree,
+            file: "src/app/ConfluencePageQueryService.kt"
+        )
+
+        let unwrapped = try XCTUnwrap(hint)
+        assertThat(unwrapped).contains("directory exists but the file does not")
+        assertThat(unwrapped).contains("ConfluencePageSyncService.kt")
+    }
+
+    func testMissingFileHintReportsDeepestExistingAncestorWhenParentMissing() throws {
+        let (worktree, _) = try makeWorktree(withFile: "src/app/Real.kt")
+
+        let hint = IntelliJLauncher.missingFileHint(
+            worktree: worktree,
+            file: "src/app/missing-subdir/deeper/Thing.kt"
+        )
+
+        let unwrapped = try XCTUnwrap(hint)
+        assertThat(unwrapped).contains("first missing segment")
+        assertThat(unwrapped).contains("missing-subdir")
+    }
+
+    func testMissingFileHintReportsAbsentWorktree() {
+        let nonexistent = tempDir.appendingPathComponent("never-created", isDirectory: true)
+
+        let hint = IntelliJLauncher.missingFileHint(
+            worktree: nonexistent,
+            file: "anything.kt"
+        )
+
+        let unwrapped = hint ?? ""
+        assertThat(unwrapped).contains("worktree directory itself does not exist")
+    }
+
+    func testMissingFileHintReturnsNilForInvalidInput() {
+        let hint = IntelliJLauncher.missingFileHint(
+            worktree: tempDir,
+            file: "/absolute/rejected.kt"
+        )
+        XCTAssertNil(hint)
+    }
 }
 
 // AssertJ-flavoured helpers consolidated into Helpers/Assertions.swift —

@@ -148,6 +148,93 @@ enum IntelliJLauncher {
         return candidate
     }
 
+    /// Builds a human-readable hint to append to the "file not found" alert.
+    /// Distinguishes three cases:
+    ///   1. Worktree itself is missing → likely the PR worktree wasn't created
+    ///      or was evicted; nothing useful to suggest.
+    ///   2. The parent directory exists but the file doesn't → the finding
+    ///      probably names a renamed/deleted file or was hallucinated. List
+    ///      up to 5 sibling files by closest-name match so the user can spot
+    ///      a rename.
+    ///   3. The parent directory is also missing → walk up to the deepest
+    ///      ancestor that does exist and report that, so the user can see
+    ///      how far off the path is.
+    static func missingFileHint(worktree: URL, file: String) -> String? {
+        let trimmed = file.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.hasPrefix("/") else { return nil }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: worktree.path) else {
+            return "The worktree directory itself does not exist. The PR worktree may have been removed."
+        }
+        let candidate = worktree.appending(path: trimmed)
+        let parent = candidate.deletingLastPathComponent()
+        let target = candidate.lastPathComponent
+
+        var isDir: ObjCBool = false
+        if fm.fileExists(atPath: parent.path, isDirectory: &isDir), isDir.boolValue {
+            let siblings = (try? fm.contentsOfDirectory(atPath: parent.path)) ?? []
+            let suggestions = closestMatches(target: target, candidates: siblings, limit: 5)
+            if suggestions.isEmpty {
+                return "The directory exists but contains no files with a similar name. The finding likely points at a file that was deleted or never existed on this PR's branch."
+            }
+            let bullets = suggestions.map { "  • \($0)" }.joined(separator: "\n")
+            return "The directory exists but the file does not. Closest names found:\n\(bullets)"
+        }
+
+        var ancestor = parent
+        let worktreePath = worktree.standardizedFileURL.path
+        while ancestor.path != worktreePath {
+            let next = ancestor.deletingLastPathComponent()
+            if next.path == ancestor.path { break }
+            if fm.fileExists(atPath: next.path, isDirectory: &isDir), isDir.boolValue {
+                let missing = ancestor.path.replacingOccurrences(of: worktreePath + "/", with: "")
+                return "Path does not exist below the first missing segment: \(missing). The PR branch likely doesn't include this file."
+            }
+            ancestor = next
+        }
+        return "The finding's path does not match anything in this worktree."
+    }
+
+    /// Ranks `candidates` by similarity to `target` using a cheap lowercased
+    /// substring + Levenshtein-on-basename heuristic. Good enough to surface
+    /// obvious renames (`FooService` ↔ `FooQueryService`) without dragging in
+    /// a real fuzzy-match library.
+    private static func closestMatches(target: String, candidates: [String], limit: Int) -> [String] {
+        let targetStem = (target as NSString).deletingPathExtension.lowercased()
+        let scored: [(String, Int)] = candidates.map { name in
+            let stem = (name as NSString).deletingPathExtension.lowercased()
+            let distance = levenshtein(stem, targetStem)
+            let bonus = stem.contains(targetStem) || targetStem.contains(stem) ? -5 : 0
+            return (name, distance + bonus)
+        }
+        return scored
+            .sorted { $0.1 < $1.1 }
+            .prefix(limit)
+            .map { $0.0 }
+    }
+
+    private static func levenshtein(_ a: String, _ b: String) -> Int {
+        let aChars = Array(a)
+        let bChars = Array(b)
+        if aChars.isEmpty { return bChars.count }
+        if bChars.isEmpty { return aChars.count }
+        var prev = Array(0...bChars.count)
+        var curr = Array(repeating: 0, count: bChars.count + 1)
+        for i in 1...aChars.count {
+            curr[0] = i
+            for j in 1...bChars.count {
+                let cost = aChars[i - 1] == bChars[j - 1] ? 0 : 1
+                curr[j] = min(
+                    prev[j] + 1,
+                    curr[j - 1] + 1,
+                    prev[j - 1] + cost
+                )
+            }
+            swap(&prev, &curr)
+        }
+        return prev[bChars.count]
+    }
+
     static func openWithFallback(
         worktree: URL,
         file: String,

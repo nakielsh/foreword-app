@@ -53,6 +53,11 @@ enum OrchestratorPrompt {
     /// Full canonical schema directive appended when absent.
     private static let schemaDirectiveBlock = "\nReturn JSON conformant to the provided schema. Findings must reference real file paths and line numbers from the changed files."
 
+    /// Hard cap on the size of the changed-files allowlist injected into
+    /// the prompt. Generous (covers ~99% of PRs) but keeps prompt size
+    /// bounded for the rare 5000-file mega-PR.
+    private static let maxAllowlistEntries = 200
+
     /// Build the full prompt for one review run.
     ///
     /// `jira` is nil when no ticket key was extracted from the branch,
@@ -69,6 +74,7 @@ enum OrchestratorPrompt {
         branch: String,
         sha: String,
         jira: JiraTicket?,
+        changedFiles: [String]? = nil,
         store: ReviewPromptStore = ReviewPromptStore()
     ) -> String {
         let jiraBlock = renderJiraBlock(jira)
@@ -83,7 +89,8 @@ enum OrchestratorPrompt {
         if !body.contains(schemaDirective) {
             body += schemaDirectiveBlock
         }
-        return jiraBlock + "\n" + body
+        let allowlist = renderAllowlistBlock(changedFiles)
+        return jiraBlock + "\n" + body + allowlist
     }
 
     /// Build the full prompt using an explicit template string (no store lookup).
@@ -95,7 +102,8 @@ enum OrchestratorPrompt {
         branch: String,
         sha: String,
         jira: JiraTicket?,
-        template: String
+        template: String,
+        changedFiles: [String]? = nil
     ) -> String {
         let jiraBlock = renderJiraBlock(jira)
         let vars: [String: String] = [
@@ -108,7 +116,29 @@ enum OrchestratorPrompt {
         if !body.contains(schemaDirective) {
             body += schemaDirectiveBlock
         }
-        return jiraBlock + "\n" + body
+        let allowlist = renderAllowlistBlock(changedFiles)
+        return jiraBlock + "\n" + body + allowlist
+    }
+
+    /// Renders the changed-files allowlist as an instruction block appended
+    /// after the user-editable template. Empty / nil input → empty string so
+    /// the prompt is unchanged (useful when `gh pr view --json files` fails;
+    /// we degrade to the previous behaviour rather than blocking the review).
+    /// Above `maxAllowlistEntries`, only the first N are listed and the
+    /// instruction notes truncation so the model knows the list isn't
+    /// authoritative for very large PRs.
+    static func renderAllowlistBlock(_ files: [String]?) -> String {
+        guard let files, !files.isEmpty else { return "" }
+        let dedup = Array(NSOrderedSet(array: files)) as? [String] ?? files
+        let truncated = dedup.count > maxAllowlistEntries
+        let visible = truncated ? Array(dedup.prefix(maxAllowlistEntries)) : dedup
+        let bullets = visible.map { "  - \($0)" }.joined(separator: "\n")
+        var block = "\n\nAllowed file paths (this PR's changed files):\n\(bullets)"
+        if truncated {
+            block += "\n  - (list truncated; this PR changes \(dedup.count) files — verify any path you cite by reading it)"
+        }
+        block += "\n\nEvery finding's `file` field MUST be copied verbatim from this list. Do not invent sibling paths, do not rename, do not normalise. If you want to flag something outside this list, omit the finding entirely."
+        return block
     }
 
     // MARK: - Building blocks

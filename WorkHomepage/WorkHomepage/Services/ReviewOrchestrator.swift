@@ -411,7 +411,18 @@ final class ReviewOrchestrator {
         let jiraTicket = await Self.fetchJiraTicket(key: jiraKey, context: store.context)
         if input.cancellation.isCancelled { return }
 
-        // Step 3: build the prompt.
+        // Step 3: fetch the PR's changed-files list. Anchors the prompt's
+        // allowlist block and gives the model a precise vocabulary of paths
+        // it's allowed to cite. Failure is non-fatal — degrades to the
+        // pre-allowlist behaviour rather than blocking the review.
+        let changedFiles = await Self.fetchChangedFiles(
+            repo: input.repo,
+            prNumber: input.prNumber
+        )
+
+        if input.cancellation.isCancelled { return }
+
+        // Step 4: build the prompt.
         //
         // Wrap user-supplied / upstream-supplied text (branch name, Jira
         // summary + description, parent description) in untrusted-content
@@ -427,7 +438,8 @@ final class ReviewOrchestrator {
             prNumber: input.prNumber,
             branch: safeBranch,
             sha: input.sha,
-            jira: safeJira
+            jira: safeJira,
+            changedFiles: changedFiles
         )
 
         // Step 4: spawn `claude` and consume the stream.
@@ -474,7 +486,12 @@ final class ReviewOrchestrator {
                     store.appendStream(review, text: "\n[tool: \(name)]\n")
                 case .finalResult(let rawJSON, let decoded):
                     if input.cancellation.isCancelled { return }
-                    store.markCompleted(review, schema: decoded, rawJSON: rawJSON)
+                    store.markCompleted(
+                        review,
+                        schema: decoded,
+                        rawJSON: rawJSON,
+                        worktreeURL: worktreeURL
+                    )
                     sawTerminalEvent = true
                 case .error(let message):
                     lastError = message
@@ -525,6 +542,41 @@ final class ReviewOrchestrator {
             NSLog("[ReviewOrchestrator] Jira fetch for \(key) errored: \(error) — proceeding without Jira context.")
             return nil
         }
+    }
+
+    /// Calls `gh pr view <number> --repo <repo> --json files --jq '.files[].path'`
+    /// to get the authoritative list of paths touched by the PR. Used as the
+    /// prompt-level allowlist (`OrchestratorPrompt.renderAllowlistBlock`) and
+    /// indirectly bounds what Claude can put in `Finding.file` without
+    /// hallucinating siblings.
+    ///
+    /// Returns `nil` on any failure (`gh` missing, network error, malformed
+    /// output, timeout) so the orchestrator can fall through to the no-
+    /// allowlist prompt rather than aborting the review. The post-write
+    /// filter in `ReviewStore.markCompleted` is the safety net.
+    private static func fetchChangedFiles(repo: String, prNumber: Int) async -> [String]? {
+        guard let ghURL = BinaryResolver.resolve(.gh) else {
+            NSLog("[ReviewOrchestrator] `gh` binary not resolved — skipping PR file allowlist.")
+            return nil
+        }
+        let result = await WorktreeManager.runProcess(
+            executable: ghURL,
+            arguments: [
+                "pr", "view", String(prNumber),
+                "--repo", repo,
+                "--json", "files",
+                "--jq", ".files[].path"
+            ]
+        )
+        guard result.exitCode == 0 else {
+            NSLog("[ReviewOrchestrator] gh pr view files failed (exit \(result.exitCode)): \(result.stderr.prefix(200)) — skipping PR file allowlist.")
+            return nil
+        }
+        let paths = result.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        return paths.isEmpty ? nil : paths
     }
 
     // MARK: - Prompt shim

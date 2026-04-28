@@ -68,12 +68,12 @@ enum ShellEnvironment {
     private static let allowedKeys: Set<String> = [
         "HOME", "USER", "LOGNAME", "PATH", "SHELL",
         "LANG", "TZ", "TMPDIR", "TERM",
-        "JAVA_HOME", "REPO_USER",
+        "JAVA_HOME", "REPO_USER", "REPO_PASSWORD",
         "SSH_AUTH_SOCK", "SSH_AGENT_PID"
     ]
 
     private static let allowedPrefixes: [String] = [
-        "JAVA_", "GRADLE_", "MAVEN_", "LC_"
+        "JAVA_", "GRADLE_", "MAVEN_", "LC_", "ARTIFACTORY_"
     ]
 
     static func isAllowed(_ key: String) -> Bool {

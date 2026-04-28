@@ -31,7 +31,7 @@ cp -R build/Build/Products/Release/WorkHomepage.app /Applications/
 
 Double-click from Launchpad / Spotlight. No Gatekeeper prompt — locally-built binaries don't get the `com.apple.quarantine` xattr, so Apple's "unidentified developer" block does not fire.
 
-Optional convenience: a `Makefile` target `make local-install` wrapping the two commands.
+Use `make local-install` for the convenience flow. It runs the build + copy and then resets the macOS IconServices cache (`lsregister -f`, `killall Dock`, `killall Finder`). The cache reset matters when the app icon changes between installs: the Dock has its own refresh pipeline and tends to pick up the new icon, but Stage Manager, Mission Control, and the ⌘-Tab app switcher pull from the cached IconServices store and will show a stale or blank icon until the cache is invalidated.
 
 ### Why no DMG / signing / notarization
 

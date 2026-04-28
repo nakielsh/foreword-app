@@ -97,4 +97,24 @@ final class ShellEnvironmentTests: XCTestCase {
     func testEmptyOutputProducesEmptyMap() {
         XCTAssertTrue(ShellEnvironment.parse("").isEmpty)
     }
+
+    func testFilterForwardsArtifactoryAndRepoCreds() {
+        let env = [
+            "REPO_USER": "alice",
+            "REPO_PASSWORD": "secret",
+            "ARTIFACTORY_USER": "alice",
+            "ARTIFACTORY_PASSWORD": "secret",
+            "ARTIFACTORY_TOKEN": "tok",
+            "ANTHROPIC_API_KEY": "should-be-dropped",
+            "AWS_SECRET_ACCESS_KEY": "should-be-dropped"
+        ]
+        let filtered = ShellEnvironment.filter(env)
+        XCTAssertEqual(filtered["REPO_USER"], "alice")
+        XCTAssertEqual(filtered["REPO_PASSWORD"], "secret")
+        XCTAssertEqual(filtered["ARTIFACTORY_USER"], "alice")
+        XCTAssertEqual(filtered["ARTIFACTORY_PASSWORD"], "secret")
+        XCTAssertEqual(filtered["ARTIFACTORY_TOKEN"], "tok")
+        XCTAssertNil(filtered["ANTHROPIC_API_KEY"])
+        XCTAssertNil(filtered["AWS_SECRET_ACCESS_KEY"])
+    }
 }

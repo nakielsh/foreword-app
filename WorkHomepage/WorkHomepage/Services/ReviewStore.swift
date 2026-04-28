@@ -67,7 +67,12 @@ struct ReviewStore {
     /// noting the decode failure. This is the slice/07-fix tracer-bullet
     /// resilience contract — claude finished, the user gets to see it, even
     /// if the shape drifted.
-    func markCompleted(_ review: Review, schema: ReviewSchema?, rawJSON: String) {
+    func markCompleted(
+        _ review: Review,
+        schema: ReviewSchema?,
+        rawJSON: String,
+        worktreeURL: URL? = nil
+    ) {
         review.state = "completed"
         review.finishedAt = Date()
         review.rawResultJSON = rawJSON
@@ -86,7 +91,19 @@ struct ReviewStore {
         review.verdict = schema.verdict
         review.errorMessage = nil
 
-        for sf in schema.findings {
+        // Drop findings whose `file` doesn't exist in the worktree. Guards
+        // against pattern-hallucinated paths (model invents a plausible
+        // sibling name like `…PageQueryService.kt` next to a real
+        // `…PageSyncService.kt`) and against findings pointing at files
+        // deleted between the review SHA and the worktree's current HEAD.
+        // When `worktreeURL` is nil (tests, older call sites) the filter
+        // is bypassed.
+        let (kept, dropped) = filterFindingsForWorktree(
+            schema.findings,
+            worktreeURL: worktreeURL
+        )
+
+        for sf in kept {
             let finding = Finding(
                 severity: sf.normalizedSeverity,
                 file: sf.file,
@@ -100,7 +117,46 @@ struct ReviewStore {
             )
             context.insert(finding)
         }
+
+        if !dropped.isEmpty {
+            let prefix = review.errorMessage.map { $0 + "\n" } ?? ""
+            let droppedList = dropped.map { "  • \($0.file):\($0.line)" }.joined(separator: "\n")
+            review.errorMessage = prefix +
+                "Filtered \(dropped.count) finding(s) whose file does not exist in the worktree (likely hallucinated paths or files renamed/deleted after review):\n\(droppedList)"
+        }
+
         try? context.save()
+    }
+
+    /// Splits findings into kept (file exists in worktree) and dropped (file
+    /// missing). When `worktreeURL` is nil, everything is kept — preserves
+    /// the historical no-filter behaviour for tests and callers that don't
+    /// thread the worktree path.
+    private func filterFindingsForWorktree(
+        _ findings: [SchemaFinding],
+        worktreeURL: URL?
+    ) -> (kept: [SchemaFinding], dropped: [SchemaFinding]) {
+        guard let worktreeURL else { return (findings, []) }
+        let fm = FileManager.default
+        var kept: [SchemaFinding] = []
+        var dropped: [SchemaFinding] = []
+        for sf in findings {
+            let trimmed = sf.file.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Empty or absolute paths are dropped — they can't be safely
+            // resolved against the worktree and IntelliJLauncher would
+            // refuse them anyway.
+            if trimmed.isEmpty || trimmed.hasPrefix("/") {
+                dropped.append(sf)
+                continue
+            }
+            let candidate = worktreeURL.appending(path: trimmed)
+            if fm.fileExists(atPath: candidate.path) {
+                kept.append(sf)
+            } else {
+                dropped.append(sf)
+            }
+        }
+        return (kept, dropped)
     }
 
     /// Marks the review `failed` with the given stderr / decode error message.
