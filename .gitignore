@@ -4,7 +4,7 @@ claude-sessions.js
 xcuserdata/
 *.xcuserstate
 DerivedData/
-build/
+build*/
 .DS_Store
 
 # Claude Code agent infra (worktrees, local settings)
