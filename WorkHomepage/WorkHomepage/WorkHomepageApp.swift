@@ -91,6 +91,20 @@ struct WorkHomepageApp: App {
         }
         .modelContainer(modelContainer)
 
+        // Review surface lives in its own `Window` scene rather than a
+        // `.sheet(isPresented:)` because macOS sheets are attached modally to
+        // the host `NSWindow` (`beginSheet`) — that lock disables the parent
+        // window's resize handles for as long as the sheet is up. A dedicated
+        // `Window` keeps SidebarView fully resizable while a review is open
+        // and gives the user the standard macOS multi-window affordances
+        // (move, minimise, separate Mission Control entry).
+        Window("Review", id: ReviewWindowID.main) {
+            ReviewSheet(orchestrator: ReviewOrchestrator.shared)
+                .preferredColorScheme(appearance.colorScheme)
+        }
+        .modelContainer(modelContainer)
+        .defaultSize(width: 960, height: 720)
+
         Settings {
             SettingsView()
         }

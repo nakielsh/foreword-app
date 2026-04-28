@@ -29,6 +29,14 @@ enum MenuBarWindowID {
     static let main = "WorkHomepageMain"
 }
 
+/// Identifier for the dedicated review `Window` scene. The review surface
+/// runs in its own `NSWindow` (not a `.sheet`) so the main window can be
+/// freely resized while a review is open — macOS attached sheets disable the
+/// host window's resize handles for as long as they're up.
+enum ReviewWindowID {
+    static let main = "WorkHomepageReview"
+}
+
 /// The `MenuBarExtra`'s label. Re-renders whenever `MenuBarCounts.shared`
 /// changes thanks to `@Observable`. Use `let` for the singleton — `@State`
 /// for an externally-owned `@Observable` is an antipattern that misleads

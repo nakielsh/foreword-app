@@ -34,6 +34,20 @@ import SwiftUI
 import SwiftData
 import struct Foundation.Date
 import struct Foundation.AttributedString
+import class Foundation.NotificationCenter
+
+extension Notification.Name {
+    /// Posted by `ReviewSheet` when the user clicks "Re-review" on a terminal
+    /// review. `userInfo` carries `repo` (String) and `pr` (Int) so the
+    /// observer (`ReviewsTab`) can dispatch a forced new run without holding a
+    /// reference to the SwiftData object across windows.
+    ///
+    /// Replaces the old direct `onReReview` closure parameter — the sheet now
+    /// lives in its own `Window` scene (so the parent window can be resized
+    /// while the review is open) and can no longer carry a closure captured
+    /// from the parent view.
+    static let reReviewRequested = Notification.Name("workHomepage.reReviewRequested")
+}
 
 struct ReviewSheet: View {
 
@@ -47,10 +61,12 @@ struct ReviewSheet: View {
     @Bindable var orchestrator: ReviewOrchestrator
 
     /// Slice 14 — closure invoked when the user clicks "Re-review" on a
-    /// terminated review. The caller (ReviewsTab) owns the orchestrator
-    /// start path so this sheet stays orchestrator-agnostic for that flow.
-    /// Optional so previews / tests can omit it; when nil the button is
-    /// hidden.
+    /// terminated review. Optional so previews / tests can inject a stub.
+    /// When nil (production use from the dedicated review window), the click
+    /// posts `Notification.Name.reReviewRequested` instead — `ReviewsTab`
+    /// observes it and runs `startReview(force: true)`. The sheet lives in a
+    /// separate `Window` scene so it can no longer borrow a closure from the
+    /// view that opened it; the notification is the cross-window bridge.
     var onReReview: ((Review) -> Void)? = nil
 
     /// Slice 14 — when set, the sheet renders this Review's persisted data
@@ -432,20 +448,29 @@ struct ReviewSheet: View {
     ///   - the displayed review reached a terminal state (completed /
     ///     failed / timeout / cancelled), AND
     ///   - the orchestrator does not currently have a queued or running
-    ///     review for this PR (avoid stomping a fresh in-flight run that
-    ///     was started by a different click), AND
-    ///   - the parent supplied an `onReReview` closure (omitted in some
-    ///     test / preview contexts).
-    /// Click → caller starts a fresh orchestrator run with `force = true`.
+    ///     review for this PR.
+    /// Click → posts `.reReviewRequested` (production) or invokes the
+    /// injected `onReReview` closure (tests / previews) — both end up running
+    /// a fresh `startReview(force: true)` in `ReviewsTab`.
     @ViewBuilder
     private var reReviewButtonIfNeeded: some View {
-        if let onReReview,
-           let review = displayedReview,
+        if let review = displayedReview,
            isTerminal(state: review.state),
            !orchestrator.running.contains(where: { $0.prKey == review.prKey }),
            !orchestrator.queued.contains(where: { $0.prKey == review.prKey }) {
             Button {
-                onReReview(review)
+                if let onReReview {
+                    onReReview(review)
+                } else {
+                    NotificationCenter.default.post(
+                        name: .reReviewRequested,
+                        object: nil,
+                        userInfo: [
+                            "repo": review.repoFullName,
+                            "pr": review.prNumber
+                        ]
+                    )
+                }
             } label: {
                 Label("Re-review", systemImage: "arrow.clockwise")
             }

@@ -49,9 +49,12 @@ struct ReviewsTab: View {
 
     @State private var showReauthSheet: Bool = false
 
-    /// True when the review modal should be presented. The modal is
-    /// orchestrator-driven (slice/07-fix); we just toggle the binding.
-    @State private var showReviewSheet: Bool = false
+    /// SwiftUI handle for opening the dedicated review window. The review
+    /// surface used to present as `.sheet(isPresented:)` but a macOS attached
+    /// sheet locks its host window's resize handles for as long as it's up;
+    /// the review now runs in a standalone `Window` scene (`ReviewWindowID.main`)
+    /// so SidebarView can be freely resized while a review is open.
+    @Environment(\.openWindow) private var openWindow
     /// Surfaces transient errors from the Review button (branch fetch failure,
     /// single-flight rejection). Cleared on next attempt.
     @State private var reviewError: String?
@@ -137,21 +140,28 @@ struct ReviewsTab: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .reviewSheetOpenRequested)) { _ in
-            // Sidebar pill routed an "open the sheet" request here so we
-            // remain the single owner of `showReviewSheet`.
-            showReviewSheet = true
+            // Sidebar pill (and any other in-app entry point) routes "open the
+            // review surface" through this notification so the open path stays
+            // single-sited even though the surface is now a separate window.
+            openWindow(id: ReviewWindowID.main)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .reReviewRequested)) { note in
+            // ReviewSheet lives in its own Window so it can no longer call back
+            // through a closure. It posts repo + pr in `userInfo`; we look up
+            // the most recent persisted row for that PR (or fall back to the
+            // displayed `orchestrator.current`) and run a forced new review.
+            guard let info = note.userInfo,
+                  let repo = info["repo"] as? String,
+                  let pr = info["pr"] as? Int else { return }
+            Task { @MainActor in
+                await startReview(repo: repo, prNumber: pr, prTitle: "", force: true)
+            }
         }
         .sheet(isPresented: $showReauthSheet) {
             TokenPromptSheet(reason: .reauth) {
                 showReauthSheet = false
                 Task { await refresh() }
             }
-        }
-        .sheet(isPresented: $showReviewSheet) {
-            ReviewSheet(
-                orchestrator: orchestrator,
-                onReReview: { review in reReview(review) }
-            )
         }
         .overlay(alignment: .top) {
             if let cleanupNotice {
@@ -308,26 +318,9 @@ struct ReviewsTab: View {
                 // so we point it at the persisted row.
                 orchestrator.current = existing
             }
-            showReviewSheet = true
+            openWindow(id: ReviewWindowID.main)
         } catch {
             reviewError = "Could not fetch PR branch info: \(error)"
-        }
-    }
-
-    /// Closure handed to the modal's "Re-review" button. The modal stays
-    /// orchestrator-agnostic for the start path; this view owns it and re-
-    /// uses `startReview(force: true)`. We extract repo / prNumber / title
-    /// from the displayed Review so the user doesn't have to be on the right
-    /// PR card when they click.
-    @MainActor
-    fileprivate func reReview(_ review: Review) {
-        Task {
-            await startReview(
-                repo: review.repoFullName,
-                prNumber: review.prNumber,
-                prTitle: "",
-                force: true
-            )
         }
     }
 
@@ -586,10 +579,10 @@ struct ReviewsTab: View {
         let store = reviewStore ?? ReviewStore(context: modelContext)
         if let latest = store.latestForPR(prKey: prKey) {
             Button {
-                // Open the existing review in the modal without spawning a
-                // new run. The modal binds to `orchestrator.current`.
+                // Open the existing review in its window without spawning a
+                // new run. The window binds to `orchestrator.current`.
                 orchestrator.current = latest
-                showReviewSheet = true
+                openWindow(id: ReviewWindowID.main)
             } label: {
                 LatestVerdictBadge(review: latest)
             }
