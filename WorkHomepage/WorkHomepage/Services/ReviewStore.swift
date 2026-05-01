@@ -119,10 +119,11 @@ struct ReviewStore {
         }
 
         if !dropped.isEmpty {
-            let prefix = review.errorMessage.map { $0 + "\n" } ?? ""
             let droppedList = dropped.map { "  • \($0.file):\($0.line)" }.joined(separator: "\n")
-            review.errorMessage = prefix +
+            review.filterNotice =
                 "Filtered \(dropped.count) finding(s) whose file does not exist in the worktree (likely hallucinated paths or files renamed/deleted after review):\n\(droppedList)"
+        } else {
+            review.filterNotice = nil
         }
 
         try? context.save()

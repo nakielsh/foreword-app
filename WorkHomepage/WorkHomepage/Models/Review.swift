@@ -69,9 +69,19 @@ final class Review {
     /// doesn't change later.
     var jiraKey: String?
 
-    /// stderr or decode error captured when state transitions to `failed` or
-    /// `timeout`. nil for `running` / `completed`.
+    /// stderr or decode error captured when state transitions to `failed` /
+    /// `timeout`, and when a `completed` run had its structured payload fail
+    /// to decode against `ReviewSchema` (slice/07-fix raw-payload fallback).
+    /// nil for `running` and for cleanly-decoded `completed` rows. The sheet
+    /// dispatches on this: non-nil → raw JSON view, nil → styled findings.
     var errorMessage: String?
+
+    /// Soft warning surfaced above the findings list when
+    /// `ReviewStore.markCompleted` dropped one or more findings whose `file`
+    /// didn't exist in the worktree. Separate from `errorMessage` so it does
+    /// NOT push the sheet onto the decode-failed code path — findings still
+    /// render normally; this just becomes a non-blocking banner.
+    var filterNotice: String?
 
     /// Concatenated text deltas streamed by claude. Populated incrementally
     /// during the run so the modal can show live progress, then persisted as
@@ -102,6 +112,7 @@ final class Review {
         verdict: String? = nil,
         jiraKey: String? = nil,
         errorMessage: String? = nil,
+        filterNotice: String? = nil,
         partialStream: String = "",
         rawResultJSON: String? = nil
     ) {
@@ -118,6 +129,7 @@ final class Review {
         self.verdict = verdict
         self.jiraKey = jiraKey
         self.errorMessage = errorMessage
+        self.filterNotice = filterNotice
         self.partialStream = partialStream
         self.rawResultJSON = rawResultJSON
     }

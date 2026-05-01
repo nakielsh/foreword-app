@@ -683,10 +683,17 @@ struct ReviewSheet: View {
     }
 
     /// The happy path: filter bar, severity sections, then the stream log
-    /// collapsed at the bottom.
+    /// collapsed at the bottom. When `review.filterNotice` is set, a soft
+    /// warning banner renders above the filter bar — distinct from the
+    /// `errorMessage` (decode-failed) path which would have routed us into
+    /// `schemaDecodeFailureContent` already.
     @ViewBuilder
     private func findingsContent(review: Review) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let notice = review.filterNotice, !notice.isEmpty {
+                filterNoticeBanner(notice)
+            }
+
             filterBar(review: review)
                 .padding(.horizontal)
                 .padding(.top, 10)
@@ -1134,6 +1141,27 @@ struct ReviewSheet: View {
             }
             .background(Color.bgSurface)
         }
+    }
+
+    /// Soft warning rendered above the findings list when
+    /// `ReviewStore.markCompleted` dropped one or more findings whose `file`
+    /// didn't exist in the worktree. Uses the same marigold accent as
+    /// `decodeWarningView` for visual consistency but stays multi-line so the
+    /// dropped-path bullet list is readable.
+    @ViewBuilder
+    private func filterNoticeBanner(_ notice: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.accentMarigold)
+            Text(notice)
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color.accentMarigold.opacity(0.08))
     }
 
     @ViewBuilder

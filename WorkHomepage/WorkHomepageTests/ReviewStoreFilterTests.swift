@@ -89,9 +89,12 @@ final class ReviewStoreFilterTests: XCTestCase {
         let saved = try context.fetch(descriptor)
         let savedTitles = saved.map { $0.title }.sorted()
         assertThat(savedTitles).isEqualTo(["keep"])
-        let errorMessage = try XCTUnwrap(review.errorMessage)
-        assertThat(errorMessage).contains("Filtered 3 finding(s)")
-        assertThat(errorMessage).contains("Hallucinated.kt")
+        let notice = try XCTUnwrap(review.filterNotice)
+        assertThat(notice).contains("Filtered 3 finding(s)")
+        assertThat(notice).contains("Hallucinated.kt")
+        // errorMessage must stay nil — only the decode-failure path sets it,
+        // and clobbering it would push the sheet into the raw-JSON view.
+        XCTAssertNil(review.errorMessage)
     }
 
     func testMarkCompletedKeepsAllFindingsWhenNoWorktreeURLSupplied() throws {
@@ -121,5 +124,6 @@ final class ReviewStoreFilterTests: XCTestCase {
         let saved = try context.fetch(descriptor)
         assertThat(saved.count).isEqualTo(2)
         XCTAssertNil(review.errorMessage)
+        XCTAssertNil(review.filterNotice)
     }
 }
