@@ -169,10 +169,13 @@ struct ReviewStore {
 
     /// Marks the review `timeout`. partialStream is preserved as-is so the user
     /// can still scroll back through whatever Claude produced before the kill.
+    /// The configured timeout (in minutes) is interpolated into the user-facing
+    /// message so the copy doesn't drift out of sync with the Settings value.
     func markTimeout(_ review: Review) {
         review.state = "timeout"
         review.finishedAt = Date()
-        review.errorMessage = "Review exceeded the 10-minute timeout."
+        let mins = AppSettings.reviewTimeoutMinutes
+        review.errorMessage = "Review exceeded the \(mins)-minute timeout."
         try? context.save()
     }
 

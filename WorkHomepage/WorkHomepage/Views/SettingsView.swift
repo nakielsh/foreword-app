@@ -29,6 +29,7 @@ struct SettingsView: View {
     // Behavior
     @State private var concurrencyCap: Int = AppSettings.concurrencyCapDefault
     @State private var prefixesText: String = ""
+    @State private var reviewTimeoutMinutes: Int = AppSettings.reviewTimeoutMinutesDefault
 
     // Pre-Review Summary (slice 25)
     @State private var summaryConcurrencyCap: Int = AppSettings.summaryConcurrencyCapDefault
@@ -309,6 +310,21 @@ struct SettingsView: View {
                 }
                 .frame(width: 140)
             }
+            HStack {
+                Text("Review timeout (minutes)")
+                Spacer()
+                Stepper(
+                    value: $reviewTimeoutMinutes,
+                    in: AppSettings.reviewTimeoutMinutesMin...AppSettings.reviewTimeoutMinutesMax,
+                    step: 5
+                ) {
+                    Text("\(reviewTimeoutMinutes)").frame(width: 30, alignment: .trailing)
+                }
+                .frame(width: 140)
+            }
+            Text("Wall-clock cap per review run. Default 30 min. Larger PRs may need more.")
+                .font(Font.appBody(size: 11))
+                .foregroundStyle(Color.textMuted)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Project key prefixes (comma-separated, leave empty to accept any)")
                     .font(Font.appBody(size: 12))
@@ -950,6 +966,7 @@ struct SettingsView: View {
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
         reviewPromptText = ReviewPromptStore().current()
         summaryConcurrencyCap = AppSettings.summaryConcurrencyCap
+        reviewTimeoutMinutes = AppSettings.reviewTimeoutMinutes
     }
 
     private func save() {
@@ -958,6 +975,7 @@ struct SettingsView: View {
         JiraConfig.setToken(jiraToken)
         AppSettings.concurrencyCap = concurrencyCap
         AppSettings.summaryConcurrencyCap = summaryConcurrencyCap
+        AppSettings.reviewTimeoutMinutes = reviewTimeoutMinutes
         let parts = prefixesText
             .split(whereSeparator: { $0 == "," })
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }

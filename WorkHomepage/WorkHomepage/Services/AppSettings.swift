@@ -52,6 +52,7 @@ enum AppSettings {
     /// Shares the same UserDefaults key as `ReviewPromptStore` — no duplication.
     static let reviewPromptTemplateKey = ReviewPromptStore.defaultsKey
     static let summaryConcurrencyCapKey = "settings.summaryConcurrencyCap"
+    static let reviewTimeoutMinutesKey = "settings.reviewTimeoutMinutes"
 
     // MARK: - Limits
 
@@ -62,6 +63,13 @@ enum AppSettings {
     static let summaryConcurrencyCapDefault: Int = 5
     static let summaryConcurrencyCapMin: Int = 1
     static let summaryConcurrencyCapMax: Int = 10
+
+    /// Per-review wall-clock timeout in minutes. `claude` sometimes takes more
+    /// than 10 minutes on large diffs (the previous hard-coded ceiling), so the
+    /// value is user-configurable. Default 30 minutes; range [5, 120].
+    static let reviewTimeoutMinutesDefault: Int = 30
+    static let reviewTimeoutMinutesMin: Int = 5
+    static let reviewTimeoutMinutesMax: Int = 120
 
     // MARK: - Concurrency cap
 
@@ -107,6 +115,34 @@ enum AppSettings {
     static func clampSummaryCap(_ value: Int) -> Int {
         min(max(value, summaryConcurrencyCapMin), summaryConcurrencyCapMax)
     }
+
+    // MARK: - Review timeout
+
+    /// Per-review wall-clock timeout in minutes. Persisted in UserDefaults;
+    /// clamped to `[reviewTimeoutMinutesMin, reviewTimeoutMinutesMax]` on read
+    /// so a hand-edited / corrupt value can't push the runner outside the
+    /// supported range.
+    static var reviewTimeoutMinutes: Int {
+        get { reviewTimeoutMinutes(defaults: .standard) }
+        set { setReviewTimeoutMinutes(newValue, defaults: .standard) }
+    }
+
+    static func reviewTimeoutMinutes(defaults: UserDefaults) -> Int {
+        let raw = defaults.object(forKey: reviewTimeoutMinutesKey) as? Int ?? reviewTimeoutMinutesDefault
+        return clampReviewTimeout(raw)
+    }
+
+    static func setReviewTimeoutMinutes(_ value: Int, defaults: UserDefaults) {
+        defaults.set(clampReviewTimeout(value), forKey: reviewTimeoutMinutesKey)
+    }
+
+    static func clampReviewTimeout(_ value: Int) -> Int {
+        min(max(value, reviewTimeoutMinutesMin), reviewTimeoutMinutesMax)
+    }
+
+    /// Convenience for callers that want the timeout as seconds (e.g.
+    /// `Duration.seconds(...)` for `ClaudeRunner.run`).
+    static var reviewTimeoutSeconds: Int { reviewTimeoutMinutes * 60 }
 
     // MARK: - Project key prefixes
 
