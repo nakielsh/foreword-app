@@ -89,7 +89,10 @@ enum OrchestratorPrompt {
         if !body.contains(schemaDirective) {
             body += schemaDirectiveBlock
         }
-        let allowlist = renderAllowlistBlock(changedFiles)
+        let allowlist = PromptInterpolator.interpolate(
+            renderAllowlistBlock(changedFiles),
+            vars: vars
+        )
         return jiraBlock + "\n" + body + allowlist
     }
 
@@ -116,7 +119,10 @@ enum OrchestratorPrompt {
         if !body.contains(schemaDirective) {
             body += schemaDirectiveBlock
         }
-        let allowlist = renderAllowlistBlock(changedFiles)
+        let allowlist = PromptInterpolator.interpolate(
+            renderAllowlistBlock(changedFiles),
+            vars: vars
+        )
         return jiraBlock + "\n" + body + allowlist
     }
 
@@ -133,11 +139,32 @@ enum OrchestratorPrompt {
         let truncated = dedup.count > maxAllowlistEntries
         let visible = truncated ? Array(dedup.prefix(maxAllowlistEntries)) : dedup
         let bullets = visible.map { "  - \($0)" }.joined(separator: "\n")
-        var block = "\n\nAllowed file paths (this PR's changed files):\n\(bullets)"
+        var block = """
+
+
+        Allowed file paths (every path GitHub considers part of this PR — added, modified, renamed, and deleted — sourced from `gh pr view --json files`):
+        \(bullets)
+        """
         if truncated {
-            block += "\n  - (list truncated; this PR changes \(dedup.count) files — verify any path you cite by reading it)"
+            block += "\n  - (list truncated; this PR touches \(dedup.count) files — verify any path you cite by reading it)"
         }
-        block += "\n\nEvery finding's `file` field MUST be copied verbatim from this list. Do not invent sibling paths, do not rename, do not normalise. If you want to flag something outside this list, omit the finding entirely."
+        block += """
+
+
+        Notes on this list:
+        - Paths are repo-root-relative, exactly as they appear in the diff. No `a/` or `b/` prefix.
+        - **Added** files appear here too. If `gh pr diff` shows `--- /dev/null` for a path, that path IS in this list — don't say it's missing.
+
+        How to inspect the PR diff:
+        - Use `gh pr diff {{prNumber}} --repo {{repo}}` for the full unified diff. The file set is identical to the list above (same GitHub API backend).
+        - Use `gh pr diff {{prNumber}} --repo {{repo}} --name-only` for just the file list — equivalent to the list above.
+        - Do NOT use `git diff` / `git log` to determine which files are in the PR. The worktree is checked out at the PR head SHA; `git diff` with no base shows nothing, and picking a wrong base (HEAD~1, origin/main, etc.) silently gives a different slice. `gh pr diff` knows the correct base..head boundary; `git diff` does not.
+        - `git show <sha>`, `git blame`, and `git log` are fine for reading individual files / history; just don't use them to compute the PR's file set.
+
+        If your inspection shows files not in the list above, you are using the wrong command (almost always `git diff` with the wrong base). Re-run `gh pr diff … --name-only` and trust THIS list.
+
+        Every finding's `file` field MUST be copied verbatim from this list. Do not invent sibling paths, do not rename, do not normalise. If you want to flag something outside this list, omit the finding entirely.
+        """
         return block
     }
 

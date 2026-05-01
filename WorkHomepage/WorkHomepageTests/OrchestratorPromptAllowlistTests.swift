@@ -44,11 +44,36 @@ final class OrchestratorPromptAllowlistTests: XCTestCase {
         let many = (0..<300).map { "f\($0).kt" }
         let rendered = OrchestratorPrompt.renderAllowlistBlock(many)
         assertThat(rendered).contains("list truncated")
-        assertThat(rendered).contains("changes 300 files")
+        assertThat(rendered).contains("touches 300 files")
         // First and 200th present, 201st absent.
         assertThat(rendered).contains("  - f0.kt")
         assertThat(rendered).contains("  - f199.kt")
         XCTAssertFalse(rendered.contains("  - f200.kt"))
+    }
+
+    func testRenderAllowlistMentionsAddedFilesAreIncluded() {
+        let rendered = OrchestratorPrompt.renderAllowlistBlock(["src/New.kt"])
+        // The "added files appear here too" note is load-bearing — the model
+        // was previously claiming new files were missing from the list.
+        assertThat(rendered).contains("Added")
+        assertThat(rendered).contains("`--- /dev/null`")
+    }
+
+    func testBuildInterpolatesAllowlistPlaceholders() {
+        let prompt = OrchestratorPrompt.build(
+            repo: "Foo/Bar",
+            prNumber: 42,
+            branch: "feature/x",
+            sha: "abc",
+            jira: nil,
+            changedFiles: ["src/Real.kt"]
+        )
+        // Placeholders in the allowlist's "how to inspect" section MUST be
+        // interpolated, otherwise the model sees literal {{repo}} / {{prNumber}}
+        // in its instructions and ignores them.
+        assertThat(prompt).contains("gh pr diff 42 --repo Foo/Bar")
+        XCTAssertFalse(prompt.contains("{{prNumber}}"))
+        XCTAssertFalse(prompt.contains("{{repo}}"))
     }
 
     func testBuildAppendsAllowlistAfterSchemaDirective() {
