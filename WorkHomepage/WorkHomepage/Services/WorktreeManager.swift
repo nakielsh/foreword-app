@@ -173,6 +173,7 @@ struct WorktreeManager {
                 localRepoURL: localRepoURL,
                 repo: repo,
                 branch: branch,
+                sha: sha,
                 prNumber: prNumber,
                 baseDir: baseDir,
                 gitURL: gitURL
@@ -208,6 +209,18 @@ struct WorktreeManager {
             )
         }
 
+        // Step 3: pin to the exact SHA captured at start time. Without this,
+        // the worktree lands at whatever `origin/<branch>` currently points at,
+        // which can diverge from the SHA the orchestrator captured via the
+        // GitHub API (rebase/force-push between API call and our fetch). The
+        // review is meant to be of `sha`, not of "whatever the branch tip is
+        // right now", so pin explicitly. Falls through silently if `sha` is
+        // empty (test fixtures sometimes pass "") — those callers still want
+        // the branch-tip checkout the prior steps already produced.
+        if !sha.isEmpty {
+            try await pinWorktreeToSha(worktreeDir: worktreeDir, sha: sha, gitURL: gitURL)
+        }
+
         return worktreeDir
     }
 
@@ -226,6 +239,7 @@ struct WorktreeManager {
         localRepoURL: URL,
         repo: String,
         branch: String,
+        sha: String,
         prNumber: Int,
         baseDir: URL,
         gitURL: URL
@@ -233,11 +247,16 @@ struct WorktreeManager {
         let worktreeDir = worktreeURL(baseDir: baseDir, repo: repo, prNumber: prNumber)
         try ensureParentDirs(for: worktreeDir)
 
-        // Refresh remote refs in the user's clone. We fetch the specific
-        // branch with `--prune` so dropped remote branches stop resolving.
+        // Refresh remote refs in the user's clone. We drop the per-branch
+        // filter and fetch everything with `--prune` so `origin/main` /
+        // `origin/master` is also refreshed — otherwise `git diff origin/main
+        // ..HEAD` inside the worktree can collapse to empty when main has
+        // advanced past the user's last `git fetch` in the canonical clone.
+        // Branch-only fetches were a premature optimisation; on a warm clone
+        // the wall-clock difference is negligible.
         let fetch = await runProcess(
             executable: gitURL,
-            arguments: ["-C", localRepoURL.path, "fetch", "origin", "--prune", branch]
+            arguments: ["-C", localRepoURL.path, "fetch", "origin", "--prune"]
         )
         if fetch.exitCode != 0 {
             // Some users keep multiple remotes; fall back to a generic fetch
@@ -279,6 +298,12 @@ struct WorktreeManager {
                 }
                 throw WorktreeError.worktreeAddFailed(stderr: result.stderr)
             }
+        }
+
+        // Pin the worktree to the exact SHA we were asked for. See note on
+        // the bare-flow Step 3 — same rationale, same one-shot reset.
+        if !sha.isEmpty {
+            try await pinWorktreeToSha(worktreeDir: worktreeDir, sha: sha, gitURL: gitURL)
         }
 
         // Mirror the user's `.idea/` project model into the worktree so
@@ -560,6 +585,43 @@ struct WorktreeManager {
         let result = await runProcess(
             executable: gitURL,
             arguments: ["-C", worktreeDir.path, "reset", "--hard", "origin/" + branch]
+        )
+        if result.exitCode != 0 {
+            throw WorktreeError.resetFailed(stderr: result.stderr)
+        }
+    }
+
+    /// Final pin in both `prepare` paths: detach and reset HEAD to the exact
+    /// `sha` captured at orchestrator-start time. Without this the worktree
+    /// rides whatever `origin/<branch>` currently points at, which silently
+    /// drifts under us when the PR is rebased / force-pushed between the
+    /// GitHub API capture and our `git fetch`. The review must be of `sha`
+    /// (which the modal also displays) — not of "whatever the branch tip is
+    /// right now". Reset uses `--hard` so any tracked-file divergence from a
+    /// previous review's worktree state is discarded too.
+    ///
+    /// If `sha` is not present in the worktree's object database (test
+    /// fixtures pass placeholders like `"deadbeef"`; rebased PRs can lose the
+    /// captured SHA), we skip the pin silently — better to review at the
+    /// branch tip than fail the review outright. The prompt-level allowlist
+    /// (built from `gh pr view --json files`) is the authoritative source of
+    /// truth for "what's in this PR" anyway.
+    private static func pinWorktreeToSha(
+        worktreeDir: URL,
+        sha: String,
+        gitURL: URL
+    ) async throws {
+        let exists = await runProcess(
+            executable: gitURL,
+            arguments: ["-C", worktreeDir.path, "cat-file", "-e", sha + "^{commit}"]
+        )
+        guard exists.exitCode == 0 else {
+            NSLog("[WorktreeManager] pin skipped: SHA \(sha) not reachable in worktree \(worktreeDir.path); proceeding at branch tip.")
+            return
+        }
+        let result = await runProcess(
+            executable: gitURL,
+            arguments: ["-C", worktreeDir.path, "reset", "--hard", sha]
         )
         if result.exitCode != 0 {
             throw WorktreeError.resetFailed(stderr: result.stderr)
