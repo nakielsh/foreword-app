@@ -70,6 +70,17 @@ final class OrchestratorPromptAllowlistTests: XCTestCase {
         assertThat(rendered).contains("Glob")
     }
 
+    func testRenderAllowlistOffersThreeDotGitDiffAsAlternative() {
+        let rendered = OrchestratorPrompt.renderAllowlistBlock(["src/A.kt"])
+        // Three-dot diff is the merge-base form — matches what GitHub
+        // considers the PR diff. Two-dot is a trap (includes commits added
+        // to main since the PR branched). The prompt MUST recommend `...`
+        // and warn against `..`.
+        assertThat(rendered).contains("git diff origin/main...HEAD")
+        assertThat(rendered).contains("three dots")
+        assertThat(rendered).contains("two dots")
+    }
+
     func testBuildInterpolatesAllowlistPlaceholders() {
         let prompt = OrchestratorPrompt.build(
             repo: "Foo/Bar",

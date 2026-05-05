@@ -156,9 +156,10 @@ enum OrchestratorPrompt {
         - **Added** files appear here too. If `gh pr diff` shows `--- /dev/null` for a path, that path IS in this list — don't say it's missing.
 
         How to inspect the PR diff:
-        - Use `gh pr diff {{prNumber}} --repo {{repo}}` for the full unified diff. The file set is identical to the list above (same GitHub API backend).
-        - Use `gh pr diff {{prNumber}} --repo {{repo}} --name-only` for just the file list — equivalent to the list above.
-        - Do NOT use `git diff` / `git log` to determine which files are in the PR. The worktree is checked out at the PR head SHA; `git diff` with no base shows nothing, and picking a wrong base (HEAD~1, origin/main, etc.) silently gives a different slice. `gh pr diff` knows the correct base..head boundary; `git diff` does not.
+        - Preferred: `gh pr diff {{prNumber}} --repo {{repo}}` for the full unified diff. The file set is identical to the list above (same GitHub API backend).
+        - Preferred: `gh pr diff {{prNumber}} --repo {{repo}} --name-only` for just the file list — equivalent to the list above.
+        - Acceptable alternative: `git diff origin/main...HEAD` (three dots — diff from the merge-base of origin/main and HEAD, to HEAD). This gives the same set of changes the PR actually contributes. Use the same syntax against the PR's real base if it doesn't target main: first run `gh pr view {{prNumber}} --repo {{repo}} --json baseRefName --jq .baseRefName` to discover the base, then `git diff origin/<base>...HEAD`.
+        - Do NOT use bare `git diff` (uncommitted changes only — and the worktree may have a few aux files mirrored in from outside the PR, like CLAUDE.md), `git diff HEAD~1` (last commit only), or `git diff origin/main..HEAD` (two dots — includes commits added to main since the PR branched, polluting the diff). Three dots vs two dots matters: only `...` matches what GitHub considers the PR diff.
         - `git show <sha>`, `git blame`, and `git log` are fine for reading individual files / history; just don't use them to compute the PR's file set.
 
         Existence in the worktree's filesystem is NOT membership in the PR. The worktree contains the entire repository at the PR head SHA — every file from `main` plus the PR's changes. If `Read`, `Glob`, `ls`, or `find` shows that `Foo.kt` exists in the worktree, that does NOT mean `Foo.kt` is part of this PR. It almost certainly was already on `main` and is untouched by this PR. The only authoritative source for "what files this PR changes" is the allowlist above.
