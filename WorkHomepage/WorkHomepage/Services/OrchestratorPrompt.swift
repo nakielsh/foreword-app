@@ -161,7 +161,9 @@ enum OrchestratorPrompt {
         - Do NOT use `git diff` / `git log` to determine which files are in the PR. The worktree is checked out at the PR head SHA; `git diff` with no base shows nothing, and picking a wrong base (HEAD~1, origin/main, etc.) silently gives a different slice. `gh pr diff` knows the correct base..head boundary; `git diff` does not.
         - `git show <sha>`, `git blame`, and `git log` are fine for reading individual files / history; just don't use them to compute the PR's file set.
 
-        If your inspection shows files not in the list above, you are using the wrong command (almost always `git diff` with the wrong base). Re-run `gh pr diff … --name-only` and trust THIS list.
+        Existence in the worktree's filesystem is NOT membership in the PR. The worktree contains the entire repository at the PR head SHA — every file from `main` plus the PR's changes. If `Read`, `Glob`, `ls`, or `find` shows that `Foo.kt` exists in the worktree, that does NOT mean `Foo.kt` is part of this PR. It almost certainly was already on `main` and is untouched by this PR. The only authoritative source for "what files this PR changes" is the allowlist above.
+
+        If your inspection shows files not in the list above, you are using the wrong source (`git diff` with the wrong base, or treating worktree filesystem contents as the PR diff). Re-run `gh pr diff … --name-only` and trust THIS list.
 
         Every finding's `file` field MUST be copied verbatim from this list. Do not invent sibling paths, do not rename, do not normalise. If you want to flag something outside this list, omit the finding entirely.
         """

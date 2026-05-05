@@ -59,6 +59,17 @@ final class OrchestratorPromptAllowlistTests: XCTestCase {
         assertThat(rendered).contains("`--- /dev/null`")
     }
 
+    func testRenderAllowlistRejectsFilesystemExistenceAsPRMembership() {
+        let rendered = OrchestratorPrompt.renderAllowlistBlock(["src/A.kt"])
+        // Model previously globbed the worktree, found pre-existing files
+        // (e.g. S3Facade.kt), and claimed they were "part of the PR" even
+        // though the PR didn't touch them. The "filesystem ≠ PR membership"
+        // note must be present to head that off.
+        assertThat(rendered).contains("Existence in the worktree's filesystem is NOT membership in the PR")
+        assertThat(rendered).contains("Read")
+        assertThat(rendered).contains("Glob")
+    }
+
     func testBuildInterpolatesAllowlistPlaceholders() {
         let prompt = OrchestratorPrompt.build(
             repo: "Foo/Bar",
