@@ -450,6 +450,13 @@ final class ReviewOrchestrator {
         // narrow Bash allow-list above pins specific binaries; the `Bash`
         // deny line below is belt-and-suspenders against future regressions
         // where a wider Bash allow-list might be added.
+        //
+        // `Task` is denied: subagents have observed to hallucinate diffs
+        // (e.g. returning a different PR's changes), and the main agent
+        // then trusts that fabricated output over the authoritative
+        // allowlist in the prompt. The review agent has direct access to
+        // `gh` and `Read` — no need to dispatch a subagent.
+        // `WebFetch` / `WebSearch` denied: review is local-only by design.
         let stream: AsyncThrowingStream<ClaudeEvent, Error>
         do {
             stream = try ClaudeRunner.run(
@@ -457,7 +464,7 @@ final class ReviewOrchestrator {
                 schema: Constants.reviewJSONSchema,
                 cwd: worktreeURL,
                 allowedTools: "Read,Grep,Glob,Bash(gh:*),Bash(git:*)",
-                disallowedTools: "Bash,Write,Edit",
+                disallowedTools: "Bash,Write,Edit,Task,WebFetch,WebSearch",
                 timeout: .seconds(AppSettings.reviewTimeoutSeconds)
             )
         } catch ClaudeRunnerError.binaryNotFound {
