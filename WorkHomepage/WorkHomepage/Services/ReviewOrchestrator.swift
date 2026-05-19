@@ -463,7 +463,7 @@ final class ReviewOrchestrator {
                 prompt: prompt,
                 schema: Constants.reviewJSONSchema,
                 cwd: worktreeURL,
-                allowedTools: "Read,Grep,Glob,Bash(gh:*),Bash(git:*)",
+                allowedTools: "Read,Grep,Glob,Skill,Bash(gh:*),Bash(git:*)",
                 disallowedTools: "Bash,Write,Edit,Task,WebFetch,WebSearch",
                 timeout: .seconds(AppSettings.reviewTimeoutSeconds)
             )

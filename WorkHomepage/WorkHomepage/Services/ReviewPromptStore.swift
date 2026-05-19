@@ -35,7 +35,9 @@ final class ReviewPromptStore {
     static let defaultTemplate: String = """
         You are reviewing PR #{{prNumber}} in {{repo}}, branch {{branch}}.
 
-        Use `gh pr view {{prNumber}} --repo {{repo}}` and `gh pr diff {{prNumber}} --repo {{repo}}` to fetch PR details and the diff. Use `git log`, `git blame`, and file reads in the current working directory to understand context. The current directory IS the PR head checked out at SHA {{sha}}.
+        **Before anything else, invoke the `reviewing-pr-final-state` skill via the Skill tool.** That skill defines how to scope the diff (three-dot merge-base against the PR's actual base branch — which may not be `main` for stacked PRs), which commands are forbidden (no `git show <sha>`, no `git log -p`, no per-commit inspection), and how to treat the worktree at SHA {{sha}} as the cumulative final state — the same view as GitHub's "Files changed" tab. Follow it.
+
+        Use `gh pr view {{prNumber}} --repo {{repo}}` for PR metadata. The current working directory is the worktree at SHA {{sha}}; read files there for context.
 
         Review the changes for correctness, ticket alignment (verify the diff matches the Jira description above), and code quality.
 
