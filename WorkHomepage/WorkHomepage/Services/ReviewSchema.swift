@@ -128,8 +128,10 @@ struct SchemaFinding: Codable, Hashable {
         case line
         case endLine
         case title
+        case issue
         case message
         case description
+        case explanation
         case suggestion
         case suggestedFix
         case category
@@ -161,12 +163,21 @@ struct SchemaFinding: Codable, Hashable {
         self.file = (try? container.decodeIfPresent(String.self, forKey: .file)) ?? ""
         self.line = (try? container.decodeIfPresent(Int.self, forKey: .line)) ?? 0
         self.endLine = try? container.decodeIfPresent(Int.self, forKey: .endLine)
-        self.title = (try? container.decodeIfPresent(String.self, forKey: .title)) ?? ""
+
+        if let t = try? container.decodeIfPresent(String.self, forKey: .title), !t.isEmpty {
+            self.title = t
+        } else if let i = try? container.decodeIfPresent(String.self, forKey: .issue), !i.isEmpty {
+            self.title = i
+        } else {
+            self.title = ""
+        }
 
         if let m = try? container.decodeIfPresent(String.self, forKey: .message), !m.isEmpty {
             self.message = m
-        } else if let d = try? container.decodeIfPresent(String.self, forKey: .description) {
+        } else if let d = try? container.decodeIfPresent(String.self, forKey: .description), !d.isEmpty {
             self.message = d
+        } else if let e = try? container.decodeIfPresent(String.self, forKey: .explanation), !e.isEmpty {
+            self.message = e
         } else {
             self.message = ""
         }
@@ -199,12 +210,13 @@ struct SchemaFinding: Codable, Hashable {
     /// unchanged so the UI can still display whatever claude said.
     var normalizedSeverity: String {
         switch severity.lowercased() {
-        case "blocker", "critical": return "blocker"
-        case "major", "high":       return "major"
-        case "minor", "medium":     return "minor"
-        case "nit", "low", "info":  return "nit"
-        case "praise":              return "praise"
-        default:                    return severity
+        case "blocker", "critical":                  return "blocker"
+        case "major", "high":                        return "major"
+        case "minor", "medium":                      return "minor"
+        case "nit", "low", "info",
+             "nitpick", "suggestion":                return "nit"
+        case "praise":                               return "praise"
+        default:                                     return severity
         }
     }
 }

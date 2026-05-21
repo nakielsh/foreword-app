@@ -204,6 +204,54 @@ final class ReviewSchemaDecodingTests: XCTestCase {
         XCTAssertEqual(decoded.message, "real description here")
     }
 
+    /// Real claude output sometimes uses `issue` instead of `title`.
+    func testFindingIssueAliasMapsToTitle() throws {
+        let json = """
+        {
+          "severity": "minor",
+          "file": "f.swift",
+          "line": 5,
+          "issue": "HTTP call inside transaction",
+          "message": "m"
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.title, "HTTP call inside transaction")
+    }
+
+    /// Real claude output sometimes uses `explanation` instead of `message`.
+    func testFindingExplanationAliasMapsToMessage() throws {
+        let json = """
+        {
+          "severity": "minor",
+          "file": "f.swift",
+          "line": 5,
+          "title": "t",
+          "explanation": "HTTP calls hold the DB connection open during network latency."
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.message, "HTTP calls hold the DB connection open during network latency.")
+    }
+
+    /// Schema-side title/message win over alias keys when both are present.
+    func testFindingTitleAndMessageWinOverAliases() throws {
+        let json = """
+        {
+          "severity": "minor",
+          "file": "f.swift",
+          "line": 5,
+          "title": "canonical title",
+          "issue": "alias title",
+          "message": "canonical message",
+          "explanation": "alias message"
+        }
+        """
+        let decoded = try decoder.decode(SchemaFinding.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.title, "canonical title")
+        XCTAssertEqual(decoded.message, "canonical message")
+    }
+
     /// Real claude output uses `suggestedFix` instead of `suggestion`.
     func testFindingSuggestedFixAliasMapsToSuggestion() throws {
         let json = """
@@ -268,9 +316,12 @@ final class ReviewSchemaDecodingTests: XCTestCase {
             ("medium",   "minor"),
             ("low",      "nit"),
             ("info",     "nit"),
+            ("nitpick",  "nit"),
+            ("suggestion","nit"),
             // Case-insensitive
             ("CRITICAL", "blocker"),
             ("High",     "major"),
+            ("Nitpick",  "nit"),
             // Unknown passes through unchanged
             ("trivial",  "trivial"),
             ("",         "")
