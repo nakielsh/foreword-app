@@ -155,18 +155,9 @@ enum OrchestratorPrompt {
         - Paths are repo-root-relative, exactly as they appear in the diff. No `a/` or `b/` prefix.
         - **Added** files appear here too. If `gh pr diff` shows `--- /dev/null` for a path, that path IS in this list — don't say it's missing.
 
-        How to inspect the PR diff:
-        - Preferred: `gh pr diff {{prNumber}} --repo {{repo}}` for the full unified diff. The file set is identical to the list above (same GitHub API backend).
-        - Preferred: `gh pr diff {{prNumber}} --repo {{repo}} --name-only` for just the file list — equivalent to the list above.
-        - Acceptable alternative: `git diff origin/main...HEAD` (three dots — diff from the merge-base of origin/main and HEAD, to HEAD). This gives the same set of changes the PR actually contributes. Use the same syntax against the PR's real base if it doesn't target main: first run `gh pr view {{prNumber}} --repo {{repo}} --json baseRefName --jq .baseRefName` to discover the base, then `git diff origin/<base>...HEAD`.
-        - Do NOT use bare `git diff` (uncommitted changes only — and the worktree may have a few aux files mirrored in from outside the PR, like CLAUDE.md), `git diff HEAD~1` (last commit only), or `git diff origin/main..HEAD` (two dots — includes commits added to main since the PR branched, polluting the diff). Three dots vs two dots matters: only `...` matches what GitHub considers the PR diff.
-        - `git show <sha>`, `git blame`, and `git log` are fine for reading individual files / history; just don't use them to compute the PR's file set.
-
-        Existence in the worktree's filesystem is NOT membership in the PR. The worktree contains the entire repository at the PR head SHA — every file from `main` plus the PR's changes. If `Read`, `Glob`, `ls`, or `find` shows that `Foo.kt` exists in the worktree, that does NOT mean `Foo.kt` is part of this PR. It almost certainly was already on `main` and is untouched by this PR. The only authoritative source for "what files this PR changes" is the allowlist above.
-
-        If your inspection shows files not in the list above, you are using the wrong source (`git diff` with the wrong base, or treating worktree filesystem contents as the PR diff). Re-run `gh pr diff … --name-only` and trust THIS list.
-
         Every finding's `file` field MUST be copied verbatim from this list. Do not invent sibling paths, do not rename, do not normalise. If you want to flag something outside this list, omit the finding entirely.
+
+        For diff scoping, base-branch resolution (including stacked feature→feature PRs), forbidden commands (no `git show <sha>`, no `git log -p`, no per-commit inspection, no two-dot diff), and the rule that worktree filesystem existence ≠ PR membership, follow the `reviewing-pr-final-state` skill.
         """
         return block
     }

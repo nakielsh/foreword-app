@@ -59,29 +59,23 @@ final class OrchestratorPromptAllowlistTests: XCTestCase {
         assertThat(rendered).contains("`--- /dev/null`")
     }
 
-    func testRenderAllowlistRejectsFilesystemExistenceAsPRMembership() {
+    func testRenderAllowlistDirectsAgentToSkill() {
         let rendered = OrchestratorPrompt.renderAllowlistBlock(["src/A.kt"])
-        // Model previously globbed the worktree, found pre-existing files
-        // (e.g. S3Facade.kt), and claimed they were "part of the PR" even
-        // though the PR didn't touch them. The "filesystem ≠ PR membership"
-        // note must be present to head that off.
-        assertThat(rendered).contains("Existence in the worktree's filesystem is NOT membership in the PR")
-        assertThat(rendered).contains("Read")
-        assertThat(rendered).contains("Glob")
+        // The how-to (three-dot diff, forbidden commands, base-branch
+        // discovery, filesystem-≠-membership) was moved into the
+        // `reviewing-pr-final-state` skill. The allowlist block must
+        // explicitly point the agent at the skill so it doesn't fall
+        // back to its own ideas about how to scope a PR diff.
+        assertThat(rendered).contains("reviewing-pr-final-state")
+        assertThat(rendered).contains("skill")
+        // Quick guardrails still mentioned by name so the agent has a
+        // tripwire even if it skips the skill load.
+        assertThat(rendered).contains("git show")
+        assertThat(rendered).contains("per-commit")
+        assertThat(rendered).contains("worktree filesystem existence")
     }
 
-    func testRenderAllowlistOffersThreeDotGitDiffAsAlternative() {
-        let rendered = OrchestratorPrompt.renderAllowlistBlock(["src/A.kt"])
-        // Three-dot diff is the merge-base form — matches what GitHub
-        // considers the PR diff. Two-dot is a trap (includes commits added
-        // to main since the PR branched). The prompt MUST recommend `...`
-        // and warn against `..`.
-        assertThat(rendered).contains("git diff origin/main...HEAD")
-        assertThat(rendered).contains("three dots")
-        assertThat(rendered).contains("two dots")
-    }
-
-    func testBuildInterpolatesAllowlistPlaceholders() {
+    func testBuildLeavesAllowlistBlockFreeOfTemplatePlaceholders() {
         let prompt = OrchestratorPrompt.build(
             repo: "Foo/Bar",
             prNumber: 42,
@@ -90,12 +84,15 @@ final class OrchestratorPromptAllowlistTests: XCTestCase {
             jira: nil,
             changedFiles: ["src/Real.kt"]
         )
-        // Placeholders in the allowlist's "how to inspect" section MUST be
-        // interpolated, otherwise the model sees literal {{repo}} / {{prNumber}}
-        // in its instructions and ignores them.
-        assertThat(prompt).contains("gh pr diff 42 --repo Foo/Bar")
+        // The allowlist block no longer carries `{{repo}}` / `{{prNumber}}`
+        // placeholders — diff-inspection commands belong to the skill.
+        // The build pipeline still runs the interpolator over the block,
+        // so any new placeholders would silently survive into the prompt
+        // and confuse the model. Guard against that.
         XCTAssertFalse(prompt.contains("{{prNumber}}"))
         XCTAssertFalse(prompt.contains("{{repo}}"))
+        XCTAssertFalse(prompt.contains("{{branch}}"))
+        XCTAssertFalse(prompt.contains("{{sha}}"))
     }
 
     func testBuildAppendsAllowlistAfterSchemaDirective() {
