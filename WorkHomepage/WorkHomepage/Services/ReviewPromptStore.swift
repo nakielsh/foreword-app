@@ -33,11 +33,11 @@ final class ReviewPromptStore {
     // `OrchestratorPrompt.build` can detect its presence. Users who remove it
     // from their custom template will get it auto-appended.
     static let defaultTemplate: String = """
-        You are reviewing PR #{{prNumber}} in {{repo}}, branch {{branch}}.
+        You are reviewing PR #{{prNumber}} in {{repo}}, branch {{branch}}, head SHA {{sha}}.
 
-        **Before anything else, invoke the `reviewing-pr-final-state` skill via the Skill tool.** That skill defines how to scope the diff (three-dot merge-base against the PR's actual base branch — which may not be `main` for stacked PRs), which commands are forbidden (no `git show <sha>`, no `git log -p`, no per-commit inspection), and how to treat the worktree at SHA {{sha}} as the cumulative final state — the same view as GitHub's "Files changed" tab. Follow it.
+        Invoke the `reviewing-pr-final-state` skill via the Skill tool first; follow it for diff scoping, base-branch resolution, and inspection rules.
 
-        Use `gh pr view {{prNumber}} --repo {{repo}}` for PR metadata. The current working directory is the worktree at SHA {{sha}}; read files there for context.
+        Use `gh pr view {{prNumber}} --repo {{repo}}` for PR metadata. The current working directory is the worktree at HEAD.
 
         Review the changes for correctness, ticket alignment (verify the diff matches the Jira description above), and code quality.
 
