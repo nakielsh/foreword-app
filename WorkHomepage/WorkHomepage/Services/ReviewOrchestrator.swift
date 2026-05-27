@@ -464,7 +464,7 @@ final class ReviewOrchestrator {
                 schema: Constants.reviewJSONSchema,
                 cwd: worktreeURL,
                 allowedTools: "Read,Grep,Glob,Skill,Bash(gh:*),Bash(git:*)",
-                disallowedTools: "Bash,Write,Edit,Task,WebFetch,WebSearch",
+                disallowedTools: "Bash,Write,Edit,Task,TodoWrite,WebFetch,WebSearch",
                 timeout: .seconds(AppSettings.reviewTimeoutSeconds)
             )
         } catch ClaudeRunnerError.binaryNotFound {
