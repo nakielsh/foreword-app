@@ -494,10 +494,22 @@ final class ReviewOrchestrator {
                     store.appendStream(review, text: "\n[tool: \(name)]\n")
                 case .finalResult(let rawJSON, let decoded):
                     if input.cancellation.isCancelled { return }
+                    // Fallback: when the structured result event arrived
+                    // empty or non-decodable, scan the text stream — the
+                    // agent sometimes emits the review JSON as a text
+                    // response instead of through structured_output (e.g.
+                    // when it wraps up with a trailing TodoWrite call).
+                    var effectiveDecoded = decoded
+                    var effectiveRaw = rawJSON
+                    if effectiveDecoded == nil,
+                       let recovered = ClaudeRunner.recoverFromStreamText(review.partialStream) {
+                        effectiveDecoded = recovered.schema
+                        effectiveRaw = recovered.rawJSON
+                    }
                     store.markCompleted(
                         review,
-                        schema: decoded,
-                        rawJSON: rawJSON,
+                        schema: effectiveDecoded,
+                        rawJSON: effectiveRaw,
                         worktreeURL: worktreeURL
                     )
                     sawTerminalEvent = true

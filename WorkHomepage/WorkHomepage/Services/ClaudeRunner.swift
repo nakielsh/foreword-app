@@ -482,6 +482,25 @@ struct ClaudeRunner {
         return [.finalResult(rawJSON: line, decoded: nil)]
     }
 
+    /// Last-resort recovery when the structured `result` event arrived empty
+    /// or non-JSON but the agent emitted the review JSON in its text stream
+    /// (a known failure mode when claude wraps up via `TodoWrite` or other
+    /// trailing tool calls instead of returning a clean structured result).
+    /// Returns the decoded schema + pretty-printed raw JSON on success, or
+    /// nil when nothing decodable is found.
+    static func recoverFromStreamText(_ text: String) -> (schema: ReviewSchema, rawJSON: String)? {
+        let candidates = candidateJSONStrings(from: text)
+        let decoder = JSONDecoder()
+        for candidate in candidates {
+            guard let data = candidate.data(using: .utf8) else { continue }
+            if let decoded = try? decoder.decode(ReviewSchema.self, from: data) {
+                let pretty = prettyPrint(data: data, fallback: candidate)
+                return (decoded, pretty)
+            }
+        }
+        return nil
+    }
+
     /// Decode a JSON string against `ReviewSchema`. Pretty-print the same
     /// payload to feed `Review.rawResultJSON` and the modal's raw tab.
     ///
