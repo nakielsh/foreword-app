@@ -304,9 +304,19 @@ struct JiraClient {
             throw JiraError.notConfigured
         }
 
-        // Strip trailing slashes so we don't end up with `//rest/...`.
-        var base = rawBase
-        while base.hasSuffix("/") { base.removeLast() }
+        // Atlassian Cloud REST always lives at <site>.atlassian.net/rest/...
+        // Some users paste a deep link like `https://<site>.atlassian.net/jira`
+        // (which still resolves in the browser via a redirect). Strip path,
+        // query, and fragment so `<base>/rest/api/3/...` always starts at the
+        // tenant root.
+        guard let parsed = URL(string: rawBase),
+              let scheme = parsed.scheme,
+              let host = parsed.host
+        else {
+            throw JiraError.http(0, "Invalid base URL")
+        }
+        var base = "\(scheme)://\(host)"
+        if let port = parsed.port { base += ":\(port)" }
 
         let path = "/rest/api/3/issue/\(key)?fields=\(fields)"
         guard let url = URL(string: base + path) else {

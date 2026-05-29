@@ -161,7 +161,7 @@ struct MyPRsTab: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(vm.rows) { row in
-                        MyPRCard(row: row)
+                        MyPRCard(row: row, refreshTick: refreshTick)
                     }
                 }
                 .padding()
@@ -270,6 +270,9 @@ struct MyPRRow: Identifiable, Hashable {
 
 private struct MyPRCard: View {
     let row: MyPRRow
+    /// Propagated from the parent tab so `JiraBadgeView` re-fetches ticket
+    /// status whenever the tab's global Refresh is hit.
+    let refreshTick: Int
 
     var body: some View {
         let pr = row.pr
@@ -284,7 +287,7 @@ private struct MyPRCard: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(Capsule().fill(Color.borderSubtle))
-                    JiraBadgeView(branchName: pr.branchRef)
+                    JiraBadgeView(branchName: pr.branchRef, refreshTick: refreshTick)
                     Spacer()
                     if pr.draft {
                         Text("Draft")

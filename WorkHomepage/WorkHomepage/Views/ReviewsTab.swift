@@ -480,7 +480,7 @@ struct ReviewsTab: View {
                 ForEach(visible) { pr in
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top, spacing: 8) {
-                            PendingPRCard(pr: pr)
+                            PendingPRCard(pr: pr, refreshTick: refreshTick)
                             VStack(alignment: .trailing, spacing: 4) {
                                 reviewButton(
                                     for: pr.repoFullName,
@@ -547,7 +547,7 @@ struct ReviewsTab: View {
     fileprivate func reviewedRow(pr: ReviewedPR) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
-                ReviewedPRCard(pr: pr)
+                ReviewedPRCard(pr: pr, refreshTick: refreshTick)
                 VStack(alignment: .trailing, spacing: 4) {
                     reviewButton(
                         for: pr.repoFullName,
@@ -917,6 +917,9 @@ struct ReviewsTab: View {
 
 private struct PendingPRCard: View {
     let pr: PendingReviewPR
+    /// Propagated from the parent tab so `JiraBadgeView` re-fetches ticket
+    /// status whenever the tab's global Refresh is hit.
+    let refreshTick: Int
 
     var body: some View {
         Link(destination: pr.htmlURL) {
@@ -957,7 +960,7 @@ private struct PendingPRCard: View {
                         Text("@\(pr.authorLogin)")
                             .font(Font.appBody(size: 11))
                             .foregroundStyle(Color.textSecondary)
-                        JiraBadgeView(branchName: pr.branchRef)
+                        JiraBadgeView(branchName: pr.branchRef, refreshTick: refreshTick)
                     }
                     Spacer()
                     if pr.approvalCount == 0 && pr.changesRequestedCount == 0 {
@@ -1020,6 +1023,9 @@ private struct PendingPRCard: View {
 
 private struct ReviewedPRCard: View {
     let pr: ReviewedPR
+    /// Propagated from the parent tab so `JiraBadgeView` re-fetches ticket
+    /// status whenever the tab's global Refresh is hit.
+    let refreshTick: Int
 
     var body: some View {
         Link(destination: pr.htmlURL) {
@@ -1052,7 +1058,7 @@ private struct ReviewedPRCard: View {
                         Text("@\(pr.authorLogin)")
                             .font(Font.appBody(size: 11))
                             .foregroundStyle(Color.textSecondary)
-                        JiraBadgeView(branchName: pr.branchRef)
+                        JiraBadgeView(branchName: pr.branchRef, refreshTick: refreshTick)
                     }
                     Spacer()
                     if pr.approvalCount > 0 {
