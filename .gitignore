@@ -6,6 +6,10 @@ xcuserdata/
 DerivedData/
 build*/
 .DS_Store
+*.profraw
+
+# Local HTTP cache produced by review pipeline runs
+github-http-cache/
 
 # Claude Code agent infra (worktrees, local settings)
 .claude/
