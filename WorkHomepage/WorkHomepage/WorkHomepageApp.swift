@@ -15,6 +15,7 @@
 
 import SwiftUI
 import SwiftData
+import os
 
 @main
 struct WorkHomepageApp: App {
@@ -46,14 +47,42 @@ struct WorkHomepageApp: App {
         // against the type at runtime will throw.
         // Slice 24: `PreReviewSummary` added — lightweight 3-bullet TL;DR cache.
         let schema = Schema([Review.self, Finding.self, CachedJiraTicket.self, PreReviewSummary.self])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let log = Logger(subsystem: "WorkHomepage", category: "modelContainer")
+
+        // Namespace the store under `Application Support/WorkHomepage/` so
+        // it cannot collide with another non-sandboxed app's
+        // `default.store`. Without this, SwiftData defaults to the
+        // unqualified `~/Library/Application Support/default.store`, which
+        // any other non-sandboxed app can also claim — when their schemas
+        // disagree, `ModelContainer(for:)` throws and we silently fall back
+        // to in-memory, losing all persistence across launches.
+        let storeURL: URL? = {
+            do {
+                let appSupport = try FileManager.default.url(
+                    for: .applicationSupportDirectory,
+                    in: .userDomainMask,
+                    appropriateFor: nil,
+                    create: true
+                )
+                let dir = appSupport.appendingPathComponent("WorkHomepage", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                return dir.appendingPathComponent("default.store")
+            } catch {
+                log.fault("could not resolve Application Support dir, falling back to default URL: \(String(describing: error), privacy: .public)")
+                return nil
+            }
+        }()
+
+        let config: ModelConfiguration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
+            ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
             // Fallback: in-memory store. The user's reviews won't persist
             // across launches in this state, but the app still runs. Log loud
-            // so the silent persistence loss is visible in Console.
-            FileHandle.standardError.write(Data("[WorkHomepage] FATAL: on-disk SwiftData container failed to load — falling back to in-memory store. Reviews and summaries will NOT persist across launches. Error: \(error)\n".utf8))
+            // via os.Logger so the silent persistence loss surfaces in Console.app
+            // even when the app is GUI-launched (no stderr TTY).
+            log.fault("on-disk SwiftData container failed to load at \(storeURL?.path ?? "<default>", privacy: .public) — falling back to in-memory store. Reviews and summaries will NOT persist across launches. Error: \(String(describing: error), privacy: .public)")
             // swiftlint:disable:next force_try
             self.modelContainer = try! ModelContainer(
                 for: schema,
