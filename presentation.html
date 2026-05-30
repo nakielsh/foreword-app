@@ -1,0 +1,2019 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Work Homepage — Field Notes on a PR Review Companion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<style>
+  :root {
+    /* Botanical Garden palette — same tokens as index.html */
+    --bg-deep:        #f5f3ed;
+    --bg-paper:       #efeadf;
+    --bg-card:        #ffffff;
+    --bg-card-deep:   #f8f4ea;
+    --ink:            #2c2a26;
+    --ink-soft:       #5a564e;
+    --ink-faint:      #8a8377;
+    --rule:           #c8bfae;
+    --rule-soft:      #e3dccb;
+    --fern:           #4a7c59;
+    --fern-deep:      #355c41;
+    --fern-leaf:      #6b9678;
+    --marigold:       #f9a620;
+    --marigold-deep:  #c47e0e;
+    --terracotta:     #b7472a;
+    --moss:           #7a8b3e;
+    --plum:           #6a3d57;
+    --shadow:         0 1px 0 rgba(60,52,38,.05), 0 18px 40px -28px rgba(60,52,38,.45);
+    --font-display:   'Libre Baskerville', 'Iowan Old Style', Georgia, serif;
+    --font-body:      'Source Sans 3', system-ui, sans-serif;
+    --font-mono:      'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+
+    /* Pressed-paper texture: warm gradient + subtle noise via SVG data URI */
+    background-image:
+      radial-gradient(ellipse at top left, rgba(249,166,32,.05), transparent 55%),
+      radial-gradient(ellipse at bottom right, rgba(74,124,89,.07), transparent 60%),
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .12  0 0 0 0 .10  0 0 0 0 .08  0 0 0 .06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    background-attachment: fixed;
+  }
+
+  /* Scroll-snap deck */
+  main {
+    scroll-snap-type: y mandatory;
+    overflow-y: scroll;
+    height: 100vh;
+  }
+
+  section.slide {
+    scroll-snap-align: start;
+    min-height: 100vh;
+    padding: clamp(48px, 7vh, 96px) clamp(48px, 8vw, 140px);
+    display: grid;
+    grid-template-columns: minmax(0,1fr);
+    gap: clamp(20px, 3vh, 40px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Plate label — herbarium specimen card */
+  .plate {
+    position: absolute;
+    top: 36px;
+    left: 36px;
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    font-family: var(--font-display);
+    font-size: 12px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .plate .num {
+    font-variant-numeric: oldstyle-nums;
+    font-style: italic;
+    color: var(--terracotta);
+  }
+  .plate .rule {
+    height: 1px;
+    width: 64px;
+    background: var(--rule);
+    align-self: center;
+  }
+
+  .stamp {
+    position: absolute;
+    top: 32px;
+    right: 36px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+
+  .stamp::before {
+    content: "✦";
+    color: var(--marigold);
+    margin-right: 8px;
+  }
+
+  /* Typography */
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 400; margin: 0; color: var(--ink); }
+  h1 {
+    font-size: clamp(48px, 7.2vw, 108px);
+    line-height: .98;
+    letter-spacing: -.015em;
+  }
+  h1 em { font-style: italic; color: var(--fern); }
+  h2 {
+    font-size: clamp(34px, 4.8vw, 64px);
+    line-height: 1.04;
+    letter-spacing: -.01em;
+  }
+  h2 em { color: var(--terracotta); font-style: italic; }
+  h3 {
+    font-size: clamp(20px, 2vw, 26px);
+    color: var(--fern-deep);
+    font-style: italic;
+  }
+  p { margin: 0 0 .75em; max-width: 60ch; }
+  p.lead {
+    font-size: clamp(18px, 1.6vw, 22px);
+    color: var(--ink-soft);
+    max-width: 64ch;
+  }
+  .kicker {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--terracotta);
+    font-size: clamp(15px, 1.2vw, 17px);
+    letter-spacing: .02em;
+    margin-bottom: 14px;
+    display: inline-block;
+  }
+  .kicker::before {
+    content: "❦ ";
+    color: var(--marigold);
+    font-style: normal;
+  }
+
+  /* Latin binomial subtitle */
+  .binomial {
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--ink-faint);
+    font-size: clamp(14px, 1vw, 16px);
+    letter-spacing: .02em;
+    margin-top: 18px;
+  }
+
+  /* Cover */
+  .cover {
+    grid-template-rows: auto 1fr auto;
+    align-items: stretch;
+  }
+  .cover .crown {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding: 18px 0;
+    font-family: var(--font-display);
+    font-size: 14px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .cover .crown .right { font-style: italic; color: var(--terracotta); text-transform: none; letter-spacing: 0; font-size: 15px; }
+  .cover-body {
+    align-self: center;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 80px;
+    align-items: center;
+  }
+  .cover-body h1 small {
+    display: block;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(18px, 1.6vw, 24px);
+    color: var(--ink-soft);
+    margin-top: 22px;
+    line-height: 1.3;
+    max-width: 22ch;
+  }
+  .cover-tag {
+    display: inline-block;
+    padding: 6px 14px;
+    border: 1px solid var(--terracotta);
+    color: var(--terracotta);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    border-radius: 999px;
+    margin-bottom: 28px;
+  }
+  .cover-meta {
+    border-top: 1px solid var(--rule);
+    padding-top: 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .15em;
+    color: var(--ink-faint);
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+  .cover-meta b { color: var(--ink); font-weight: 500; }
+
+  /* Card / specimen */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    border-radius: 4px;
+    padding: 24px 26px;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .card .corner {
+    position: absolute;
+    top: -1px; left: -1px;
+    width: 22px; height: 22px;
+    border-top: 2px solid var(--fern);
+    border-left: 2px solid var(--fern);
+  }
+  .card .corner.tr { left: auto; right: -1px; border-left: 0; border-right: 2px solid var(--fern); }
+  .card .corner.bl { top: auto; bottom: -1px; border-top: 0; border-bottom: 2px solid var(--fern); }
+  .card .corner.br { top: auto; left: auto; right: -1px; bottom: -1px; border-top: 0; border-left: 0; border-bottom: 2px solid var(--fern); border-right: 2px solid var(--fern); }
+
+  .card h3 { margin-bottom: 8px; }
+  .card p { font-size: 15.5px; color: var(--ink-soft); }
+
+  /* Two/Three/Four column grids */
+  .cols { display: grid; gap: 22px; }
+  .cols.c2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .cols.c3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .cols.c4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  @media (max-width: 1100px) {
+    .cols.c4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .cols.c3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .cover-body { grid-template-columns: 1fr; gap: 36px; }
+  }
+
+  /* Bulleted dashes — botanical */
+  ul.field-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  ul.field-list li {
+    position: relative;
+    padding: 8px 0 8px 24px;
+    border-bottom: 1px dotted var(--rule);
+    font-size: 15.5px;
+    color: var(--ink-soft);
+  }
+  ul.field-list li:last-child { border-bottom: 0; }
+  ul.field-list li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 18px;
+    width: 14px; height: 1px;
+    background: var(--terracotta);
+  }
+  ul.field-list li b { color: var(--ink); font-weight: 600; font-family: var(--font-display); font-style: italic; }
+
+  /* Numbered list — like figure callouts */
+  ol.figs {
+    list-style: none;
+    counter-reset: fig;
+    padding: 0; margin: 0;
+    display: grid;
+    gap: 14px;
+  }
+  ol.figs li {
+    counter-increment: fig;
+    position: relative;
+    padding: 12px 14px 12px 56px;
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    font-size: 15px;
+    color: var(--ink-soft);
+  }
+  ol.figs li::before {
+    content: counter(fig, decimal-leading-zero);
+    position: absolute;
+    left: 14px; top: 12px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 22px;
+    color: var(--terracotta);
+    line-height: 1;
+  }
+  ol.figs li b { color: var(--ink); font-weight: 600; }
+
+  /* Stat plates */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 18px;
+  }
+  .stat {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    padding: 22px 22px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat::after {
+    content: "";
+    position: absolute;
+    right: -30px; top: -30px;
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(249,166,32,.18), transparent 65%);
+  }
+  .stat .n {
+    font-family: var(--font-display);
+    font-size: clamp(40px, 4.6vw, 64px);
+    line-height: 1;
+    color: var(--fern-deep);
+    letter-spacing: -.02em;
+    font-variant-numeric: oldstyle-nums;
+  }
+  .stat .n em { font-style: italic; color: var(--terracotta); }
+  .stat .label {
+    margin-top: 10px;
+    font-family: var(--font-display);
+    font-style: italic;
+    color: var(--ink-soft);
+    font-size: 15px;
+  }
+  .stat .sub {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: .1em;
+  }
+  @media (max-width: 1100px) { .stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+  /* Quote — pull from problem statement */
+  blockquote.pull {
+    border-left: 3px solid var(--terracotta);
+    padding: 8px 24px;
+    margin: 18px 0;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: clamp(20px, 2vw, 26px);
+    color: var(--ink);
+    line-height: 1.35;
+    max-width: 32ch;
+  }
+  blockquote.pull cite {
+    display: block;
+    margin-top: 14px;
+    font-family: var(--font-body);
+    font-style: normal;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .15em;
+    color: var(--ink-faint);
+  }
+
+  /* Code chip */
+  code, .mono {
+    font-family: var(--font-mono);
+    font-size: .92em;
+    background: var(--bg-card-deep);
+    border: 1px solid var(--rule-soft);
+    padding: 1px 6px;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  pre.code {
+    background: #1f1d18;
+    color: #f0e8d6;
+    padding: 22px 24px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    border: 1px solid #34302a;
+    position: relative;
+  }
+  pre.code::before {
+    content: "$";
+    position: absolute;
+    top: 18px; left: -28px;
+    color: var(--terracotta);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 24px;
+  }
+  pre.code .c1 { color: #b9c684; }   /* green */
+  pre.code .c2 { color: #f6b656; }   /* marigold */
+  pre.code .c3 { color: #e88d6c; }   /* terracotta */
+  pre.code .c4 { color: #8a8377; }   /* faint */
+
+  /* Mermaid wrapper */
+  .diagram {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    border-radius: 4px;
+    padding: 32px;
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  .diagram .mermaid { font-family: var(--font-body); }
+
+  /* Botanical SVG decoration positioning */
+  .botanical {
+    position: absolute;
+    pointer-events: none;
+    user-select: none;
+    opacity: .25;
+  }
+
+  /* Two-pane layout for content slides */
+  .twopane {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: start;
+  }
+  .twopane.lopsided { grid-template-columns: 1.2fr 1fr; }
+  @media (max-width: 1100px) { .twopane { grid-template-columns: 1fr; gap: 32px; } }
+
+  /* Slide content shell */
+  .body { align-self: center; max-width: 1280px; width: 100%; margin: 0 auto; }
+
+  /* Tab card variant */
+  .tab-card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    padding: 22px;
+    border-top: 4px solid var(--accent, var(--fern));
+    position: relative;
+  }
+  .tab-card .tag {
+    position: absolute;
+    top: -1px; right: 14px;
+    background: var(--bg-deep);
+    padding: 0 8px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 12px;
+    color: var(--accent, var(--fern));
+    transform: translateY(-50%);
+  }
+  .tab-card h3 {
+    color: var(--ink);
+    font-style: normal;
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+  .tab-card h3 em { color: var(--accent, var(--fern)); font-style: italic; }
+  .tab-card p { font-size: 14.5px; color: var(--ink-soft); margin-bottom: 0; }
+  .tab-card ul { padding: 8px 0 0 16px; margin: 0; font-size: 14px; color: var(--ink-soft); }
+  .tab-card ul li { margin-bottom: 4px; }
+  .tab-card ul li::marker { color: var(--accent, var(--fern)); }
+
+  /* Palette swatches */
+  .palette {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0,1fr));
+    gap: 14px;
+  }
+  .swatch {
+    aspect-ratio: 3/4;
+    background: var(--c);
+    border: 1px solid var(--rule);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    color: var(--ink-on);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .04em;
+    position: relative;
+  }
+  .swatch .name {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .swatch .hex { opacity: .7; }
+  @media (max-width: 1100px) { .palette { grid-template-columns: repeat(3, minmax(0,1fr)); } }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 30px;
+    border-left: 1px dashed var(--rule);
+  }
+  .timeline .ev {
+    position: relative;
+    padding: 4px 0 16px;
+  }
+  .timeline .ev::before {
+    content: "";
+    position: absolute;
+    left: -36px; top: 9px;
+    width: 9px; height: 9px;
+    background: var(--marigold);
+    border: 2px solid var(--bg-deep);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--rule);
+  }
+  .timeline .ev.fern::before { background: var(--fern); }
+  .timeline .ev.terra::before { background: var(--terracotta); }
+  .timeline .ev .when {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  .timeline .ev .what {
+    font-family: var(--font-display);
+    font-size: 17px;
+    color: var(--ink);
+  }
+  .timeline .ev .what em { color: var(--fern); font-style: italic; }
+
+  /* Pill for keys/values */
+  .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    background: var(--bg-card-deep);
+    border: 1px solid var(--rule-soft);
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    margin: 2px 4px 2px 0;
+  }
+  .pill.allow { background: rgba(74,124,89,.12); border-color: rgba(74,124,89,.35); color: var(--fern-deep); }
+  .pill.deny  { background: rgba(183,71,42,.10); border-color: rgba(183,71,42,.35); color: var(--terracotta); }
+  .pill.warn  { background: rgba(249,166,32,.14); border-color: rgba(249,166,32,.4); color: var(--marigold-deep); }
+
+  /* Scroll indicator */
+  .scroll-hint {
+    position: fixed;
+    bottom: 18px; left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-faint);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    pointer-events: none;
+    z-index: 50;
+    animation: float 2.4s ease-in-out infinite;
+  }
+  @keyframes float { 0%, 100% { transform: translate(-50%, 0); opacity: .55; } 50% { transform: translate(-50%, 6px); opacity: 1; } }
+
+  /* Slide-in animations on intersection */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s ease; }
+  .reveal.on { opacity: 1; transform: none; }
+  .reveal.d1 { transition-delay: .08s; }
+  .reveal.d2 { transition-delay: .16s; }
+  .reveal.d3 { transition-delay: .24s; }
+  .reveal.d4 { transition-delay: .32s; }
+  .reveal.d5 { transition-delay: .4s; }
+
+  /* Engraved divider rule */
+  .rule-orn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--terracotta);
+    margin: 22px 0;
+  }
+  .rule-orn::before, .rule-orn::after {
+    content: ""; flex: 1; height: 1px; background: var(--rule);
+  }
+  .rule-orn span { font-family: var(--font-display); font-style: italic; }
+
+  /* Footnote */
+  .footnote {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    color: var(--ink-faint);
+    margin-top: 24px;
+  }
+
+  /* Mermaid theme overrides (after init) — color the rendered nodes */
+  .mermaid .nodeLabel { font-family: var(--font-body) !important; font-size: 14px; }
+  .mermaid .edgeLabel { background: var(--bg-card) !important; font-family: var(--font-mono) !important; font-size: 11px !important; }
+
+  /* =========================================================== */
+  /* macOS-style window chrome + animated demo                   */
+  /* =========================================================== */
+  .mac-window {
+    position: relative;
+    background: var(--bg-card);
+    border-radius: 11px;
+    border: 1px solid rgba(0,0,0,.10);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,.6) inset,
+      0 0 0 .5px rgba(0,0,0,.08),
+      0 16px 28px -10px rgba(45,40,30,.28),
+      0 38px 70px -28px rgba(45,40,30,.35);
+    overflow: hidden;
+    color: var(--ink);
+  }
+  .mac-titlebar {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 14px;
+    background: linear-gradient(180deg, #f4f1e8 0%, #ece7d8 100%);
+    border-bottom: 1px solid rgba(60,52,38,.12);
+    position: relative;
+  }
+  .mac-traffic {
+    display: flex;
+    gap: 7px;
+  }
+  .mac-traffic span {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    border: .5px solid rgba(0,0,0,.18);
+    display: block;
+  }
+  .mac-traffic .red    { background: #ff5f57; }
+  .mac-traffic .yellow { background: #febc2e; }
+  .mac-traffic .green  { background: #28c840; }
+  .mac-title {
+    position: absolute;
+    left: 0; right: 0;
+    text-align: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
+
+  .mac-body { display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
+  .mac-sidebar {
+    background: linear-gradient(180deg, #ede8da, #e7e0cd);
+    border-right: 1px solid rgba(60,52,38,.10);
+    padding: 14px 10px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+  .mac-sidebar .sb-section {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 8px 10px 4px;
+  }
+  .mac-sidebar .sb-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .mac-sidebar .sb-item .sb-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--rule);
+  }
+  .mac-sidebar .sb-item.active {
+    background: var(--fern);
+    color: #fff;
+    box-shadow: 0 1px 0 rgba(255,255,255,.3) inset;
+  }
+  .mac-sidebar .sb-item.active .sb-dot { background: var(--marigold); }
+  .mac-sidebar .sb-item .sb-badge {
+    margin-left: auto;
+    background: rgba(0,0,0,.08);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--ink);
+  }
+  .mac-sidebar .sb-item.active .sb-badge { background: rgba(255,255,255,.22); color: #fff; }
+
+  .mac-content { padding: 18px 20px; min-width: 0; background: var(--bg-deep); }
+  .mac-content .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .mac-content .toolbar h4 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-style: italic;
+    color: var(--ink);
+  }
+  .mac-content .toolbar h4 b { font-style: normal; color: var(--fern); font-weight: 700; }
+  .mac-content .toolbar .meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .12em;
+  }
+
+  /* PR card (in app) */
+  .pr-card {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    border-radius: 7px;
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .pr-card .avatar {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--fern), var(--moss));
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .pr-card .avatar.b { background: linear-gradient(135deg, var(--marigold), var(--terracotta)); }
+  .pr-card .avatar.c { background: linear-gradient(135deg, var(--plum), #9d6692); }
+  .pr-card .meta-line { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .pr-card .meta-line .title-line {
+    font-weight: 600;
+    color: var(--ink);
+    font-size: 14.5px;
+  }
+  .pr-card .meta-line .sub {
+    color: var(--ink-faint);
+    font-size: 12px;
+    font-family: var(--font-mono);
+  }
+  .pr-card .row {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 11.5px;
+  }
+  .pr-card .row .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--bg-card-deep);
+    border: 1px solid var(--rule-soft);
+    padding: 1px 8px;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .pr-card .row .tag.fern { color: var(--fern-deep); border-color: rgba(74,124,89,.35); background: rgba(74,124,89,.10); }
+  .pr-card .row .tag.terra { color: var(--terracotta); border-color: rgba(183,71,42,.35); background: rgba(183,71,42,.10); }
+  .pr-card .row .tag.marigold { color: var(--marigold-deep); border-color: rgba(249,166,32,.4); background: rgba(249,166,32,.13); }
+  .pr-card .review-btn {
+    background: var(--fern);
+    color: #fff;
+    border: 0;
+    border-radius: 6px;
+    padding: 7px 14px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 13px;
+    box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 1px 2px rgba(0,0,0,.18);
+    cursor: pointer;
+    position: relative;
+  }
+  .pr-card .review-btn::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 9px;
+    border: 2px solid var(--marigold);
+    opacity: 0;
+  }
+
+  /* Animated cursor */
+  .cursor {
+    position: absolute;
+    width: 22px; height: 22px;
+    pointer-events: none;
+    z-index: 50;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.45));
+  }
+  .cursor svg { width: 100%; height: 100%; display: block; }
+  @keyframes ripple {
+    0%   { transform: scale(0); opacity: .8; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .ripple {
+    position: absolute;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(249,166,32,.5), rgba(249,166,32,0) 70%);
+    pointer-events: none;
+    z-index: 49;
+    opacity: 0;
+  }
+
+  /* Pipeline tracker — animated dots */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0,1fr));
+    gap: 0;
+    position: relative;
+    padding: 24px 0 28px;
+  }
+  .pipeline::before {
+    content: "";
+    position: absolute;
+    left: 4%; right: 4%;
+    top: 50px;
+    height: 2px;
+    background: var(--rule);
+    z-index: 0;
+  }
+  .pipeline .step {
+    position: relative;
+    text-align: center;
+    z-index: 1;
+  }
+  .pipeline .step .dot {
+    width: 28px; height: 28px;
+    margin: 36px auto 10px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid var(--rule);
+    display: grid;
+    place-items: center;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink-faint);
+    transition: background .35s ease, border-color .35s ease, color .35s ease, transform .35s ease;
+  }
+  .pipeline .step.active .dot {
+    background: var(--fern);
+    border-color: var(--fern-deep);
+    color: #fff;
+    transform: scale(1.18);
+  }
+  .pipeline .step.done .dot {
+    background: var(--moss);
+    border-color: var(--fern-deep);
+    color: #fff;
+  }
+  .pipeline .step .label {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    padding: 0 4px;
+    line-height: 1.25;
+    min-height: 30px;
+  }
+  .pipeline .step.active .label { color: var(--fern-deep); }
+  .pipeline .step .stamp {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--ink-faint);
+    opacity: 0;
+    transition: opacity .3s ease;
+  }
+  .pipeline .step.done .stamp { opacity: 1; color: var(--moss); }
+  .pipeline .step.active .stamp { opacity: 1; color: var(--marigold-deep); }
+
+  /* Stream log mock */
+  .stream {
+    background: #1f1d18;
+    color: #f0e8d6;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    max-height: 180px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #34302a;
+  }
+  .stream .line { opacity: 0; transform: translateY(6px); white-space: pre-wrap; }
+  .stream .c-fern  { color: #b9c684; }
+  .stream .c-mar   { color: #f6b656; }
+  .stream .c-terra { color: #e88d6c; }
+  .stream .c-faint { color: #8a8377; }
+  .stream::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 36px;
+    background: linear-gradient(180deg, rgba(31,29,24,0), rgba(31,29,24,.95));
+    pointer-events: none;
+  }
+
+  /* Findings list animated */
+  .findings { display: grid; gap: 10px; margin-top: 14px; }
+  .finding {
+    background: var(--bg-card);
+    border: 1px solid var(--rule-soft);
+    border-left: 3px solid var(--marigold-deep);
+    border-radius: 6px;
+    padding: 11px 13px;
+    opacity: 0;
+    transform: translateY(8px);
+    cursor: pointer;
+    position: relative;
+  }
+  .finding.high  { border-left-color: var(--terracotta); }
+  .finding.med   { border-left-color: var(--marigold-deep); }
+  .finding.low   { border-left-color: var(--fern); }
+  .finding .ftop {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .finding .ftitle { font-weight: 600; color: var(--ink); font-size: 13.5px; }
+  .finding .floc {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+  .finding .fmsg { margin-top: 4px; color: var(--ink-soft); font-size: 12.5px; }
+  .finding.click-target::after {
+    content: "▸ open in IntelliJ";
+    position: absolute;
+    right: 13px; bottom: 8px;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 11px;
+    color: var(--terracotta);
+    opacity: 0;
+  }
+
+  /* IntelliJ-ish window */
+  .idea-window {
+    position: absolute;
+    inset: 8% 8% 6% 8%;
+    background: #2b2b2b;
+    color: #d4d4d4;
+    border-radius: 10px;
+    box-shadow: 0 30px 70px rgba(0,0,0,.45);
+    overflow: hidden;
+    transform: translateY(40px) scale(.96);
+    opacity: 0;
+    z-index: 40;
+    border: 1px solid #111;
+  }
+  .idea-window .idea-bar {
+    background: linear-gradient(180deg, #3c3f41, #313335);
+    height: 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 10px;
+    color: #b8b8b8;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    border-bottom: 1px solid #1c1c1c;
+  }
+  .idea-window .idea-bar .traffic span {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+  }
+  .idea-window .idea-bar .traffic .r { background: #ff5f57; }
+  .idea-window .idea-bar .traffic .y { background: #febc2e; }
+  .idea-window .idea-bar .traffic .g { background: #28c840; }
+  .idea-window .idea-bar .breadcrumb {
+    color: #9b9b9b;
+  }
+  .idea-window .idea-bar .breadcrumb b { color: #f8b86f; font-weight: 500; }
+  .idea-window .code {
+    padding: 14px 16px 14px 56px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: #d4d4d4;
+    position: relative;
+    height: calc(100% - 32px);
+    overflow: hidden;
+  }
+  .idea-window .code .gutter {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 44px;
+    background: #313335;
+    color: #606366;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-align: right;
+    padding: 14px 10px;
+    line-height: 1.7;
+    border-right: 1px solid #1f1f1f;
+  }
+  .idea-window .code .ln { display: block; padding-right: 6px; }
+  .idea-window .code .hit-line {
+    background: rgba(249,166,32,.18);
+    margin: 0 -16px 0 -56px;
+    padding: 0 16px 0 56px;
+    box-shadow: inset 3px 0 0 var(--marigold);
+  }
+  .idea-window .code .k1 { color: #cc7832; }    /* keyword */
+  .idea-window .code .k2 { color: #6a8759; }    /* string */
+  .idea-window .code .k3 { color: #ffc66d; }    /* fn */
+  .idea-window .code .k4 { color: #9876aa; }    /* class */
+  .idea-window .code .k5 { color: #808080; }    /* comment */
+  .idea-window .code .caret {
+    display: inline-block;
+    width: 2px; height: 14px;
+    background: #f8b86f;
+    vertical-align: -2px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Sheet overlay */
+  .sheet {
+    position: absolute;
+    left: 8%; right: 8%;
+    top: 14%;
+    bottom: 6%;
+    background: var(--bg-card);
+    border-radius: 10px;
+    box-shadow: 0 30px 60px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.06);
+    opacity: 0;
+    transform: translateY(40px);
+    z-index: 30;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .sheet .sh-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--rule-soft);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(180deg, #f6f1e3, #efeadf);
+  }
+  .sheet .sh-head .ttl {
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 16px;
+  }
+  .sheet .sh-head .verdict {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: rgba(183,71,42,.12);
+    border: 1px solid rgba(183,71,42,.35);
+    color: var(--terracotta);
+  }
+  .sheet .sh-body {
+    padding: 16px 18px;
+    overflow: hidden;
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Demo stage — slides housing the macOS window */
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 560px;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  @media (max-width: 1100px) {
+    .stage { height: 460px; }
+  }
+
+  /* Annotation labels overlaid on app mock */
+  .anno {
+    position: absolute;
+    font-family: var(--font-display);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--terracotta);
+    background: var(--bg-card);
+    border: 1px solid var(--rule);
+    padding: 4px 10px;
+    border-radius: 4px;
+    box-shadow: 0 4px 14px -8px rgba(0,0,0,.4);
+    white-space: nowrap;
+  }
+  .anno::after {
+    content: "";
+    position: absolute;
+    width: 24px;
+    height: 1px;
+    background: var(--terracotta);
+  }
+  .anno.l::after { left: -24px; top: 50%; }
+  .anno.r::after { right: -24px; top: 50%; }
+  .anno.b::after { bottom: -10px; left: 50%; width: 1px; height: 10px; }
+</style>
+</head>
+<body>
+
+
+
+<main id="deck">
+
+  <!-- ============================================================== -->
+  <!-- 01 — COVER                                                     -->
+  <!-- ============================================================== -->
+  <section class="slide cover">
+    <div class="crown">
+      <div>Plate &nbsp;·&nbsp; <span style="font-style:italic;">Tabula prima</span></div>
+      <div class="right">A short tour</div>
+      <div>2026 &nbsp;·&nbsp; Hubert Nakielski</div>
+    </div>
+
+    <div class="cover-body">
+      <div>
+        <span class="cover-tag">Field notes</span>
+        <h1>
+          <em>Work</em><br/>Homepage.
+          <small>From a daily annoyance to a one-click PR review companion.</small>
+        </h1>
+        <div class="binomial">Workflow domesticus &nbsp;·&nbsp; HTML &nbsp;→&nbsp; SwiftUI &nbsp;→&nbsp; Claude</div>
+      </div>
+
+      <div>
+        <svg viewBox="0 0 360 480" width="100%" height="auto" aria-hidden="true">
+          <defs>
+            <pattern id="hatch" patternUnits="userSpaceOnUse" width="4" height="4" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="4" stroke="#4a7c59" stroke-width="0.5" opacity=".35"/>
+            </pattern>
+          </defs>
+          <g fill="none" stroke="#355c41" stroke-width="1.1" stroke-linecap="round">
+            <path d="M180 460 C180 380 160 320 130 270 C100 220 85 180 78 130 C75 100 90 80 110 70" />
+            <g id="leaflet">
+              <path d="M180 430 q -38 -8 -56 -32 q 10 -14 30 -12 q 18 0 26 10 z" fill="url(#hatch)"/>
+            </g>
+            <g transform="translate(0,-40)"><use href="#leaflet"/></g>
+            <g transform="translate(2,-78)"><use href="#leaflet"/></g>
+            <g transform="translate(4,-114)"><use href="#leaflet"/></g>
+            <g transform="translate(6,-146)"><use href="#leaflet"/></g>
+            <g transform="translate(8,-176)"><use href="#leaflet"/></g>
+            <g transform="translate(10,-202)"><use href="#leaflet"/></g>
+            <g transform="translate(11,-224)"><use href="#leaflet"/></g>
+            <g transform="scale(-1,1) translate(-360,0)">
+              <g transform="translate(0,-22)"><use href="#leaflet"/></g>
+              <g transform="translate(2,-60)"><use href="#leaflet"/></g>
+              <g transform="translate(4,-96)"><use href="#leaflet"/></g>
+              <g transform="translate(6,-128)"><use href="#leaflet"/></g>
+              <g transform="translate(8,-158)"><use href="#leaflet"/></g>
+              <g transform="translate(10,-184)"><use href="#leaflet"/></g>
+              <g transform="translate(11,-208)"><use href="#leaflet"/></g>
+            </g>
+          </g>
+          <g font-family="Libre Baskerville" font-style="italic" font-size="11" fill="#8a8377">
+            <text x="170" y="475">fig. 1 — Polypodium recensens</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="cover-meta">
+      <div><b>One repo.</b></div>
+      <div><b>Two surfaces.</b></div>
+      <div><b>One verb on every PR card.</b></div>
+    </div>
+
+    <div class="plate"><span class="num">i.</span><span class="rule"></span> Frontispiece</div>
+    <div class="stamp">scroll · ↓</div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 02 — AGENDA                                                    -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">ii.</span><span class="rule"></span> Agenda</div>
+    <div class="stamp">5 stops</div>
+
+    <div class="body">
+      <span class="kicker">Tonight's path</span>
+      <h2>Problem · idea · HTML · app · what comes next.</h2>
+
+      <div class="cols c4" style="margin-top:48px;">
+        <div class="tab-card reveal" style="--accent: var(--terracotta)">
+          <span class="tag">01</span>
+          <h3>The <em>problem</em></h3>
+          <p>Reviewing other people's PRs cost me a context-switch every morning.</p>
+        </div>
+        <div class="tab-card reveal d1" style="--accent: var(--marigold-deep)">
+          <span class="tag">02</span>
+          <h3>The <em>idea</em></h3>
+          <p>One view, one button, the work runs itself.</p>
+        </div>
+        <div class="tab-card reveal d2" style="--accent: var(--fern)">
+          <span class="tag">03</span>
+          <h3>The <em>HTML page</em></h3>
+          <p>A specimen — see if the four tabs are the right four tabs.</p>
+        </div>
+        <div class="tab-card reveal d3" style="--accent: var(--plum)">
+          <span class="tag">04</span>
+          <h3>The <em>app</em></h3>
+          <p>SwiftUI + Claude. The HTML page, with verbs.</p>
+        </div>
+      </div>
+
+      <div class="rule-orn" style="margin-top:48px;"><span>❦</span></div>
+
+      <p class="lead" style="text-align:center; margin:0 auto; max-width:50ch;">
+        Plus one extra: a <em>skill</em> that taught Claude how my team likes to be reviewed.
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 03 — PROBLEM                                                   -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">iii.</span><span class="rule"></span> The problem</div>
+    <div class="stamp">CH · I</div>
+
+    <div class="body twopane lopsided">
+      <div class="reveal">
+        <span class="kicker">Every morning</span>
+        <h2>Which PRs need me? <em>Did I already comment?</em> Has the diff moved since?</h2>
+
+        <ul class="field-list" style="margin-top:28px;">
+          <li><b>Forgotten threads.</b> "Did I respond to that comment?"</li>
+          <li><b>Stale reviews.</b> Three new commits land · my approval is no longer truth.</li>
+          <li><b>Branch clobbering.</b> Checking out a PR overwrote my own work.</li>
+          <li><b>Context-loss.</b> Jira, diff, IDE — three windows, one head.</li>
+        </ul>
+      </div>
+
+      <div class="reveal d2">
+        <blockquote class="pull">
+          "What if I could click a PR and the review just… ran?"
+          <cite>— me, to me, last summer</cite>
+        </blockquote>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 04 — IDEA                                                      -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">iv.</span><span class="rule"></span> The idea</div>
+    <div class="stamp">CH · II</div>
+
+    <div class="body">
+      <span class="kicker">One picture</span>
+      <h2>One view that sees every PR. <em>One button</em> that does the review.</h2>
+
+      <div class="diagram reveal" style="margin-top:42px; padding: 48px 32px;">
+        <div style="display:flex; align-items:center; justify-content:space-around; gap:32px; flex-wrap:wrap;">
+          <div style="text-align:center; flex:1;">
+            <div style="font-family:var(--font-display); font-style:italic; font-size:42px; color:var(--terracotta);">scattered</div>
+            <div style="margin-top:12px; color:var(--ink-faint); font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;">github · jira · ide · terminal</div>
+          </div>
+
+          <div style="font-family:var(--font-display); font-style:italic; font-size:48px; color:var(--marigold);">→</div>
+
+          <div style="text-align:center; flex:1;">
+            <div style="font-family:var(--font-display); font-style:italic; font-size:42px; color:var(--fern-deep);">one view</div>
+            <div style="margin-top:12px; color:var(--ink-faint); font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;">PRs in one place</div>
+          </div>
+
+          <div style="font-family:var(--font-display); font-style:italic; font-size:48px; color:var(--marigold);">→</div>
+
+          <div style="text-align:center; flex:1;">
+            <div style="font-family:var(--font-display); font-style:italic; font-size:42px; color:var(--fern-deep);">one button</div>
+            <div style="margin-top:12px; color:var(--ink-faint); font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;">review · jump · done</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 05 — THE HTML PAGE                                             -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">v.</span><span class="rule"></span> The HTML page</div>
+    <div class="stamp">CH · III · specimen no. 1</div>
+
+    <div class="body">
+      <span class="kicker">Step one — see if the four tabs are right</span>
+      <h2>One <em>file://</em> page. Four tabs. <em>Zero build.</em></h2>
+
+      <div class="cols c4" style="margin-top:32px;">
+        <div class="tab-card reveal" style="--accent: var(--fern)">
+          <span class="tag">i.</span>
+          <h3>Reviews</h3>
+          <p>PRs assigned to me. Stale-review warnings.</p>
+        </div>
+        <div class="tab-card reveal d1" style="--accent: var(--marigold-deep)">
+          <span class="tag">ii.</span>
+          <h3>My PRs</h3>
+          <p>Reviewer states. Unresolved threads.</p>
+        </div>
+        <div class="tab-card reveal d2" style="--accent: var(--plum)">
+          <span class="tag">iii.</span>
+          <h3>Sessions</h3>
+          <p>Live Claude Code sessions on this machine.</p>
+        </div>
+        <div class="tab-card reveal d3" style="--accent: var(--terracotta)">
+          <span class="tag">iv.</span>
+          <h3>Deploys</h3>
+          <p>Latest deploy per service · per env.</p>
+        </div>
+      </div>
+
+      <p class="lead reveal d4" style="margin-top:42px; text-align:center;">
+        Worked. Daily. For months. <em>But the browser could only watch — never act.</em>
+      </p>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 06 — THE APP · ANATOMY                                         -->
+  <!-- ============================================================== -->
+  <section class="slide" id="slide-anatomy">
+    <div class="plate"><span class="num">vi.</span><span class="rule"></span> The app</div>
+    <div class="stamp">CH · IV</div>
+
+    <div class="body">
+      <span class="kicker">Step two — same view, with verbs</span>
+      <h2>SwiftUI + SwiftData + Claude. <em>One verb</em> on every PR card.</h2>
+
+      <div class="stage" style="height: 540px; margin-top: 24px;">
+        <div class="mac-window" id="anatomy-win" style="height: 100%;">
+          <div class="mac-titlebar">
+            <div class="mac-traffic"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+            <div class="mac-title">WorkHomepage — Reviews</div>
+          </div>
+
+          <div class="mac-body" style="height: calc(100% - 38px);">
+            <aside class="mac-sidebar">
+              <div class="sb-section">Inbox</div>
+              <div class="sb-item active"><span class="sb-dot"></span> Reviews <span class="sb-badge">7</span></div>
+              <div class="sb-item"><span class="sb-dot"></span> My&nbsp;PRs <span class="sb-badge">4</span></div>
+              <div class="sb-item"><span class="sb-dot"></span> Sessions <span class="sb-badge">3</span></div>
+              <div class="sb-item"><span class="sb-dot"></span> Deploys</div>
+            </aside>
+
+            <main class="mac-content">
+              <div class="toolbar">
+                <h4>Reviews <b>requested</b></h4>
+                <div class="meta">7 open</div>
+              </div>
+
+              <div class="pr-card">
+                <div class="avatar">AK</div>
+                <div>
+                  <div class="meta-line">
+                    <span class="title-line">Batch order lookup &amp; transactional payment</span>
+                    <span class="sub">backend-worker #4172</span>
+                  </div>
+                  <div class="row">
+                    <span class="tag fern">JWT-918</span>
+                    <span class="tag">+312 / −44</span>
+                  </div>
+                </div>
+                <button class="review-btn" id="anatomy-review-btn">▸ Review</button>
+              </div>
+
+              <div class="pr-card">
+                <div class="avatar b">MS</div>
+                <div>
+                  <div class="meta-line">
+                    <span class="title-line">Pre-Review Summary endpoint</span>
+                    <span class="sub">backend-rag #1188</span>
+                  </div>
+                  <div class="row">
+                    <span class="tag marigold">RAG-204</span>
+                    <span class="tag">+89 / −12</span>
+                  </div>
+                </div>
+                <button class="review-btn">▸ Review</button>
+              </div>
+
+              <div class="pr-card">
+                <div class="avatar c">JD</div>
+                <div>
+                  <div class="meta-line">
+                    <span class="title-line">Idempotency key on webhook retry</span>
+                    <span class="sub">backend-rental #2330</span>
+                  </div>
+                  <div class="row">
+                    <span class="tag">RNT-77</span>
+                    <span class="tag">+44 / −2</span>
+                  </div>
+                </div>
+                <button class="review-btn">▸ Review</button>
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <div class="anno r" style="top: 56px; right: -2px; transform: translateX(112%);">
+          MenuBarExtra · live counts
+        </div>
+        <div class="anno l" style="top: 290px; left: -2px; transform: translateX(-112%);">
+          Click <em>Review</em> · the rest happens
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 07 — ONE-CLICK REVIEW · ANIMATED DEMO                          -->
+  <!-- ============================================================== -->
+  <section class="slide" id="slide-demo">
+    <div class="plate"><span class="num">vii.</span><span class="rule"></span> One click</div>
+    <div class="stamp">CH · V · the verb</div>
+
+    <div class="body">
+      <span class="kicker">Watch it run</span>
+      <h2>Click. Worktree. Jira. Prompt. Claude. <em>Findings.</em> IntelliJ.</h2>
+
+      <div class="pipeline" id="pipeline-track" style="margin-top:18px;">
+        <div class="step" data-i="1"><div class="dot">1</div><div class="label">Worktree</div><div class="stamp">git</div></div>
+        <div class="step" data-i="2"><div class="dot">2</div><div class="label">Jira key</div><div class="stamp">JWT-918</div></div>
+        <div class="step" data-i="3"><div class="dot">3</div><div class="label">Ticket</div><div class="stamp">cached</div></div>
+        <div class="step" data-i="4"><div class="dot">4</div><div class="label">Files</div><div class="stamp">gh pr view</div></div>
+        <div class="step" data-i="5"><div class="dot">5</div><div class="label">Prompt</div><div class="stamp">fenced</div></div>
+        <div class="step" data-i="6"><div class="dot">6</div><div class="label">claude</div><div class="stamp">sandboxed</div></div>
+        <div class="step" data-i="7"><div class="dot">7</div><div class="label">Filter</div><div class="stamp">guard</div></div>
+        <div class="step" data-i="8"><div class="dot">8</div><div class="label">Render</div><div class="stamp">SwiftData</div></div>
+      </div>
+
+      <div class="stage" id="demo-stage" style="height: 480px;">
+        <div class="mac-window" style="height: 100%;">
+          <div class="mac-titlebar">
+            <div class="mac-traffic"><span class="red"></span><span class="yellow"></span><span class="green"></span></div>
+            <div class="mac-title">WorkHomepage — Reviews</div>
+          </div>
+          <div class="mac-body" style="height: calc(100% - 38px);">
+            <aside class="mac-sidebar">
+              <div class="sb-section">Inbox</div>
+              <div class="sb-item active"><span class="sb-dot"></span> Reviews <span class="sb-badge">7</span></div>
+              <div class="sb-item"><span class="sb-dot"></span> My&nbsp;PRs <span class="sb-badge">4</span></div>
+              <div class="sb-item"><span class="sb-dot"></span> Sessions</div>
+              <div class="sb-item"><span class="sb-dot"></span> Deploys</div>
+            </aside>
+            <main class="mac-content">
+              <div class="toolbar">
+                <h4>Reviews <b>requested</b></h4>
+                <div class="meta" id="demo-status">Idle</div>
+              </div>
+              <div class="pr-card" id="demo-pr-card">
+                <div class="avatar">AK</div>
+                <div>
+                  <div class="meta-line">
+                    <span class="title-line">Batch order lookup &amp; transactional payment</span>
+                    <span class="sub">backend-worker #4172</span>
+                  </div>
+                  <div class="row">
+                    <span class="tag fern">JWT-918</span>
+                    <span class="tag">+312 / −44</span>
+                  </div>
+                </div>
+                <button class="review-btn" id="demo-review-btn">▸ Review</button>
+              </div>
+            </main>
+          </div>
+        </div>
+
+        <div class="sheet" id="demo-sheet">
+          <div class="sh-head">
+            <div class="ttl">backend-worker · #4172</div>
+            <div class="verdict" id="demo-verdict">running…</div>
+          </div>
+          <div class="sh-body">
+            <div>
+              <h3 style="font-size:13px; color:var(--ink-soft); margin-bottom:8px;">Live stream</h3>
+              <div class="stream" id="demo-stream">
+<span class="line"><span class="c-faint">[t+0.0]</span> <span class="c-mar">git</span> worktree add …/Ala-com/backend-worker/4172</span>
+<span class="line"><span class="c-faint">[t+1.2]</span> <span class="c-fern">jira</span> JWT-918 fetched</span>
+<span class="line"><span class="c-faint">[t+1.5]</span> <span class="c-mar">gh</span>  pr view → 14 files</span>
+<span class="line"><span class="c-faint">[t+1.9]</span> <span class="c-fern">prompt</span> built · fenced · allowlist</span>
+<span class="line"><span class="c-faint">[t+2.0]</span> <span class="c-terra">claude</span> spawn · cwd=worktree</span>
+<span class="line"><span class="c-faint">[t+3.4]</span> Read OrderService.kt</span>
+<span class="line"><span class="c-faint">[t+5.0]</span> Read PaymentJob.kt</span>
+<span class="line"><span class="c-faint">[t+6.7]</span> <span class="c-fern">2 findings</span> · 1 HIGH · 1 MED</span>
+<span class="line"><span class="c-faint">[t+6.9]</span> <span class="c-mar">filter</span> kept 2 / 2</span>
+<span class="line"><span class="c-faint">[t+7.0]</span> <span class="c-fern">done</span></span>
+              </div>
+            </div>
+
+            <div>
+              <h3 style="font-size:13px; color:var(--ink-soft); margin-bottom:8px;">Findings</h3>
+              <div class="findings" id="demo-findings">
+                <div class="finding high click-target" id="demo-f1">
+                  <div class="ftop">
+                    <div class="ftitle">N+1 query on order lookup</div>
+                    <div class="floc">OrderService.kt:247</div>
+                  </div>
+                  <div class="fmsg"><code>findById</code> inside <code>map</code>. Use <code>findAllById</code>.</div>
+                </div>
+                <div class="finding med" id="demo-f2">
+                  <div class="ftop">
+                    <div class="ftitle">Missing transaction boundary</div>
+                    <div class="floc">PaymentJob.kt:88</div>
+                  </div>
+                  <div class="fmsg">Multi-write without <code>@Transactional</code>.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="idea-window" id="demo-idea">
+          <div class="idea-bar">
+            <span class="traffic"><span class="r"></span><span class="y"></span><span class="g"></span></span>
+            <span class="breadcrumb">backend-worker &nbsp;›&nbsp; <b>OrderService.kt</b></span>
+          </div>
+          <div class="code">
+            <div class="gutter">
+              <span class="ln">243</span><span class="ln">244</span><span class="ln">245</span>
+              <span class="ln">246</span><span class="ln">247</span><span class="ln">248</span>
+              <span class="ln">249</span><span class="ln">250</span>
+            </div>
+            <div>
+<span class="k1">fun</span> <span class="k3">enrichOrders</span>(ids: <span class="k4">List</span>&lt;<span class="k4">UUID</span>&gt;): <span class="k4">List</span>&lt;<span class="k4">Order</span>&gt; {
+  <span class="k5">// 244</span>
+  <span class="k1">return</span> ids.<span class="k3">map</span> { id <span class="k1">-&gt;</span>
+    <span class="k5">// 246</span>
+<span class="hit-line">    orderRepo.<span class="k3">findById</span>(id).<span class="k3">orElseThrow</span>()<span class="caret"></span></span>
+  }.<span class="k3">map</span>(::<span class="k3">attachLines</span>)
+}
+
+<span class="k5">// fix: orderRepo.findAllById(ids)</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="cursor" id="demo-cursor" style="top: 80%; left: -5%;">
+          <svg viewBox="0 0 24 24"><path fill="#1c1a16" d="M3 2l7 18 2.5-7.5L20 10z"/></svg>
+        </div>
+        <div class="ripple" id="demo-ripple"></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 08 — SANDBOX (security in one card)                            -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">viii.</span><span class="rule"></span> The sandbox</div>
+    <div class="stamp">CH · V · §2</div>
+
+    <div class="body twopane">
+      <div class="reveal">
+        <span class="kicker">Defence in depth</span>
+        <h2>The PR brings <em>untrusted</em> text. Two flags keep it harmless.</h2>
+        <p class="lead">
+          Branch names, Jira tickets, issue bodies — all upstream content gets fenced and sanitised before
+          it reaches Claude. The CLI itself runs with a read-only tool surface.
+        </p>
+      </div>
+
+      <div class="reveal d2">
+        <div class="card">
+          <div class="corner"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <h3>Tool surface</h3>
+
+          <p style="margin:14px 0 6px;"><b>Allowed</b></p>
+          <span class="pill allow">Read</span>
+          <span class="pill allow">Grep</span>
+          <span class="pill allow">Glob</span>
+          <span class="pill allow">Bash(gh:*)</span>
+          <span class="pill allow">Bash(git:*)</span>
+
+          <p style="margin:18px 0 6px;"><b>Denied</b></p>
+          <span class="pill deny">Bash</span>
+          <span class="pill deny">Write</span>
+          <span class="pill deny">Edit</span>
+          <span class="pill deny">WebFetch</span>
+          <span class="pill deny">WebSearch</span>
+
+          <p style="margin:18px 0 0; color:var(--ink-soft); font-size:14px;">
+            And <code>ANTHROPIC_API_KEY</code> never reaches the spawned process — env allowlist drops it.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 09 — /pr-review-mining                                          -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">ix.</span><span class="rule"></span> One extra</div>
+    <div class="stamp">CH · VI</div>
+
+    <div class="body twopane lopsided">
+      <div class="reveal">
+        <span class="kicker">A skill that learns the team</span>
+        <h2><em>/pr-review-mining</em> — turn review history into a house style.</h2>
+        <p class="lead">
+          Before any of this could really help, Claude had to know <em>what my team cares about</em>.
+          So a skill walks our PR review comments, clusters the recurring ones, verifies them against
+          today's code, and writes them into <code>CLAUDE.md</code>.
+        </p>
+
+        <ul class="field-list" style="margin-top:18px;">
+          <li><b>Mine.</b> Walks GitHub PR review comments.</li>
+          <li><b>Cluster.</b> Recurring feedback only.</li>
+          <li><b>Verify.</b> Against the current codebase.</li>
+          <li><b>Persist.</b> Appends to <code>CLAUDE.md</code>.</li>
+        </ul>
+      </div>
+
+      <div class="reveal d2">
+        <div class="card">
+          <div class="corner"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <h3>The loop, drawn</h3>
+          <svg viewBox="0 0 540 200" width="100%" height="auto" aria-hidden="true" style="margin-top:8px;">
+            <defs>
+              <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0,0 L10,5 L0,10 z" fill="#b7472a"/>
+              </marker>
+            </defs>
+            <g font-family="'Source Sans 3', sans-serif" font-size="13" fill="#2c2a26">
+              <g>
+                <rect x="14" y="60" width="120" height="64" rx="6" fill="#ffffff" stroke="#4a7c59" stroke-width="1.4"/>
+                <text x="74" y="88" text-anchor="middle">PR review</text>
+                <text x="74" y="106" text-anchor="middle" font-style="italic" fill="#5a564e" font-size="12">comments · GH</text>
+              </g>
+              <g>
+                <rect x="160" y="60" width="120" height="64" rx="6" fill="#f8f4ea" stroke="#c47e0e" stroke-width="1.4"/>
+                <text x="220" y="88" text-anchor="middle">/pr-review-</text>
+                <text x="220" y="106" text-anchor="middle">mining</text>
+              </g>
+              <g>
+                <rect x="306" y="60" width="120" height="64" rx="6" fill="#efeadf" stroke="#6a3d57" stroke-width="1.4"/>
+                <text x="366" y="88" text-anchor="middle">CLAUDE.md</text>
+                <text x="366" y="106" text-anchor="middle" font-style="italic" fill="#5a564e" font-size="12">house rules</text>
+              </g>
+              <g>
+                <rect x="452" y="20" width="76" height="50" rx="6" fill="#ffffff" stroke="#4a7c59" stroke-width="1.2"/>
+                <text x="490" y="42" text-anchor="middle" font-size="12">writing</text>
+                <text x="490" y="58" text-anchor="middle" font-style="italic" fill="#5a564e" font-size="11">new code</text>
+              </g>
+              <g>
+                <rect x="452" y="115" width="76" height="50" rx="6" fill="#fdeee9" stroke="#b7472a" stroke-width="1.2"/>
+                <text x="490" y="137" text-anchor="middle" font-size="12">reviewing</text>
+                <text x="490" y="153" text-anchor="middle" font-style="italic" fill="#5a564e" font-size="11">incoming PRs</text>
+              </g>
+              <g fill="none" stroke="#b7472a" stroke-width="1.4" marker-end="url(#arr2)">
+                <path d="M134 92 L160 92"/>
+                <path d="M280 92 L306 92"/>
+                <path d="M426 86 L452 50"/>
+                <path d="M426 98 L452 138"/>
+                <path d="M490 168 Q260 200 74 124" stroke-dasharray="3 4"/>
+              </g>
+              <text x="280" y="194" text-anchor="middle" font-style="italic" font-size="11" fill="#8a8377">…and the cycle compounds.</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 10 — JOURNEY                                                   -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="slide-bg" aria-hidden="true"></div>
+    <div class="plate"><span class="num">x.</span><span class="rule"></span> The journey, in five stops</div>
+    <div class="stamp">CH · VII</div>
+
+    <div class="body">
+      <span class="kicker">From a complaint to a companion</span>
+      <h2>The shortest version of the story.</h2>
+
+      <div class="timeline reveal" style="margin: 36px 0 0 18px; max-width: 720px;">
+        <div class="ev terra"><div class="when">2024 — annoyance</div><div class="what">The morning <em>scavenger hunt</em> for PRs.</div></div>
+        <div class="ev"><div class="when">2024 — first cut</div><div class="what">One HTML file. Four tabs. Daily use.</div></div>
+        <div class="ev"><div class="when">2025 — dead end</div><div class="what">A browser can <em>see</em>, but cannot <em>act</em>.</div></div>
+        <div class="ev fern"><div class="when">2025 — tracer bullet</div><div class="what">First real review — worktree, claude, findings.</div></div>
+        <div class="ev fern"><div class="when">2026 — polish</div><div class="what">IntelliJ launcher, Jira cache, menu bar, prompt template, <em>pr-review-mining</em>.</div></div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ============================================================== -->
+  <!-- 11 — TAKEAWAYS                                                 -->
+  <!-- ============================================================== -->
+  <section class="slide">
+    <div class="plate"><span class="num">xi.</span><span class="rule"></span> Lessons pressed and dried</div>
+    <div class="stamp">finis</div>
+
+    <div class="body">
+      <span class="kicker">What I'd carry forward</span>
+      <h2>Three small lessons.</h2>
+
+      <div class="cols c3" style="margin-top:36px;">
+        <div class="card reveal">
+          <div class="corner"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <h3>① Ship the HTML first.</h3>
+          <p>A file:// page is a working spec for the real app.</p>
+        </div>
+        <div class="card reveal d1">
+          <div class="corner"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <h3>② Sandbox at the CLI.</h3>
+          <p>Two flags and an env allowlist. The smallest defence that works.</p>
+        </div>
+        <div class="card reveal d2">
+          <div class="corner"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+          <h3>③ Teach the team's voice.</h3>
+          <p>Mined review comments make every future review more relevant.</p>
+        </div>
+      </div>
+
+      <div class="rule-orn" style="margin-top:52px;"><span>❦ &nbsp; finis &nbsp; ❦</span></div>
+
+      <div style="text-align:center; font-family: var(--font-display); font-style: italic; color: var(--ink-soft); font-size:16px;">
+        Hubert Nakielski &nbsp;·&nbsp; 2026 &nbsp;·&nbsp; questions welcome
+      </div>
+    </div>
+  </section>
+
+</main>
+
+
+
+<div class="scroll-hint">scroll · ↓ ·</div>
+
+<script>
+  // Reveal-on-intersection
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) e.target.classList.add('on');
+    }
+  }, { threshold: .18 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // Hide scroll hint once the user has scrolled
+  const hint = document.querySelector('.scroll-hint');
+  document.getElementById('deck').addEventListener('scroll', () => {
+    if (hint) hint.style.opacity = '0';
+  }, { passive: true, once: true });
+
+  /* ===========================================================
+     Animated demos — driven by IntersectionObserver + GSAP
+     =========================================================== */
+
+  // ANATOMY SLIDE — pulse the highlighted Review button
+  (function setupAnatomy() {
+    const slide = document.getElementById('slide-anatomy');
+    const btn = document.getElementById('anatomy-review-btn');
+    if (!slide || !btn || !window.gsap) return;
+    let played = false;
+    const obs = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting && !played) {
+          played = true;
+          gsap.fromTo(btn, { scale: 1 }, {
+            scale: 1.08, duration: .6, ease: 'sine.inOut',
+            repeat: 5, yoyo: true,
+          });
+          gsap.fromTo(btn, { boxShadow: '0 0 0 0 rgba(249,166,32,0)' }, {
+            boxShadow: '0 0 0 8px rgba(249,166,32,.2)',
+            duration: .6, ease: 'sine.inOut', repeat: 5, yoyo: true,
+          });
+        }
+      }
+    }, { threshold: .5 });
+    obs.observe(slide);
+  })();
+
+  // DEMO SLIDE — full click-to-IntelliJ flow
+  (function setupDemo() {
+    const slide  = document.getElementById('slide-demo');
+    if (!slide || !window.gsap) return;
+
+    const stage   = document.getElementById('demo-stage');
+    const cursor  = document.getElementById('demo-cursor');
+    const ripple  = document.getElementById('demo-ripple');
+    const btn     = document.getElementById('demo-review-btn');
+    const sheet   = document.getElementById('demo-sheet');
+    const idea    = document.getElementById('demo-idea');
+    const verdict = document.getElementById('demo-verdict');
+    const status  = document.getElementById('demo-status');
+    const f1      = document.getElementById('demo-f1');
+    const f2      = document.getElementById('demo-f2');
+    const streamLines = document.querySelectorAll('#demo-stream .line');
+    const steps   = document.querySelectorAll('#pipeline-track .step');
+
+    // Cursor moves in stage-relative coordinates. Use getBoundingClientRect at runtime.
+    function pointTo(targetEl, opts = {}) {
+      const stageBox = stage.getBoundingClientRect();
+      const t = targetEl.getBoundingClientRect();
+      const x = t.left - stageBox.left + (opts.dx ?? t.width * .55);
+      const y = t.top  - stageBox.top  + (opts.dy ?? t.height * .55);
+      return { x, y };
+    }
+
+    function addCursorMove(tl, targetEl, dur = .9, at) {
+      tl.to(cursor, {
+        left: () => pointTo(targetEl).x,
+        top:  () => pointTo(targetEl).y,
+        duration: dur,
+        ease: 'power3.inOut',
+      }, at);
+    }
+
+    function addRipple(tl, targetEl, at) {
+      tl.call(() => {
+        const p = pointTo(targetEl);
+        gsap.set(ripple, { left: p.x - 18, top: p.y - 18, opacity: 1, scale: 0 });
+        gsap.to(ripple, { scale: 2.5, opacity: 0, duration: .55, ease: 'power2.out' });
+      }, null, at);
+    }
+
+    function setStep(i, state) {
+      steps.forEach((s, idx) => {
+        const n = idx + 1;
+        s.classList.remove('active');
+        if (n < i)  s.classList.add('done');
+        if (n === i && state !== 'done') s.classList.add('active');
+        if (n === i && state === 'done') s.classList.add('done');
+      });
+    }
+
+    function buildTimeline() {
+      const tl = gsap.timeline({ paused: true });
+
+      // 1. Reset
+      tl.set([sheet, idea], { opacity: 0 });
+      tl.set(sheet, { y: 40 });
+      tl.set(idea,  { y: 40, scale: .96 });
+      tl.set(streamLines, { opacity: 0, y: 6 });
+      tl.set([f1, f2], { opacity: 0, y: 8 });
+
+      // 2. Cursor moves to Review button
+      tl.call(() => { status.textContent = 'Idle'; }, null, 0);
+      addCursorMove(tl, btn, 1.0, 0.3);
+      addRipple(tl, btn, '>-.05');
+      tl.to(btn, { scale: .96, duration: .12, ease: 'power2.in' }, '<');
+      tl.to(btn, { scale: 1.0, duration: .18, ease: 'power2.out' }, '>');
+
+      // 3. Sheet slides up
+      tl.call(() => { status.textContent = 'Running pipeline…'; }, null, '>');
+      tl.to(sheet, { opacity: 1, y: 0, duration: .55, ease: 'expo.out' }, '<');
+
+      // 4. Pipeline steps light up + stream lines fade in
+      const stepCount = steps.length;
+      const totalRun = 4.5;
+      const perStep = totalRun / stepCount;
+      for (let i = 1; i <= stepCount; i++) {
+        const t = `+=${i === 1 ? .15 : perStep}`;
+        tl.call((step) => setStep(step, 'active'), [i], t);
+      }
+      // mark all as done once final step elapses
+      tl.call(() => steps.forEach(s => { s.classList.remove('active'); s.classList.add('done'); }), null, `+=${perStep}`);
+
+      // Stream lines stagger in across the same window
+      tl.to(streamLines, {
+        opacity: 1, y: 0,
+        duration: .3, ease: 'power2.out',
+        stagger: totalRun / streamLines.length,
+      }, `-=${totalRun + perStep - .2}`);
+
+      // 5. Verdict flips
+      tl.call(() => {
+        verdict.textContent = 'request_changes';
+        status.textContent = 'Done · 2 findings';
+      }, null, '>+.05');
+      tl.fromTo(verdict, { scale: 1.25, color: '#b7472a' }, {
+        scale: 1, duration: .4, ease: 'back.out(2)',
+      }, '<');
+
+      // 6. Findings slide in
+      tl.to(f1, { opacity: 1, y: 0, duration: .35, ease: 'power3.out' }, '>');
+      tl.to(f2, { opacity: 1, y: 0, duration: .35, ease: 'power3.out' }, '>-.2');
+
+      // 7. Cursor moves to first finding
+      addCursorMove(tl, f1, 1.0, '>+.4');
+      addRipple(tl, f1, '<+.7');
+      tl.to(f1, {
+        backgroundColor: 'rgba(249,166,32,.18)',
+        duration: .25, yoyo: true, repeat: 1,
+      }, '<');
+
+      // Reveal the "open in IntelliJ" cue
+      tl.call(() => f1.style.setProperty('--ot', '1'), null, '<');
+      tl.fromTo(f1, { boxShadow: '0 0 0 0 rgba(183,71,42,0)' }, {
+        boxShadow: '0 0 0 6px rgba(183,71,42,.18)', duration: .35, yoyo: true, repeat: 1,
+      }, '<');
+
+      // 8. IntelliJ window slides up over the stage
+      tl.to(idea, { opacity: 1, y: 0, scale: 1, duration: .6, ease: 'expo.out' }, '>');
+      tl.call(() => { status.textContent = 'Opened in IntelliJ at OrderService.kt:247'; }, null, '<+.2');
+
+      // 9. Hold, then loop back
+      tl.to({}, { duration: 2.2 });
+      tl.add(() => {
+        // Reset state for next play (but observer only fires once)
+      });
+
+      return tl;
+    }
+
+    let tl = null;
+    let played = false;
+    const obs = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting && !played) {
+          played = true;
+          // Build timeline lazily so cursor coordinates are accurate after layout
+          requestAnimationFrame(() => {
+            tl = buildTimeline();
+            tl.play(0);
+          });
+        }
+      }
+    }, { threshold: .35 });
+    obs.observe(slide);
+  })();
+
+  // Reveal opening cue on hover for click-target findings (always)
+  document.querySelectorAll('.finding.click-target').forEach(f => {
+    f.addEventListener('mouseenter', () => f.style.setProperty('--ot', '1'));
+    f.style.setProperty('--ot', '0');
+  });
+  // CSS hook for cue opacity via custom property
+  const styleHook = document.createElement('style');
+  styleHook.textContent = `.finding.click-target::after { opacity: var(--ot, 0); transition: opacity .25s ease; }`;
+  document.head.appendChild(styleHook);
+
+  // Mermaid — botanical garden theme tweaks
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    fontFamily: "'Source Sans 3', system-ui, sans-serif",
+    themeVariables: {
+      background: '#ffffff',
+      primaryColor: '#ffffff',
+      primaryTextColor: '#2c2a26',
+      primaryBorderColor: '#4a7c59',
+      lineColor: '#7a8b3e',
+      secondaryColor: '#f8f4ea',
+      tertiaryColor: '#efeadf',
+      fontFamily: "'Source Sans 3', system-ui, sans-serif",
+      fontSize: '14px'
+    },
+    flowchart: {
+      curve: 'basis',
+      htmlLabels: true,
+      padding: 16
+    }
+  });
+</script>
+
+</body>
+</html>
