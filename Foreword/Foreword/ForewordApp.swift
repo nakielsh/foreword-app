@@ -41,9 +41,15 @@ struct ForewordApp: App {
     private let modelContainer: ModelContainer
 
     init() {
+        // Unit tests boot the app as their host process. Keep those runs off
+        // the user's real store and legacy data: no migration, in-memory store.
+        let isUnitTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
         // Upgrade from the WorkHomepage name: move the store, worktree cache
         // and Keychain items across before the container opens the store.
-        LegacyDataMigration.runIfNeeded()
+        if !isUnitTestHost {
+            LegacyDataMigration.runIfNeeded()
+        }
 
         // Slice 12: `CachedJiraTicket` joins the schema so the cache shares the
         // same on-disk store as reviews + findings. New `@Model` types must be
@@ -60,7 +66,7 @@ struct ForewordApp: App {
         // any other non-sandboxed app can also claim — when their schemas
         // disagree, `ModelContainer(for:)` throws and we silently fall back
         // to in-memory, losing all persistence across launches.
-        let storeURL: URL? = {
+        let storeURL: URL? = isUnitTestHost ? nil : {
             do {
                 let appSupport = try FileManager.default.url(
                     for: .applicationSupportDirectory,
@@ -78,7 +84,7 @@ struct ForewordApp: App {
         }()
 
         let config: ModelConfiguration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
-            ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+            ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: isUnitTestHost)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
         } catch {
