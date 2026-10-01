@@ -612,77 +612,6 @@
     }
     .tooltip:hover::after { opacity: 1; }
 
-    /* ============ DEPLOY CARD ============ */
-    .deploy-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 1.25rem 1.4rem;
-      border-left: 3px solid var(--accent-green);
-      box-shadow: 0 1px 3px rgba(74,124,89,0.06);
-      opacity: 0;
-      animation: cardIn 0.35s ease-out forwards;
-      transition: background 0.2s, border-color 0.2s, transform 0.15s;
-    }
-
-    .deploy-card:hover { background: var(--bg-card-hover); border-color: var(--border-medium); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(74,124,89,0.1); }
-    .deploy-card.snapshot { border-left-color: var(--accent-amber); }
-    .deploy-card.no-deploy { border-left-color: var(--accent-gray); }
-
-    .deploy-card-top {
-      display: flex; align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .deploy-service-name {
-      font-family: var(--font-display);
-      font-size: 1.05rem; font-weight: 700;
-      color: var(--text-primary);
-    }
-
-    .deploy-env {
-      font-size: 0.65rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.05em;
-      border-radius: 100px; padding: 0.15rem 0.55rem;
-    }
-
-    .deploy-env.dev { color: var(--accent-amber); background: var(--accent-amber-dim); }
-    .deploy-env.staging { color: var(--accent-blue); background: rgba(74,124,89,0.08); }
-    .deploy-env.prod { color: var(--accent-green); background: var(--accent-green-dim); }
-
-    .deploy-version {
-      font-family: var(--font-mono);
-      font-size: 0.88rem;
-      font-weight: 500;
-      color: var(--text-primary);
-      margin-bottom: 0.45rem;
-      display: flex; align-items: center; gap: 0.5rem;
-    }
-
-    .deploy-version .tag.snapshot {
-      color: var(--accent-amber);
-      background: var(--accent-amber-dim);
-    }
-
-    .deploy-version .tag.release {
-      color: var(--accent-green);
-      background: var(--accent-green-dim);
-    }
-
-    .deploy-meta {
-      display: flex; align-items: center; gap: 1rem;
-      font-size: 0.75rem; color: var(--text-muted);
-    }
-
-    .deploy-meta a {
-      color: var(--accent-blue);
-      text-decoration: none;
-    }
-
-    .deploy-meta a:hover { text-decoration: underline; }
-
     /* ============ SECTION DIVIDER ============ */
     .section-divider {
       max-width: var(--max-w);
@@ -903,10 +832,6 @@
         Claude Code
         <span class="tab-count" id="tab-count-claude">-</span>
       </button>
-      <button class="tab" data-tab="deployments" onclick="switchTab('deployments')">
-        Deployments
-        <span class="tab-count" id="tab-count-deployments">-</span>
-      </button>
     </nav>
 
     <!-- ===== REVIEWS TAB ===== -->
@@ -1007,17 +932,6 @@
       </div>
     </div>
 
-    <!-- ===== DEPLOYMENTS TAB ===== -->
-    <div class="tab-content" id="tab-deployments">
-      <div class="stats-bar" id="deploy-stats"></div>
-      <div class="error-banner" id="deploy-error"><div class="error-banner-inner" id="deploy-error-msg"></div></div>
-      <div class="loading-grid" id="deploy-loading">
-        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
-        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
-        <div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line long"></div><div class="skeleton-line medium"></div></div>
-      </div>
-      <div class="card-grid" id="deploy-grid"></div>
-    </div>
   </div>
 
   <script id="sessions-script-tag" src="claude-sessions.js" onerror="window.__claudeSessions=[]"></script>
@@ -1027,7 +941,10 @@
 
     /* ============ STATE ============ */
     let currentUser = null;
-    let activeTab = localStorage.getItem('gh_dashboard_tab') || 'reviews';
+    const TABS = ['reviews', 'my-prs', 'claude'];
+    let activeTab = localStorage.getItem('gh_dashboard_tab');
+    // Stored tab may name a tab that no longer exists.
+    if (!TABS.includes(activeTab)) activeTab = 'reviews';
 
     // Reviews tab
     let reviewPRs = [];
@@ -1199,7 +1116,6 @@
       if (activeTab === 'reviews') { reviewsLoaded = false; }
       else if (activeTab === 'my-prs') { myPRsLoaded = false; }
       else if (activeTab === 'claude') { claudeLoaded = false; await reloadSessionsScript(); }
-      else if (activeTab === 'deployments') { deploymentsLoaded = false; }
       loadTab(activeTab);
     }
 
@@ -1213,9 +1129,6 @@
       } else if (tab === 'claude') {
         if (!claudeLoaded) loadClaudeSessions();
         else renderClaudeSessions();
-      } else if (tab === 'deployments') {
-        if (!deploymentsLoaded) loadDeployments();
-        else renderDeployments();
       }
     }
 
@@ -1803,205 +1716,6 @@
 
         grid.appendChild(card);
       });
-    }
-
-    /* ============ DEPLOYMENTS TAB ============ */
-    const DEPLOY_ORG = 'Ala-com';
-    const DEPLOY_WORKFLOW = 'Deploy to EKS from ECR';
-    const SERVICES = [
-      'account', 'worker', 'rental', 'worker_logs', 'model_gateway',
-      'worker_gateway', 'model_catalog', 'template', 'rag', 'rag_atlassian_plugin'
-    ];
-
-    function serviceToRepo(service) {
-      return `backend-${service.replace(/_/g, '-')}`;
-    }
-
-    function serviceDisplayName(service) {
-      return service.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    }
-
-    // Parse run name like "[dev] Deploy v1.21.1-feature-jwt-943-snapshot apply w/out WAF"
-    function parseDeployRun(run) {
-      const nameMatch = run.name.match(/^\[(\w+)\]\s+Deploy\s+v?([\S]+?)(?:\s+apply|$)/i);
-      if (!nameMatch) return null;
-      const env = nameMatch[1].toLowerCase();
-      const version = nameMatch[2];
-      const isSnapshot = !/^\d+\.\d+\.\d+$/.test(version);
-      return { env, version, isSnapshot, run };
-    }
-
-    let deploymentsLoaded = false;
-    let deployments = [];
-
-    const KNOWN_DEPLOY_ENVS = ['prod', 'dev'];
-
-    // Fetch latest deploy-per-env by paging through successful runs until all
-    // known envs are found or we hit the page cap. Needed because dev can
-    // deploy so often it fills the first page and starves prod.
-    async function fetchDeployEnvMap(org, repo, workflowId) {
-      const envMap = new Map();
-      const PER_PAGE = 100;
-      const MAX_PAGES = 2;
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const data = await ghFetch(`/repos/${org}/${repo}/actions/workflows/${workflowId}/runs?per_page=${PER_PAGE}&status=success&page=${page}`);
-        const runs = data.workflow_runs || [];
-        for (const run of runs) {
-          const parsed = parseDeployRun(run);
-          if (!parsed) continue;
-          if (!envMap.has(parsed.env)) envMap.set(parsed.env, parsed);
-        }
-        if (KNOWN_DEPLOY_ENVS.every(e => envMap.has(e))) break;
-        if (runs.length < PER_PAGE) break;
-      }
-      return envMap;
-    }
-
-    function fillDeployCard(card, d) {
-      const hasEnvs = d.envs.size > 0;
-      let cardCls = 'deploy-card';
-      if (!hasEnvs) {
-        cardCls += ' no-deploy';
-      } else {
-        const hasSnapshot = [...d.envs.values()].some(e => e.isSnapshot);
-        if (hasSnapshot) cardCls += ' snapshot';
-      }
-      card.className = cardCls;
-
-      if (!hasEnvs) {
-        card.innerHTML = `
-          <div class="deploy-card-top">
-            <span class="deploy-service-name">${serviceDisplayName(d.service)}</span>
-          </div>
-          <div class="deploy-meta" style="color:var(--text-muted)">No recent deployments found</div>
-        `;
-        return;
-      }
-
-      const envOrder = { prod: 0, staging: 1, dev: 2 };
-      const sortedEnvs = [...d.envs.entries()].sort((a, b) => (envOrder[a[0]] ?? 3) - (envOrder[b[0]] ?? 3));
-
-      const envsHtml = sortedEnvs.map(([env, info]) => {
-        const envCls = ['prod', 'staging', 'dev'].includes(env) ? env : 'dev';
-        const tagCls = info.isSnapshot ? 'snapshot' : 'release';
-        const tagLabel = info.isSnapshot ? 'snapshot' : 'release';
-        return `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;margin-bottom:0.4rem">
-            <div class="deploy-version">
-              <span class="deploy-env ${envCls}">${escapeHtml(env)}</span>
-              ${escapeHtml(info.version)}
-              <span class="tag ${tagCls}">${tagLabel}</span>
-            </div>
-          </div>
-          <div class="deploy-meta" style="margin-bottom:0.5rem">
-            <span>${timeAgo(info.run.created_at)}</span>
-            <a href="${info.run.html_url}" target="_blank" rel="noopener">View run</a>
-          </div>
-        `;
-      }).join('');
-
-      card.innerHTML = `
-        <div class="deploy-card-top">
-          <span class="deploy-service-name">${serviceDisplayName(d.service)}</span>
-        </div>
-        ${envsHtml}
-      `;
-    }
-
-    function renderDeployments() {
-      const grid = document.getElementById('deploy-grid');
-      grid.innerHTML = '';
-      const sorted = [...deployments].sort((a, b) => latestDeployTime(b) - latestDeployTime(a));
-      for (const d of sorted) insertDeployCardSorted(grid, d);
-      renderDeployStats();
-    }
-
-    function renderDeployStats() {
-      const statsEl = document.getElementById('deploy-stats');
-      let snapshotCount = 0, releaseCount = 0, noDeployCount = 0;
-      for (const d of deployments) {
-        if (d.envs.size === 0) { noDeployCount++; continue; }
-        for (const [, info] of d.envs) {
-          if (info.isSnapshot) snapshotCount++;
-          else releaseCount++;
-        }
-      }
-      document.getElementById('tab-count-deployments').textContent = SERVICES.length;
-      statsEl.innerHTML = `
-        <div class="stat-chip"><span class="dot green"></span> <strong>${releaseCount}</strong> releases</div>
-        <div class="stat-chip"><span class="dot amber"></span> <strong>${snapshotCount}</strong> snapshots</div>
-        ${noDeployCount ? `<div class="stat-chip"><span class="dot gray"></span> <strong>${noDeployCount}</strong> no deploys found</div>` : ''}
-        <div class="stat-chip"><strong>${SERVICES.length}</strong> services</div>
-      `;
-    }
-
-    function latestDeployTime(d) {
-      let max = 0;
-      for (const [, info] of d.envs) {
-        const t = new Date(info.run.created_at).getTime();
-        if (t > max) max = t;
-      }
-      return max;
-    }
-
-    function insertDeployCardSorted(grid, d) {
-      const card = document.createElement('div');
-      card.id = `deploy-card-${d.service}`;
-      const myTime = latestDeployTime(d);
-      card.dataset.deployTime = String(myTime);
-      fillDeployCard(card, d);
-
-      const insertBefore = [...grid.children].find(c => Number(c.dataset.deployTime || 0) < myTime);
-      if (insertBefore) {
-        grid.insertBefore(card, insertBefore);
-      } else {
-        grid.appendChild(card);
-      }
-    }
-
-    async function loadDeployments() {
-      const btn = document.getElementById('refresh-btn');
-      const loading = document.getElementById('deploy-loading');
-      const grid = document.getElementById('deploy-grid');
-      const errorBanner = document.getElementById('deploy-error');
-
-      btn.classList.add('spinning');
-      errorBanner.classList.remove('visible');
-      grid.innerHTML = '';
-      loading.classList.add('visible');
-
-      try {
-        await ensureCurrentUser();
-
-        // Fetch all services concurrently; insert each card in sorted position as it resolves.
-        deployments = [];
-        await Promise.allSettled(SERVICES.map(async (service) => {
-          const repo = serviceToRepo(service);
-          let d;
-          try {
-            const workflows = await ghFetch(`/repos/${DEPLOY_ORG}/${repo}/actions/workflows`);
-            const deployWf = (workflows.workflows || []).find(w => w.name === DEPLOY_WORKFLOW);
-            d = deployWf
-              ? { service, repo, envs: await fetchDeployEnvMap(DEPLOY_ORG, repo, deployWf.id) }
-              : { service, repo, envs: new Map() };
-          } catch {
-            d = { service, repo, envs: new Map() };
-          }
-          deployments.push(d);
-          insertDeployCardSorted(grid, d);
-        }));
-
-        loading.classList.remove('visible');
-        deploymentsLoaded = true;
-        renderDeployStats();
-        updateTimestamp();
-      } catch (e) {
-        loading.classList.remove('visible');
-        document.getElementById('deploy-error-msg').textContent = e.message;
-        errorBanner.classList.add('visible');
-      } finally {
-        btn.classList.remove('spinning');
-      }
     }
 
     /* ============ INIT ============ */

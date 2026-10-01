@@ -1,6 +1,6 @@
 # work-homepage
 
-A single-page developer dashboard. Open `index.html` directly in a browser — no build step, no server, no dependencies. It pulls live data from GitHub and shows four tabs: **Reviews** (PRs assigned to you), **My PRs** (PRs you authored, with reviewer status and unresolved thread counts), **Deployments** (latest deploy per service/environment), and **Claude Code** (active Claude Code sessions on your machine).
+A single-page developer dashboard. Open `index.html` directly in a browser — no build step, no server, no dependencies. It pulls live data from GitHub and shows three tabs: **Reviews** (PRs assigned to you), **My PRs** (PRs you authored, with reviewer status and unresolved thread counts), and **Claude Code** (active Claude Code sessions on your machine).
 
 ## Prerequisites
 
@@ -53,16 +53,6 @@ To stop and remove:
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
 rm ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
-```
-
-## Org-specific customization (Deployments tab)
-
-The Deployments tab is hardcoded to the `Ala-com` GitHub org. If you need to adapt it for a different org, edit these constants near line 1764 of `index.html`:
-
-```js
-const DEPLOY_ORG = 'Ala-com';
-const DEPLOY_WORKFLOW = 'Deploy to EKS from ECR';
-const SERVICES = ['account', 'worker', 'rental', ...];
 ```
 
 ## Data & privacy
