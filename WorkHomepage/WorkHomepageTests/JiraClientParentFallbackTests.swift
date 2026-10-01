@@ -164,26 +164,26 @@ final class JiraClientParentFallbackTests: XCTestCase {
     func testEmptySubtaskDescriptionTriggersParentFetch() async throws {
         let keyed = KeyedResponder()
         keyed.register(
-            key: "JWT-200",
-            body: Self.subtaskBody(key: "JWT-200", parentKey: "JWT-100", descriptionText: "")
+            key: "PROJ-200",
+            body: Self.subtaskBody(key: "PROJ-200", parentKey: "PROJ-100", descriptionText: "")
         )
         keyed.register(
-            key: "JWT-100",
-            body: Self.parentBody(key: "JWT-100", descriptionText: "Real spec lives here on the parent.")
+            key: "PROJ-100",
+            body: Self.parentBody(key: "PROJ-100", descriptionText: "Real spec lives here on the parent.")
         )
         JiraStubURLProtocol.responder = { keyed.responder(for: $0) }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-200")
+        let ticket = try await client.fetchTicket(key: "PROJ-200")
 
         XCTAssertNotNil(ticket)
-        XCTAssertEqual(ticket?.key, "JWT-200")
+        XCTAssertEqual(ticket?.key, "PROJ-200")
         XCTAssertEqual(ticket?.description, "")
         XCTAssertNotNil(ticket?.parent, "parent should be attached when subtask description is empty")
-        XCTAssertEqual(ticket?.parent?.key, "JWT-100")
+        XCTAssertEqual(ticket?.parent?.key, "PROJ-100")
         XCTAssertEqual(ticket?.parent?.description, "Real spec lives here on the parent.")
-        XCTAssertEqual(keyed.callCounts["JWT-200"], 1)
-        XCTAssertEqual(keyed.callCounts["JWT-100"], 1, "parent should be fetched exactly once")
+        XCTAssertEqual(keyed.callCounts["PROJ-200"], 1)
+        XCTAssertEqual(keyed.callCounts["PROJ-100"], 1, "parent should be fetched exactly once")
     }
 
     // MARK: - Short subtask description → parent fetched
@@ -195,23 +195,23 @@ final class JiraClientParentFallbackTests: XCTestCase {
 
         let keyed = KeyedResponder()
         keyed.register(
-            key: "JWT-201",
-            body: Self.subtaskBody(key: "JWT-201", parentKey: "JWT-101", descriptionText: shortDesc)
+            key: "PROJ-201",
+            body: Self.subtaskBody(key: "PROJ-201", parentKey: "PROJ-101", descriptionText: shortDesc)
         )
         keyed.register(
-            key: "JWT-101",
-            body: Self.parentBody(key: "JWT-101", descriptionText: "Parent details.")
+            key: "PROJ-101",
+            body: Self.parentBody(key: "PROJ-101", descriptionText: "Parent details.")
         )
         JiraStubURLProtocol.responder = { keyed.responder(for: $0) }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-201")
+        let ticket = try await client.fetchTicket(key: "PROJ-201")
 
         XCTAssertEqual(ticket?.description, shortDesc)
         XCTAssertNotNil(ticket?.parent)
-        XCTAssertEqual(ticket?.parent?.key, "JWT-101")
-        XCTAssertEqual(keyed.callCounts["JWT-201"], 1)
-        XCTAssertEqual(keyed.callCounts["JWT-101"], 1)
+        XCTAssertEqual(ticket?.parent?.key, "PROJ-101")
+        XCTAssertEqual(keyed.callCounts["PROJ-201"], 1)
+        XCTAssertEqual(keyed.callCounts["PROJ-101"], 1)
     }
 
     // MARK: - Rich subtask description → parent NOT fetched
@@ -223,21 +223,21 @@ final class JiraClientParentFallbackTests: XCTestCase {
 
         let keyed = KeyedResponder()
         keyed.register(
-            key: "JWT-202",
-            body: Self.subtaskBody(key: "JWT-202", parentKey: "JWT-102", descriptionText: richDesc)
+            key: "PROJ-202",
+            body: Self.subtaskBody(key: "PROJ-202", parentKey: "PROJ-102", descriptionText: richDesc)
         )
         // Intentionally do NOT register the parent — if `fetchTicket` tries
         // to fetch it, we'll see either a 404-driven throw or a non-zero
-        // call count for JWT-102. Both fail the test.
+        // call count for PROJ-102. Both fail the test.
         JiraStubURLProtocol.responder = { keyed.responder(for: $0) }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-202")
+        let ticket = try await client.fetchTicket(key: "PROJ-202")
 
         XCTAssertEqual(ticket?.description, richDesc)
         XCTAssertNil(ticket?.parent, "rich subtask should NOT trigger a parent fetch")
-        XCTAssertEqual(keyed.callCounts["JWT-202"], 1)
-        XCTAssertNil(keyed.callCounts["JWT-102"], "parent endpoint should never be touched")
+        XCTAssertEqual(keyed.callCounts["PROJ-202"], 1)
+        XCTAssertNil(keyed.callCounts["PROJ-102"], "parent endpoint should never be touched")
     }
 
     // MARK: - Top-level ticket → no extra fetch
@@ -245,18 +245,18 @@ final class JiraClientParentFallbackTests: XCTestCase {
     func testTopLevelTicketDoesNotTriggerExtraFetch() async throws {
         let keyed = KeyedResponder()
         keyed.register(
-            key: "JWT-300",
-            body: Self.parentBody(key: "JWT-300", descriptionText: "Top-level ticket body.")
+            key: "PROJ-300",
+            body: Self.parentBody(key: "PROJ-300", descriptionText: "Top-level ticket body.")
         )
         JiraStubURLProtocol.responder = { keyed.responder(for: $0) }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-300")
+        let ticket = try await client.fetchTicket(key: "PROJ-300")
 
         XCTAssertNotNil(ticket)
         XCTAssertNil(ticket?.parentKey, "top-level ticket should have no parentKey")
         XCTAssertNil(ticket?.parent, "top-level ticket should have no attached parent")
-        XCTAssertEqual(keyed.callCounts["JWT-300"], 1, "exactly one fetch for a top-level ticket")
+        XCTAssertEqual(keyed.callCounts["PROJ-300"], 1, "exactly one fetch for a top-level ticket")
         XCTAssertEqual(keyed.callCounts.values.reduce(0, +), 1, "no other endpoints touched")
     }
 
@@ -267,30 +267,30 @@ final class JiraClientParentFallbackTests: XCTestCase {
         // ignore that claim and stop after one hop.
         let keyed = KeyedResponder()
         keyed.register(
-            key: "JWT-400",
-            body: Self.subtaskBody(key: "JWT-400", parentKey: "JWT-401", descriptionText: "")
+            key: "PROJ-400",
+            body: Self.subtaskBody(key: "PROJ-400", parentKey: "PROJ-401", descriptionText: "")
         )
         keyed.register(
-            key: "JWT-401",
+            key: "PROJ-401",
             body: Self.parentBody(
-                key: "JWT-401",
+                key: "PROJ-401",
                 descriptionText: "Parent that lies about having its own parent.",
-                claimsParent: "JWT-402"
+                claimsParent: "PROJ-402"
             )
         )
-        // JWT-402 deliberately NOT registered — any attempt to fetch it would
+        // PROJ-402 deliberately NOT registered — any attempt to fetch it would
         // 404 (and a 404 on the grandparent would surface as a thrown error,
         // failing the test loudly).
         JiraStubURLProtocol.responder = { keyed.responder(for: $0) }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-400")
+        let ticket = try await client.fetchTicket(key: "PROJ-400")
 
         XCTAssertNotNil(ticket?.parent)
-        XCTAssertEqual(ticket?.parent?.key, "JWT-401")
+        XCTAssertEqual(ticket?.parent?.key, "PROJ-401")
         XCTAssertNil(ticket?.parent?.parent, "the parent's parent must always be nil")
-        XCTAssertEqual(keyed.callCounts["JWT-400"], 1)
-        XCTAssertEqual(keyed.callCounts["JWT-401"], 1)
-        XCTAssertNil(keyed.callCounts["JWT-402"], "grandparent endpoint must NEVER be touched")
+        XCTAssertEqual(keyed.callCounts["PROJ-400"], 1)
+        XCTAssertEqual(keyed.callCounts["PROJ-401"], 1)
+        XCTAssertNil(keyed.callCounts["PROJ-402"], "grandparent endpoint must NEVER be touched")
     }
 }

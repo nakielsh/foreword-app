@@ -349,7 +349,7 @@ struct PRReviewStateRoot: Decodable {
 
 /// Decoded payload for the `pullRequest` field of `fetchPRReviewState`.
 struct PRReviewStatePayload: Decodable {
-    /// Head branch name from `headRefName` (e.g. `feature/JWT-123`).
+    /// Head branch name from `headRefName` (e.g. `feature/PROJ-123`).
     /// Nil when the field is absent in the response.
     let headRefName: String?
     let reviewRequests: ReviewRequests?

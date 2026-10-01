@@ -28,7 +28,7 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
 
     private func makeTicket() -> JiraTicket {
         JiraTicket(
-            key: "JWT-1",
+            key: "PROJ-1",
             summary: "Test ticket",
             description: "Test description.",
             status: "In Progress",
@@ -43,27 +43,27 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
     func testCustomTemplateVarsAreInterpolated() {
         let store = makeStore(template: "Reviewing PR {{prNumber}} in {{repo}} on {{branch}} at {{sha}}.")
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 42,
-            branch: "feature/JWT-1",
+            branch: "feature/PROJ-1",
             sha: "deadbeef",
             jira: nil,
             store: store
         )
-        XCTAssertTrue(prompt.contains("Reviewing PR 42 in Ala-com/foo on feature/JWT-1 at deadbeef."))
+        XCTAssertTrue(prompt.contains("Reviewing PR 42 in acme/foo on feature/PROJ-1 at deadbeef."))
     }
 
     func testCustomTemplateLeavesUnknownVarsLiteral() {
         let store = makeStore(template: "{{repo}} {{unknownVar}}")
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
             branch: "main",
             sha: "abc",
             jira: nil,
             store: store
         )
-        XCTAssertTrue(prompt.contains("Ala-com/foo {{unknownVar}}"))
+        XCTAssertTrue(prompt.contains("acme/foo {{unknownVar}}"))
     }
 
     // MARK: - Schema directive auto-append
@@ -71,7 +71,7 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
     func testSchemaDirectiveIsAutoAppendedWhenAbsentFromTemplate() {
         let store = makeStore(template: "Review PR {{prNumber}} in {{repo}}.")
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
             branch: "main",
             sha: "abc",
@@ -88,7 +88,7 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
         let template = "Do your thing.\n\nReturn JSON conformant to the provided schema. Findings must reference real file paths and line numbers from the changed files."
         let store = makeStore(template: template)
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
             branch: "main",
             sha: "abc",
@@ -105,15 +105,15 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
         let store = makeStore(template: "My custom body for {{repo}}.")
         let ticket = makeTicket()
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 7,
-            branch: "feature/JWT-1",
+            branch: "feature/PROJ-1",
             sha: "abc",
             jira: ticket,
             store: store
         )
-        XCTAssertTrue(prompt.hasPrefix("Jira: JWT-1\n"))
-        let jiraIdx = prompt.range(of: "Jira: JWT-1")!.lowerBound
+        XCTAssertTrue(prompt.hasPrefix("Jira: PROJ-1\n"))
+        let jiraIdx = prompt.range(of: "Jira: PROJ-1")!.lowerBound
         let bodyIdx = prompt.range(of: "My custom body")!.lowerBound
         XCTAssertLessThan(jiraIdx, bodyIdx)
     }
@@ -121,7 +121,7 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
     func testNoJiraBlockWithCustomTemplate() {
         let store = makeStore(template: "Custom body only, no jira.")
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 9,
             branch: "main",
             sha: "abc",
@@ -138,14 +138,14 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
         let store = ReviewPromptStore()
         // Build with explicit template — should NOT save to store.
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
             branch: "main",
             sha: "abc",
             jira: nil,
             template: "Direct template: {{repo}}."
         )
-        XCTAssertTrue(prompt.contains("Direct template: Ala-com/foo."))
+        XCTAssertTrue(prompt.contains("Direct template: acme/foo."))
         // Store's current value is unaffected.
         let storeCurrent = store.current()
         XCTAssertFalse(
@@ -156,7 +156,7 @@ final class OrchestratorPromptTemplateTests: XCTestCase {
 
     func testBuildWithTemplateAutoAppendsSchemaDirectiveWhenAbsent() {
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
             branch: "main",
             sha: "abc",

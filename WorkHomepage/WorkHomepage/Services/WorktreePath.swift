@@ -21,7 +21,7 @@ enum WorktreePath {
     /// `~/.work-homepage/worktrees/<repoFullName>/<prNumber>` location, so the
     /// launcher always points IntelliJ at a directory that lives outside any
     /// other project root.
-    /// `repoFullName` is `<org>/<repo>` (e.g. `Ala-com/work-homepage`).
+    /// `repoFullName` is `<org>/<repo>` (e.g. `acme/widgets`).
     static func url(for repoFullName: String, prNumber: Int) -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home

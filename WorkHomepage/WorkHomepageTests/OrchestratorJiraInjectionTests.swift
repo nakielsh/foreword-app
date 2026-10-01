@@ -16,7 +16,7 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
 
     func testPromptIncludesFullJiraBlock() {
         let ticket = JiraTicket(
-            key: "JWT-123",
+            key: "PROJ-123",
             summary: "Allow PEM-encoded keys",
             description: "First paragraph.\n\nSecond paragraph.",
             status: "In Progress",
@@ -25,25 +25,25 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
             parentKey: nil
         )
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 42,
-            branch: "feature/JWT-123",
+            branch: "feature/PROJ-123",
             sha: "deadbeef",
             jira: ticket
         )
 
         // Jira block is at the very top of the prompt.
-        XCTAssertTrue(prompt.hasPrefix("Jira: JWT-123\n"), "prompt should open with the Jira key line")
+        XCTAssertTrue(prompt.hasPrefix("Jira: PROJ-123\n"), "prompt should open with the Jira key line")
         XCTAssertTrue(prompt.contains("Title: Allow PEM-encoded keys"))
         XCTAssertTrue(prompt.contains("Type: Story  Status: In Progress  Priority: High"))
         XCTAssertTrue(prompt.contains("Description:\nFirst paragraph.\n\nSecond paragraph."))
         // PR meta still appears, after the Jira block.
-        XCTAssertTrue(prompt.contains("You are reviewing PR #42 in Ala-com/foo, branch feature/JWT-123."))
+        XCTAssertTrue(prompt.contains("You are reviewing PR #42 in acme/foo, branch feature/PROJ-123, head SHA deadbeef."))
         // Description tells the model Jira context was supplied.
         XCTAssertTrue(prompt.contains("verify the diff matches the Jira description above"))
 
         // Order: Jira block strictly precedes the PR-meta header.
-        let jiraIdx = prompt.range(of: "Jira: JWT-123")!.lowerBound
+        let jiraIdx = prompt.range(of: "Jira: PROJ-123")!.lowerBound
         let prIdx = prompt.range(of: "You are reviewing PR")!.lowerBound
         XCTAssertLessThan(jiraIdx, prIdx)
     }
@@ -52,7 +52,7 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
 
     func testMissingPriorityRendersAsUnset() {
         let ticket = JiraTicket(
-            key: "JWT-9",
+            key: "PROJ-9",
             summary: "x",
             description: "",
             status: "Open",
@@ -61,9 +61,9 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
             parentKey: nil
         )
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
-            branch: "bugfix/JWT-9",
+            branch: "bugfix/PROJ-9",
             sha: "abc",
             jira: ticket
         )
@@ -72,7 +72,7 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
 
     func testEmptyPriorityRendersAsUnset() {
         let ticket = JiraTicket(
-            key: "JWT-9",
+            key: "PROJ-9",
             summary: "x",
             description: "",
             status: "Open",
@@ -81,9 +81,9 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
             parentKey: nil
         )
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 1,
-            branch: "bugfix/JWT-9",
+            branch: "bugfix/PROJ-9",
             sha: "abc",
             jira: ticket
         )
@@ -94,7 +94,7 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
 
     func testNoJiraRendersJiraNullSentinel() {
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 7,
             branch: "main",
             sha: "abc",
@@ -106,7 +106,7 @@ final class OrchestratorJiraInjectionTests: XCTestCase {
         // Slice 23: body is now template-driven; the alignment clause in the
         // default template is the with-Jira variant. The sentinel we verify is
         // that the PR meta variables are interpolated correctly.
-        XCTAssertTrue(prompt.contains("You are reviewing PR #7 in Ala-com/foo, branch main."))
+        XCTAssertTrue(prompt.contains("You are reviewing PR #7 in acme/foo, branch main, head SHA abc."))
     }
 
     // MARK: - renderJiraBlock structural shape

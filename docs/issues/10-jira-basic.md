@@ -34,7 +34,7 @@ Prompt injection:
 
 ## Acceptance criteria
 
-- [ ] `TicketKeyExtractor` correctly returns the key for `feature/JWT-123`, `bugfix/JWT-456`, `hotfix/PROJ-1`, `chore/AB-9999`, `task/X-1`.
+- [ ] `TicketKeyExtractor` correctly returns the key for `feature/PROJ-123`, `bugfix/PROJ-456`, `hotfix/PROJ-1`, `chore/AB-9999`, `task/X-1`.
 - [ ] Returns nil for `main`, `master`, `dependabot/...`, branches with no recognized prefix.
 - [ ] When two keys appear in the branch, the first match wins.
 - [ ] `JiraClient` authenticates against Atlassian Cloud with email + API token from Keychain.

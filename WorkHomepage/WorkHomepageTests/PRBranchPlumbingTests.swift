@@ -42,9 +42,9 @@ final class PRBranchPlumbingTests: XCTestCase {
         let body = """
         {
           "number": 42,
-          "title": "Wire JWT badge",
+          "title": "Wire Jira badge",
           "head": {
-            "ref": "feature/JWT-1",
+            "ref": "feature/PROJ-1",
             "sha": "abc123def456abc123def456abc123def456abc123"
           }
         }
@@ -68,8 +68,8 @@ final class PRBranchPlumbingTests: XCTestCase {
             tokenProvider: { "tok" },
             onUnauthorized: {}
         )
-        let info = try await api.fetchPRBranchInfo(repo: "Ala-com/foo", number: 42)
-        XCTAssertEqual(info.headBranch, "feature/JWT-1")
+        let info = try await api.fetchPRBranchInfo(repo: "acme/foo", number: 42)
+        XCTAssertEqual(info.headBranch, "feature/PROJ-1")
         XCTAssertEqual(info.headSha, "abc123def456abc123def456abc123def456abc123")
     }
 
@@ -96,7 +96,7 @@ final class PRBranchPlumbingTests: XCTestCase {
             tokenProvider: { "tok" },
             onUnauthorized: {}
         )
-        let info = try await api.fetchPRBranchInfo(repo: "Ala-com/foo", number: 1)
+        let info = try await api.fetchPRBranchInfo(repo: "acme/foo", number: 1)
         XCTAssertEqual(info.headBranch, "main")
     }
 
@@ -104,13 +104,13 @@ final class PRBranchPlumbingTests: XCTestCase {
 
     func testMakePRReviewStatePropagatesBranchRef() {
         let payload = PRReviewStatePayload(
-            headRefName: "feature/JWT-1",
+            headRefName: "feature/PROJ-1",
             reviewRequests: nil,
             latestReviews: nil,
             reviewThreads: nil
         )
         let state = MyPRsAPI.makePRReviewState(payload: payload, currentUser: "viewer")
-        XCTAssertEqual(state.branchRef, "feature/JWT-1",
+        XCTAssertEqual(state.branchRef, "feature/PROJ-1",
                        "branchRef must be populated from headRefName in the GraphQL payload")
     }
 
@@ -158,7 +158,7 @@ final class PRBranchPlumbingTests: XCTestCase {
             onUnauthorized: {}
         )
         let state = try await api.fetchPRReviewState(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             number: 9,
             currentUser: "viewer"
         )
@@ -195,7 +195,7 @@ final class PRBranchPlumbingTests: XCTestCase {
             onUnauthorized: {}
         )
         let state = try await api.fetchPRReviewState(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             number: 9,
             currentUser: "viewer"
         )

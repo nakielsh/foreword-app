@@ -213,8 +213,8 @@ final class ClosedPRDetectorTests: XCTestCase {
     // MARK: - parsePRKey unit-level coverage
 
     func testParsePRKeyAcceptsWellFormed() {
-        let parsed = ClosedPRDetector.parsePRKey("Ala-com/work-homepage#123")
-        XCTAssertEqual(parsed?.repo, "Ala-com/work-homepage")
+        let parsed = ClosedPRDetector.parsePRKey("acme/widgets#123")
+        XCTAssertEqual(parsed?.repo, "acme/widgets")
         XCTAssertEqual(parsed?.prNumber, 123)
     }
 

@@ -29,7 +29,7 @@ struct PullRequest: Codable, Identifiable, Hashable {
     }
 
     /// Returns "org/repo" parsed from the tail of `repositoryURL`.
-    /// GitHub returns repository_url like "https://api.github.com/repos/Ala-com/foo".
+    /// GitHub returns repository_url like "https://api.github.com/repos/acme/foo".
     var repoFullName: String {
         let components = repositoryURL.pathComponents
         // pathComponents includes leading "/" then "repos" then "<org>" then "<repo>".

@@ -329,7 +329,7 @@ struct SettingsView: View {
                 Text("Project key prefixes (comma-separated, leave empty to accept any)")
                     .font(Font.appBody(size: 12))
                     .foregroundStyle(Color.textMuted)
-                TextField("JWT, ABC, XYZ", text: $prefixesText)
+                TextField("PROJ, ABC", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
             }
         }
@@ -416,7 +416,7 @@ struct SettingsView: View {
                 Text("Preview").font(Font.appBody(size: 12, weight: .semibold))
                     .foregroundStyle(Color.textMuted)
                 let stubTicket = JiraTicket(
-                    key: "JWT-1",
+                    key: "PROJ-1",
                     summary: "Stub ticket",
                     description: "Stub description for preview.",
                     status: "In Progress",
@@ -425,9 +425,9 @@ struct SettingsView: View {
                     parentKey: nil
                 )
                 let previewText = OrchestratorPrompt.build(
-                    repo: "Ala-com/foo",
+                    repo: "acme/foo",
                     prNumber: 123,
-                    branch: "feature/JWT-1",
+                    branch: "feature/PROJ-1",
                     sha: "abc1234",
                     jira: stubTicket,
                     template: reviewPromptText

@@ -36,9 +36,9 @@ final class PathFormatterTests: XCTestCase {
                  expectedRest: "",
                  line: #line),
             // Defensive extras — ensure realistic dev paths split sensibly.
-            Case(input: "/Users/Hubert-ale/src/ai/work-homepage",
+            Case(input: "/Users/jane/src/widgets",
                  expectedPrefix: "~",
-                 expectedRest: "/src/ai/work-homepage",
+                 expectedRest: "/src/widgets",
                  line: #line),
             Case(input: "/Users/",
                  expectedPrefix: "",

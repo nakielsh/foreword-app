@@ -31,7 +31,7 @@ A GitHub user listed in a PR's `requestedReviewers` or `latestReviews`. Distinct
 
 ## Jira Ticket
 
-An Atlassian Cloud issue extracted from a branch name (`feature/JWT-123` → `JWT-123`). Optionally has a **Parent Ticket** when the matched issue is a subtask with a thin description. Both ticket and parent are sent to Claude as part of the Review prompt's Jira block.
+An Atlassian Cloud issue extracted from a branch name (`feature/PROJ-123` → `PROJ-123`). Optionally has a **Parent Ticket** when the matched issue is a subtask with a thin description. Both ticket and parent are sent to Claude as part of the Review prompt's Jira block.
 
 A ticket is "found" if and only if `TicketKeyExtractor.extract(branchName:)` returns a key AND `JiraClient.fetchTicket` succeeds (cached or live). When found, a pill badge `[KEY]` renders on the PR card and links to `<jira.baseURL>/browse/<KEY>`. When not found, no badge.
 

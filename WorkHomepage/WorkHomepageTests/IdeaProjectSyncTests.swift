@@ -55,8 +55,8 @@ final class IdeaProjectSyncTests: XCTestCase {
             "gradle.xml": "<gradle/>",
             "vcs.xml": "<vcs/>",
             "kotlinc.xml": "<kotlinc/>",
-            "backend-rag.iml": "<module/>",
-            ".name": "backend-rag",
+            "widgets.iml": "<module/>",
+            ".name": "widgets",
             ".gitignore": "/workspace.xml\n"
         ])
         // Per-window state — must NOT propagate.
@@ -78,7 +78,7 @@ final class IdeaProjectSyncTests: XCTestCase {
 
         let destIdea = destRepo.appendingPathComponent(".idea")
         for allowed in ["modules.xml", "misc.xml", "compiler.xml", "gradle.xml",
-                        "vcs.xml", "kotlinc.xml", "backend-rag.iml", ".name", ".gitignore"] {
+                        "vcs.xml", "kotlinc.xml", "widgets.iml", ".name", ".gitignore"] {
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: destIdea.appendingPathComponent(allowed).path),
                 "expected project-model file \(allowed) in dest"

@@ -7,7 +7,7 @@
 //  Pure helper that pulls a Jira ticket key out of a PR head branch name.
 //  The PRD (Q6) defines the convention as `<type>/<KEY>` where `<type>`
 //  is one of feature/bugfix/hotfix/chore/task and `<KEY>` is an
-//  uppercase project key plus dash plus number, e.g. `JWT-123`.
+//  uppercase project key plus dash plus number, e.g. `PROJ-123`.
 //
 //  Returns nil for branches that do not match (main, master, dependabot/*,
 //  loose feature branches, …). The orchestrator treats nil as "no ticket"
@@ -18,7 +18,7 @@ import Foundation
 
 enum TicketKeyExtractor {
 
-    /// Returns the Jira key (e.g. "JWT-123") parsed from a branch name.
+    /// Returns the Jira key (e.g. "PROJ-123") parsed from a branch name.
     ///
     /// Pattern: `(feature|bugfix|hotfix|chore|task)/<KEY>` where `<KEY>`
     /// is `[A-Z]+-\d+`. Case-sensitive on the project key (Jira keys are
@@ -31,7 +31,7 @@ enum TicketKeyExtractor {
         guard !branchName.isEmpty else { return nil }
 
         // ^(?:feature|bugfix|hotfix|chore|task)/([A-Z]+-\d+)
-        // Anchored to the start so `JWT-123` (no prefix) is rejected.
+        // Anchored to the start so `PROJ-123` (no prefix) is rejected.
         let pattern = #"^(?:feature|bugfix|hotfix|chore|task)/([A-Z]+-\d+)"#
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {

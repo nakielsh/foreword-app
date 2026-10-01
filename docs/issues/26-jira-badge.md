@@ -24,7 +24,7 @@ Modules:
 ## Acceptance criteria
 
 - [ ] `JiraBadgePresenceTests`: helper logic returns `nil` (no badge) when extract returns nil; returns nil when `baseURL` is nil; returns `(key, url)` tuple when both present.
-- [ ] Visual: a PR with branch `feature/JWT-123` shows `[JWT-123]` pill on its Reviews card, MyPRs card, and Review modal header.
+- [ ] Visual: a PR with branch `feature/PROJ-123` shows `[PROJ-123]` pill on its Reviews card, MyPRs card, and Review modal header.
 - [ ] PR with branch `main` (no key) shows no pill on any card.
 - [ ] When Jira is unconfigured (no `baseURL` in Settings), no pill shows on any PR.
 - [ ] Clicking the pill opens `<baseURL>/browse/<KEY>` in the default browser.

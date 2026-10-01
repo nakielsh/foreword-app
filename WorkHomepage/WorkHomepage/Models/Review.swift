@@ -42,7 +42,7 @@ final class Review {
     /// Slice 14 keys versions on this; slice 07 just records it.
     var headSha: String
 
-    /// PR head branch name (e.g. `feature/JWT-123`).
+    /// PR head branch name (e.g. `feature/PROJ-123`).
     var headBranch: String
 
     /// One of `running`, `completed`, `failed`, `timeout`.

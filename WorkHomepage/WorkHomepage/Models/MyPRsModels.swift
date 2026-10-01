@@ -21,7 +21,7 @@ struct AuthoredPR: Codable, Identifiable, Hashable {
     let repositoryURL: URL
     let draft: Bool
     let createdAt: Date
-    /// Head branch ref (e.g. `feature/JWT-123`). Not present in the GitHub
+    /// Head branch ref (e.g. `feature/PROJ-123`). Not present in the GitHub
     /// issues search payload (`/search/issues`), so always nil when decoded
     /// from there. `JiraBadgeView` renders `EmptyView` when nil.
     let branchRef: String?
@@ -85,7 +85,7 @@ struct AuthoredPR: Codable, Identifiable, Hashable {
     }
 
     /// "<org>/<repo>" parsed from the tail of `repositoryURL`.
-    /// GitHub returns `repository_url` like `https://api.github.com/repos/Ala-com/foo`.
+    /// GitHub returns `repository_url` like `https://api.github.com/repos/acme/foo`.
     var repoFullName: String {
         let components = repositoryURL.pathComponents
         guard components.count >= 4 else { return repositoryURL.lastPathComponent }
@@ -148,7 +148,7 @@ struct PRReviewState: Hashable {
     let totalThreads: Int
     let totalComments: Int
     /// Head branch ref decoded from the GraphQL `headRefName` field
-    /// (e.g. `feature/JWT-123`). Nil when not returned by the query.
+    /// (e.g. `feature/PROJ-123`). Nil when not returned by the query.
     /// Piped into `AuthoredPR.branchRef` after assembly so `JiraBadgeView`
     /// can render on My PRs cards without a separate REST round-trip.
     let branchRef: String?

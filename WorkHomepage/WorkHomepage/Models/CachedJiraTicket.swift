@@ -40,7 +40,7 @@ final class CachedJiraTicket {
     /// `Finding`.
     @Attribute(.unique) var id: UUID
 
-    /// Jira issue key, e.g. `"JWT-123"`. Looked up via predicate in
+    /// Jira issue key, e.g. `"PROJ-123"`. Looked up via predicate in
     /// `JiraClient.Cache`; not unique-attributed at the schema level
     /// because the upsert helper handles dedup itself.
     var key: String

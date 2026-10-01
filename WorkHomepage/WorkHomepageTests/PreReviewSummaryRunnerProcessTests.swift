@@ -56,7 +56,7 @@ final class PreReviewSummaryRunnerProcessTests: XCTestCase {
 
         var collected: [SummaryEvent] = []
         let stream = PreReviewSummaryRunner.summarize(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 7,
             headSha: "deadbeef",
             timeout: .seconds(10),

@@ -19,7 +19,7 @@ import struct Foundation.URL
 /// head branch (`ref`) and SHA, which the Review button needs to ask
 /// `WorktreeManager` to prepare a worktree.
 struct PRBranchInfo: Decodable, Hashable {
-    /// Branch name on the head fork (e.g. `feature/JWT-123`).
+    /// Branch name on the head fork (e.g. `feature/PROJ-123`).
     let headBranch: String
     /// Commit SHA at the tip of `headBranch` at the moment of fetch.
     let headSha: String

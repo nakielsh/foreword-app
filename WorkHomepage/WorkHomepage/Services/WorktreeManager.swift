@@ -93,7 +93,7 @@ struct WorktreeManager {
     /// rooted at `~/.work-homepage/worktrees/<org>/<repo>/<prNumber>/` checked out
     /// at the head of `branch` (we resolve via `origin/<branch>` rather than the
     /// raw SHA so future re-prepares pick up new commits to the branch).
-    /// `repo` is `<org>/<repo>` (e.g. `Ala-com/work-homepage`).
+    /// `repo` is `<org>/<repo>` (e.g. `acme/widgets`).
     ///
     /// When `LocalRepoIndex` has a mapping for the repo (user already owns a
     /// clone under one of the configured roots), the worktree is still placed

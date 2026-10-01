@@ -31,7 +31,7 @@ Modules:
    - Multi-line `TextEditor` bound to the template, monospaced font.
    - "Reset to default" button.
    - "Variables" footer: `{{repo}}`, `{{prNumber}}`, `{{branch}}`, `{{sha}}`.
-   - **Live preview** pane: reuses `OrchestratorPrompt.build(repo: "Ala-com/foo", prNumber: 123, branch: "feature/JWT-1", sha: "abc1234", jira: <stub>)` and renders the result in a read-only scroll view.
+   - **Live preview** pane: reuses `OrchestratorPrompt.build(repo: "acme/foo", prNumber: 123, branch: "feature/PROJ-1", sha: "abc1234", jira: <stub>)` and renders the result in a read-only scroll view.
    - **Unknown variable warning**: yellow callout listing any `{{...}}` tokens in the template that aren't in the known-keys set.
    - Note: "Schema directive auto-appended if missing."
 

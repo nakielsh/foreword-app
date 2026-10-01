@@ -6,7 +6,7 @@ Port the Deployments tab to SwiftUI at feature parity with `index.html`.
 
 Behavior:
 
-- Hardcoded org `Ala-com`, hardcoded workflow name (`DEPLOY_WORKFLOW`), hardcoded `SERVICES` array. (Configurable settings come later — out of scope here.)
+- Hardcoded org `acme`, hardcoded workflow name (`DEPLOY_WORKFLOW`), hardcoded `SERVICES` array. (Configurable settings come later — out of scope here.)
 - For each service, query GitHub Actions workflow runs and find the latest run per environment (prod / dev) by paging through up to 200 runs (2 pages × 100). Avoids prod info being buried by frequent dev deploys.
 - A pure `DeploymentsParser` service exposes `parse(runName: String) -> Deployment?` that extracts `(env, version)` from run names (e.g. `[dev] Deploy v1.21.1-feature-xyz-snapshot`).
 - Cards render progressively: skeleton cards appear immediately, each fills as its API call resolves.

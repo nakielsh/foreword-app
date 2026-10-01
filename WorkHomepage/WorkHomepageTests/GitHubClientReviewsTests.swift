@@ -62,7 +62,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             tokenProvider: { "tok" },
             onUnauthorized: {}
         )
-        let reviews = try await api.fetchPRReviews(repo: "Ala-com/foo", number: 7)
+        let reviews = try await api.fetchPRReviews(repo: "acme/foo", number: 7)
         XCTAssertEqual(reviews.count, 2)
         XCTAssertEqual(reviews[0].user?.login, "alice")
         XCTAssertEqual(reviews[0].state, "APPROVED")
@@ -87,7 +87,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             onUnauthorized: { clearCalled = true }
         )
         do {
-            _ = try await api.fetchPRReviews(repo: "Ala-com/foo", number: 7)
+            _ = try await api.fetchPRReviews(repo: "acme/foo", number: 7)
             XCTFail("expected unauthorized")
         } catch GitHubError.unauthorized {
             XCTAssertTrue(clearCalled)
@@ -103,7 +103,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             onUnauthorized: {}
         )
         do {
-            _ = try await api.fetchPRReviews(repo: "Ala-com/foo", number: 7)
+            _ = try await api.fetchPRReviews(repo: "acme/foo", number: 7)
             XCTFail("expected missingToken")
         } catch GitHubError.missingToken {
             // expected
@@ -146,7 +146,7 @@ final class GitHubClientReviewsTests: XCTestCase {
             tokenProvider: { "tok" },
             onUnauthorized: {}
         )
-        let commits = try await api.fetchPRCommits(repo: "Ala-com/foo", number: 9)
+        let commits = try await api.fetchPRCommits(repo: "acme/foo", number: 9)
         XCTAssertEqual(commits.count, 2)
         XCTAssertNotNil(commits[0].effectiveDate)
         XCTAssertEqual(commits[0].effectiveDate, ISO8601DateFormatter().date(from: "2026-04-03T10:00:00Z"))
@@ -167,9 +167,9 @@ final class GitHubClientReviewsTests: XCTestCase {
               "id": 1,
               "number": 7,
               "title": "Wire reviews",
-              "html_url": "https://github.com/Ala-com/foo/pull/7",
+              "html_url": "https://github.com/acme/foo/pull/7",
               "user": { "login": "octo" },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo",
+              "repository_url": "https://api.github.com/repos/acme/foo",
               "draft": false,
               "created_at": "2026-04-01T10:00:00Z"
             }
@@ -226,7 +226,7 @@ final class GitHubClientReviewsTests: XCTestCase {
         let pr = prs[0]
         XCTAssertEqual(pr.id, 1)
         XCTAssertEqual(pr.number, 7)
-        XCTAssertEqual(pr.repoFullName, "Ala-com/foo")
+        XCTAssertEqual(pr.repoFullName, "acme/foo")
         XCTAssertEqual(pr.approvalCount, 1)
         XCTAssertEqual(pr.changesRequestedCount, 1)
         XCTAssertTrue(pr.isDismissed)
@@ -245,9 +245,9 @@ final class GitHubClientReviewsTests: XCTestCase {
               "id": 2,
               "number": 9,
               "title": "Refactor",
-              "html_url": "https://github.com/Ala-com/foo/pull/9",
+              "html_url": "https://github.com/acme/foo/pull/9",
               "user": { "login": "octo" },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo",
+              "repository_url": "https://api.github.com/repos/acme/foo",
               "draft": false,
               "created_at": "2026-03-30T10:00:00Z"
             }
@@ -315,9 +315,9 @@ final class GitHubClientReviewsTests: XCTestCase {
               "id": 3,
               "number": 11,
               "title": "no draft field",
-              "html_url": "https://github.com/Ala-com/foo/pull/11",
+              "html_url": "https://github.com/acme/foo/pull/11",
               "user": { "login": "octo" },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo",
+              "repository_url": "https://api.github.com/repos/acme/foo",
               "created_at": "2026-04-01T10:00:00Z"
             }
           ]
@@ -340,9 +340,9 @@ final class GitHubClientReviewsTests: XCTestCase {
             id: 1,
             number: 1,
             title: "T",
-            htmlURL: URL(string: "https://github.com/Ala-com/foo/pull/1")!,
+            htmlURL: URL(string: "https://github.com/acme/foo/pull/1")!,
             authorLogin: "octo",
-            repoFullName: "Ala-com/foo",
+            repoFullName: "acme/foo",
             createdAt: Date(),
             isDraft: false,
             approvalCount: 2,
@@ -365,9 +365,9 @@ final class GitHubClientReviewsTests: XCTestCase {
             id: 2,
             number: 2,
             title: "T",
-            htmlURL: URL(string: "https://github.com/Ala-com/foo/pull/2")!,
+            htmlURL: URL(string: "https://github.com/acme/foo/pull/2")!,
             authorLogin: "octo",
-            repoFullName: "Ala-com/foo",
+            repoFullName: "acme/foo",
             createdAt: Date(),
             isDraft: false,
             approvalCount: 1,
@@ -450,9 +450,9 @@ final class GitHubClientReviewsTests: XCTestCase {
               "id": 10,
               "number": 42,
               "title": "Resilient PR",
-              "html_url": "https://github.com/Ala-com/foo/pull/42",
+              "html_url": "https://github.com/acme/foo/pull/42",
               "user": { "login": "octo", "avatar_url": null },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo",
+              "repository_url": "https://api.github.com/repos/acme/foo",
               "draft": false,
               "created_at": "2026-04-01T10:00:00Z"
             }

@@ -234,7 +234,7 @@ struct FirstRunWizard: View {
                 Text("Comma-separated. Empty == accept any [A-Z]+-\\d+.")
                     .font(Font.appBody(size: 12))
                     .foregroundStyle(Color.textMuted)
-                TextField("JWT, ABC, XYZ", text: $prefixesText)
+                TextField("PROJ, ABC", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
             }
         }

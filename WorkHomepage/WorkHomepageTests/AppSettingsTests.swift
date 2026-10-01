@@ -61,17 +61,17 @@ final class AppSettingsTests: XCTestCase {
     }
 
     func testProjectKeyPrefixesRoundTrip() {
-        AppSettings.setProjectKeyPrefixes(["JWT", "ABC", "XYZ"], defaults: defaults)
-        XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), ["JWT", "ABC", "XYZ"])
+        AppSettings.setProjectKeyPrefixes(["PROJ", "ABC", "XYZ"], defaults: defaults)
+        XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), ["PROJ", "ABC", "XYZ"])
     }
 
     func testProjectKeyPrefixesTrimsAndDropsEmpty() {
-        AppSettings.setProjectKeyPrefixes(["  JWT  ", "", " ", "ABC"], defaults: defaults)
-        XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), ["JWT", "ABC"])
+        AppSettings.setProjectKeyPrefixes(["  PROJ  ", "", " ", "ABC"], defaults: defaults)
+        XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), ["PROJ", "ABC"])
     }
 
     func testProjectKeyPrefixesEmptyArrayPersists() {
-        AppSettings.setProjectKeyPrefixes(["JWT"], defaults: defaults)
+        AppSettings.setProjectKeyPrefixes(["PROJ"], defaults: defaults)
         AppSettings.setProjectKeyPrefixes([], defaults: defaults)
         XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), [])
     }

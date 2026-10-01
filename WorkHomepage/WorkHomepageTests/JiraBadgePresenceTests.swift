@@ -25,12 +25,12 @@ final class JiraBadgePresenceTests: XCTestCase {
 
     func testResolvesKeyAndURLFromValidBranch() {
         let result = JiraBadgeView.resolve(
-            branchName: "feature/JWT-123",
+            branchName: "feature/PROJ-123",
             baseURL: baseURL
         )
         XCTAssertNotNil(result)
-        XCTAssertEqual(result?.key, "JWT-123")
-        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/JWT-123"))
+        XCTAssertEqual(result?.key, "PROJ-123")
+        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/PROJ-123"))
     }
 
     func testAllSupportedPrefixesResolve() {
@@ -78,12 +78,12 @@ final class JiraBadgePresenceTests: XCTestCase {
     // MARK: - Jira not configured
 
     func testReturnsNilWhenBaseURLIsNil() {
-        let result = JiraBadgeView.resolve(branchName: "feature/JWT-123", baseURL: nil)
+        let result = JiraBadgeView.resolve(branchName: "feature/PROJ-123", baseURL: nil)
         XCTAssertNil(result)
     }
 
     func testReturnsNilWhenBaseURLIsEmpty() {
-        let result = JiraBadgeView.resolve(branchName: "feature/JWT-123", baseURL: "")
+        let result = JiraBadgeView.resolve(branchName: "feature/PROJ-123", baseURL: "")
         XCTAssertNil(result)
     }
 
@@ -91,21 +91,21 @@ final class JiraBadgePresenceTests: XCTestCase {
 
     func testTrailingSlashOnBaseURLDoesNotDoubleSlashInURL() {
         let result = JiraBadgeView.resolve(
-            branchName: "feature/JWT-123",
+            branchName: "feature/PROJ-123",
             baseURL: "https://example.atlassian.net/"
         )
         XCTAssertNotNil(result)
         let urlString = result?.url.absoluteString ?? ""
         XCTAssertFalse(urlString.contains("//browse"), "URL should not contain double-slash before /browse: \(urlString)")
-        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/JWT-123"))
+        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/PROJ-123"))
     }
 
     func testMultipleTrailingSlashesNormalised() {
         let result = JiraBadgeView.resolve(
-            branchName: "feature/JWT-123",
+            branchName: "feature/PROJ-123",
             baseURL: "https://example.atlassian.net///"
         )
         XCTAssertNotNil(result)
-        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/JWT-123"))
+        XCTAssertEqual(result?.url, URL(string: "https://example.atlassian.net/browse/PROJ-123"))
     }
 }

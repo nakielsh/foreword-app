@@ -242,8 +242,8 @@ final class JiraCacheTests: XCTestCase {
     func testFirstFetchPopulatesCache() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-1",
-            fullBody: Self.ticketBody(key: "JWT-1", descriptionText: String(repeating: "x", count: 200)),
+            key: "PROJ-1",
+            fullBody: Self.ticketBody(key: "PROJ-1", descriptionText: String(repeating: "x", count: 200)),
             updated: "2026-05-08T10:00:00.000+0000"
         )
         installWithTransportFailures(recorder)
@@ -252,15 +252,15 @@ final class JiraCacheTests: XCTestCase {
         let context = container.mainContext
         let client = makeClient(session: makeSession(), context: context)
 
-        let ticket = try await client.fetchTicket(key: "JWT-1")
-        XCTAssertEqual(ticket?.key, "JWT-1")
-        XCTAssertEqual(recorder.cheapFetchCount(for: "JWT-1"), 1)
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-1"), 1)
+        let ticket = try await client.fetchTicket(key: "PROJ-1")
+        XCTAssertEqual(ticket?.key, "PROJ-1")
+        XCTAssertEqual(recorder.cheapFetchCount(for: "PROJ-1"), 1)
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-1"), 1)
 
         let descriptor = FetchDescriptor<CachedJiraTicket>()
         let rows = try context.fetch(descriptor)
         XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows.first?.key, "JWT-1")
+        XCTAssertEqual(rows.first?.key, "PROJ-1")
         XCTAssertEqual(rows.first?.updatedAt, "2026-05-08T10:00:00.000+0000")
     }
 
@@ -268,8 +268,8 @@ final class JiraCacheTests: XCTestCase {
     func testRepeatFetchSkipsFullFetchWhenUpdatedUnchanged() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-2",
-            fullBody: Self.ticketBody(key: "JWT-2", descriptionText: String(repeating: "y", count: 200)),
+            key: "PROJ-2",
+            fullBody: Self.ticketBody(key: "PROJ-2", descriptionText: String(repeating: "y", count: 200)),
             updated: "2026-05-08T10:00:00.000+0000"
         )
         installWithTransportFailures(recorder)
@@ -278,14 +278,14 @@ final class JiraCacheTests: XCTestCase {
         let context = container.mainContext
         let client = makeClient(session: makeSession(), context: context)
 
-        _ = try await client.fetchTicket(key: "JWT-2")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-2"), 1)
+        _ = try await client.fetchTicket(key: "PROJ-2")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-2"), 1)
 
         // Second fetch — cache hit expected.
-        let ticket2 = try await client.fetchTicket(key: "JWT-2")
-        XCTAssertEqual(ticket2?.key, "JWT-2")
-        XCTAssertEqual(recorder.cheapFetchCount(for: "JWT-2"), 2, "cheap update fires on every call")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-2"), 1, "full fetch must NOT be repeated when updated is unchanged")
+        let ticket2 = try await client.fetchTicket(key: "PROJ-2")
+        XCTAssertEqual(ticket2?.key, "PROJ-2")
+        XCTAssertEqual(recorder.cheapFetchCount(for: "PROJ-2"), 2, "cheap update fires on every call")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-2"), 1, "full fetch must NOT be repeated when updated is unchanged")
     }
 
     /// `updated` bumped upstream: cheap call + full fetch fire, cache row
@@ -293,8 +293,8 @@ final class JiraCacheTests: XCTestCase {
     func testUpdatedChangeRefreshesCache() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-3",
-            fullBody: Self.ticketBody(key: "JWT-3", summary: "Old", descriptionText: String(repeating: "z", count: 200)),
+            key: "PROJ-3",
+            fullBody: Self.ticketBody(key: "PROJ-3", summary: "Old", descriptionText: String(repeating: "z", count: 200)),
             updated: "2026-05-08T10:00:00.000+0000"
         )
         installWithTransportFailures(recorder)
@@ -303,20 +303,20 @@ final class JiraCacheTests: XCTestCase {
         let context = container.mainContext
         let client = makeClient(session: makeSession(), context: context)
 
-        _ = try await client.fetchTicket(key: "JWT-3")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-3"), 1)
+        _ = try await client.fetchTicket(key: "PROJ-3")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-3"), 1)
 
         // Bump upstream `updated` and rotate the body.
-        recorder.setUpdated(key: "JWT-3", updated: "2026-05-09T11:11:11.000+0000")
+        recorder.setUpdated(key: "PROJ-3", updated: "2026-05-09T11:11:11.000+0000")
         recorder.setFullBody(
-            key: "JWT-3",
-            fullBody: Self.ticketBody(key: "JWT-3", summary: "New", descriptionText: String(repeating: "z", count: 200))
+            key: "PROJ-3",
+            fullBody: Self.ticketBody(key: "PROJ-3", summary: "New", descriptionText: String(repeating: "z", count: 200))
         )
 
-        let ticket2 = try await client.fetchTicket(key: "JWT-3")
+        let ticket2 = try await client.fetchTicket(key: "PROJ-3")
         XCTAssertEqual(ticket2?.summary, "New")
-        XCTAssertEqual(recorder.cheapFetchCount(for: "JWT-3"), 2)
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-3"), 2, "stale cache row must trigger a full refetch")
+        XCTAssertEqual(recorder.cheapFetchCount(for: "PROJ-3"), 2)
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-3"), 2, "stale cache row must trigger a full refetch")
 
         let rows = try context.fetch(FetchDescriptor<CachedJiraTicket>())
         XCTAssertEqual(rows.count, 1)
@@ -329,8 +329,8 @@ final class JiraCacheTests: XCTestCase {
     func testTransportErrorOnCheapCallReturnsCached() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-4",
-            fullBody: Self.ticketBody(key: "JWT-4", summary: "Cached summary", descriptionText: String(repeating: "q", count: 200)),
+            key: "PROJ-4",
+            fullBody: Self.ticketBody(key: "PROJ-4", summary: "Cached summary", descriptionText: String(repeating: "q", count: 200)),
             updated: "2026-05-08T10:00:00.000+0000"
         )
         installWithTransportFailures(recorder)
@@ -339,24 +339,24 @@ final class JiraCacheTests: XCTestCase {
         let context = container.mainContext
         let client = makeClient(session: makeSession(), context: context)
 
-        _ = try await client.fetchTicket(key: "JWT-4")
+        _ = try await client.fetchTicket(key: "PROJ-4")
 
         // Now make the cheap call fail at the transport layer.
-        recorder.failCheapTransport(forKey: "JWT-4")
-        let ticket = try await client.fetchTicket(key: "JWT-4")
+        recorder.failCheapTransport(forKey: "PROJ-4")
+        let ticket = try await client.fetchTicket(key: "PROJ-4")
         XCTAssertEqual(ticket?.summary, "Cached summary", "stale cached row should be returned on transport failure")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-4"), 1, "no extra full fetch on cheap-call transport failure")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-4"), 1, "no extra full fetch on cheap-call transport failure")
     }
 
     /// Network error on the cheap call with NO cached row: must throw.
     func testTransportErrorWithoutCachedRowThrows() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-5",
-            fullBody: Self.ticketBody(key: "JWT-5", descriptionText: String(repeating: "p", count: 200)),
+            key: "PROJ-5",
+            fullBody: Self.ticketBody(key: "PROJ-5", descriptionText: String(repeating: "p", count: 200)),
             updated: "2026-05-08T10:00:00.000+0000"
         )
-        recorder.failCheapTransport(forKey: "JWT-5")
+        recorder.failCheapTransport(forKey: "PROJ-5")
         installWithTransportFailures(recorder)
 
         let container = try makeContainer()
@@ -364,7 +364,7 @@ final class JiraCacheTests: XCTestCase {
         let client = makeClient(session: makeSession(), context: context)
 
         do {
-            _ = try await client.fetchTicket(key: "JWT-5")
+            _ = try await client.fetchTicket(key: "PROJ-5")
             XCTFail("Expected throw on transport failure with empty cache")
         } catch {
             // Expected — any URLError is acceptable.
@@ -377,20 +377,20 @@ final class JiraCacheTests: XCTestCase {
     func testParentResolvedFromCacheOnRepeatedSubtaskFetch() async throws {
         let recorder = Recorder()
         recorder.register(
-            key: "JWT-S1",
+            key: "PROJ-S1",
             fullBody: Self.ticketBody(
-                key: "JWT-S1",
+                key: "PROJ-S1",
                 summary: "Sub",
                 descriptionText: "",
                 issueType: "Sub-task",
-                parentKey: "JWT-P1"
+                parentKey: "PROJ-P1"
             ),
             updated: "2026-05-08T10:00:00.000+0000"
         )
         recorder.register(
-            key: "JWT-P1",
+            key: "PROJ-P1",
             fullBody: Self.ticketBody(
-                key: "JWT-P1",
+                key: "PROJ-P1",
                 summary: "Parent",
                 descriptionText: "Parent has the real spec.",
                 issueType: "Story"
@@ -403,23 +403,23 @@ final class JiraCacheTests: XCTestCase {
         let context = container.mainContext
         let client = makeClient(session: makeSession(), context: context)
 
-        let first = try await client.fetchTicket(key: "JWT-S1")
-        XCTAssertEqual(first?.parent?.key, "JWT-P1")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-S1"), 1)
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-P1"), 1)
+        let first = try await client.fetchTicket(key: "PROJ-S1")
+        XCTAssertEqual(first?.parent?.key, "PROJ-P1")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-S1"), 1)
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-P1"), 1)
 
         // Both cache rows present.
         let rows = try context.fetch(FetchDescriptor<CachedJiraTicket>())
-        XCTAssertEqual(Set(rows.map(\.key)), ["JWT-S1", "JWT-P1"])
+        XCTAssertEqual(Set(rows.map(\.key)), ["PROJ-S1", "PROJ-P1"])
 
         // Second fetch: nothing upstream changed.
-        let second = try await client.fetchTicket(key: "JWT-S1")
-        XCTAssertEqual(second?.parent?.key, "JWT-P1")
+        let second = try await client.fetchTicket(key: "PROJ-S1")
+        XCTAssertEqual(second?.parent?.key, "PROJ-P1")
         XCTAssertEqual(second?.parent?.summary, "Parent")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-S1"), 1, "subtask full fetch not repeated")
-        XCTAssertEqual(recorder.fullFetchCount(for: "JWT-P1"), 1, "parent full fetch not repeated")
-        XCTAssertEqual(recorder.cheapFetchCount(for: "JWT-S1"), 2)
-        XCTAssertEqual(recorder.cheapFetchCount(for: "JWT-P1"), 2)
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-S1"), 1, "subtask full fetch not repeated")
+        XCTAssertEqual(recorder.fullFetchCount(for: "PROJ-P1"), 1, "parent full fetch not repeated")
+        XCTAssertEqual(recorder.cheapFetchCount(for: "PROJ-S1"), 2)
+        XCTAssertEqual(recorder.cheapFetchCount(for: "PROJ-P1"), 2)
     }
 
     /// "Clear Jira cache" — verifies the bulk delete path that

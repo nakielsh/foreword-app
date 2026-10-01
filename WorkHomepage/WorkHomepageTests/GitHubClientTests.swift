@@ -35,9 +35,9 @@ final class GitHubClientTests: XCTestCase {
               "id": 101,
               "number": 7,
               "title": "Add cool feature",
-              "html_url": "https://github.com/Ala-com/foo/pull/7",
+              "html_url": "https://github.com/acme/foo/pull/7",
               "user": { "login": "octocat" },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo"
+              "repository_url": "https://api.github.com/repos/acme/foo"
             }
           ]
         }
@@ -65,7 +65,7 @@ final class GitHubClientTests: XCTestCase {
         XCTAssertEqual(pr.number, 7)
         XCTAssertEqual(pr.title, "Add cool feature")
         XCTAssertEqual(pr.user.login, "octocat")
-        XCTAssertEqual(pr.repoFullName, "Ala-com/foo")
+        XCTAssertEqual(pr.repoFullName, "acme/foo")
     }
 
     func testUnauthorizedClearsTokenAndThrows() async {

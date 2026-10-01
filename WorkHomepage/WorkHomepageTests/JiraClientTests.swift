@@ -42,7 +42,7 @@ final class JiraClientTests: XCTestCase {
     func testHappyPathDecodesTicket() async throws {
         let body = """
         {
-          "key": "JWT-123",
+          "key": "PROJ-123",
           "fields": {
             "summary": "Allow PEM-encoded keys",
             "status": { "name": "In Progress" },
@@ -68,10 +68,10 @@ final class JiraClientTests: XCTestCase {
         }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-123")
+        let ticket = try await client.fetchTicket(key: "PROJ-123")
 
         XCTAssertNotNil(ticket)
-        XCTAssertEqual(ticket?.key, "JWT-123")
+        XCTAssertEqual(ticket?.key, "PROJ-123")
         XCTAssertEqual(ticket?.summary, "Allow PEM-encoded keys")
         XCTAssertEqual(ticket?.status, "In Progress")
         XCTAssertEqual(ticket?.issueType, "Story")
@@ -81,7 +81,7 @@ final class JiraClientTests: XCTestCase {
 
         // URL contains the requested key and the field projection.
         XCTAssertEqual(seenURL?.host, "acme.atlassian.net")
-        XCTAssertEqual(seenURL?.path, "/rest/api/3/issue/JWT-123")
+        XCTAssertEqual(seenURL?.path, "/rest/api/3/issue/PROJ-123")
         let queryItems = URLComponents(url: seenURL!, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let fieldsItem = queryItems.first { $0.name == "fields" }?.value
         XCTAssertEqual(fieldsItem, "summary,description,status,issuetype,priority,parent")
@@ -96,13 +96,13 @@ final class JiraClientTests: XCTestCase {
     func testSubtaskExposesParentKey() async throws {
         let body = """
         {
-          "key": "JWT-200",
+          "key": "PROJ-200",
           "fields": {
             "summary": "Sub-task",
             "status": { "name": "To Do" },
             "issuetype": { "name": "Sub-task" },
             "priority": { "name": "Medium" },
-            "parent": { "key": "JWT-123" },
+            "parent": { "key": "PROJ-123" },
             "description": null
           }
         }
@@ -112,9 +112,9 @@ final class JiraClientTests: XCTestCase {
         }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-200")
+        let ticket = try await client.fetchTicket(key: "PROJ-200")
 
-        XCTAssertEqual(ticket?.parentKey, "JWT-123")
+        XCTAssertEqual(ticket?.parentKey, "PROJ-123")
         XCTAssertEqual(ticket?.description, "")
     }
 
@@ -123,7 +123,7 @@ final class JiraClientTests: XCTestCase {
     func testDescriptionWithHeadingAndBulletsFlattens() async throws {
         let body = """
         {
-          "key": "JWT-300",
+          "key": "PROJ-300",
           "fields": {
             "summary": "Lists",
             "status": { "name": "Open" },
@@ -152,7 +152,7 @@ final class JiraClientTests: XCTestCase {
         }
 
         let client = makeClient(session: makeSession())
-        let ticket = try await client.fetchTicket(key: "JWT-300")
+        let ticket = try await client.fetchTicket(key: "PROJ-300")
 
         XCTAssertEqual(
             ticket?.description,
@@ -169,7 +169,7 @@ final class JiraClientTests: XCTestCase {
         }
         let client = makeClient(session: makeSession())
         do {
-            _ = try await client.fetchTicket(key: "JWT-1")
+            _ = try await client.fetchTicket(key: "PROJ-1")
             XCTFail("Expected JiraError.unauthorized")
         } catch JiraClient.JiraError.unauthorized {
             // expected
@@ -186,7 +186,7 @@ final class JiraClientTests: XCTestCase {
         }
         let client = makeClient(session: makeSession())
         do {
-            _ = try await client.fetchTicket(key: "JWT-1")
+            _ = try await client.fetchTicket(key: "PROJ-1")
             XCTFail("Expected JiraError.ticketNotFound")
         } catch JiraClient.JiraError.ticketNotFound {
             // expected — orchestrator maps this to "no Jira context"
@@ -203,7 +203,7 @@ final class JiraClientTests: XCTestCase {
         }
         let client = makeClient(session: makeSession())
         do {
-            _ = try await client.fetchTicket(key: "JWT-1")
+            _ = try await client.fetchTicket(key: "PROJ-1")
             XCTFail("Expected JiraError.http")
         } catch JiraClient.JiraError.http(let status, let body) {
             XCTAssertEqual(status, 503)
@@ -223,7 +223,7 @@ final class JiraClientTests: XCTestCase {
             tokenProvider: { "tok" }
         )
         do {
-            _ = try await client.fetchTicket(key: "JWT-1")
+            _ = try await client.fetchTicket(key: "PROJ-1")
             XCTFail("Expected JiraError.notConfigured")
         } catch JiraClient.JiraError.notConfigured {
             // expected
@@ -240,7 +240,7 @@ final class JiraClientTests: XCTestCase {
             tokenProvider: { "tok" }
         )
         do {
-            _ = try await client.fetchTicket(key: "JWT-1")
+            _ = try await client.fetchTicket(key: "PROJ-1")
             XCTFail("Expected JiraError.notConfigured")
         } catch JiraClient.JiraError.notConfigured {
             // expected

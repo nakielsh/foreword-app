@@ -19,7 +19,7 @@ From my perspective:
 1. I open the app. It refreshes my review-requested PRs (manually, on a button click — same as today).
 2. On any PR card, I click **Review**. A modal sheet opens. While I watch, the app:
    - Auto-clones the repo as a bare clone the first time (`~/.work-homepage/repos/<org>/<repo>.git`), then creates a worktree at `~/.work-homepage/worktrees/<org>/<repo>/<pr#>/` against the PR head.
-   - Extracts the Jira key from the branch name (`feature/JWT-123` → `JWT-123`), fetches the ticket, and if it's a thin subtask, also fetches the parent.
+   - Extracts the Jira key from the branch name (`feature/PROJ-123` → `PROJ-123`), fetches the ticket, and if it's a thin subtask, also fetches the parent.
    - Spawns `claude -p ...` in the worktree with a strict allowed-tools list, streaming events back to the modal so I see live progress.
    - Receives a structured JSON result with verdict, summary, Jira-alignment notes, and a list of findings (severity, file, line, title, message, optional suggestion).
 3. The modal renders findings grouped by severity. Clicking a finding launches IntelliJ at the worktree, jumping to the right file and line.
@@ -58,7 +58,7 @@ The app is for me only. Ad-hoc signed, no notarization, no App Store, no App San
 
 ### Jira integration
 
-21. As a developer, I want the app to extract the Jira ticket from the branch name (`feature/JWT-123`, `bugfix/JWT-456`, etc.), so that I do not have to paste anything.
+21. As a developer, I want the app to extract the Jira ticket from the branch name (`feature/PROJ-123`, `bugfix/PROJ-456`, etc.), so that I do not have to paste anything.
 22. As a developer, I want the matched Jira ticket title and description sent to Claude as part of the review prompt, so that Claude knows what the ticket actually wants.
 23. As a developer, I want subtasks with thin descriptions to also fetch the parent ticket's description, so that Claude has the real context (we frequently put the meat in the parent and use subtasks as breakdown).
 24. As a developer, I want Jira tickets cached locally and refreshed only when the `updated` timestamp changes, so that reviews do not slow down on Jira's API every time.
@@ -80,7 +80,7 @@ The app is for me only. Ad-hoc signed, no notarization, no App Store, no App San
 
 35. As a developer, I want the **My PRs** tab to show my open authored PRs with per-reviewer status badges, unresolved thread counts split between "awaiting you" and "awaiting others", and total comment counts — same as today.
 36. As a developer, I want the **Claude Code** tab to show currently-running Claude Code sessions, read on-demand from `~/.claude/sessions/*.json` and `~/.claude/history.jsonl`, with PID liveness validated.
-37. As a developer, I want the **Deployments** tab to show the latest deployment per service per environment for the `Ala-com` org, parsed from the configured workflow's run names.
+37. As a developer, I want the **Deployments** tab to show the latest deployment per service per environment for the `acme` org, parsed from the configured workflow's run names.
 38. As a developer, I want all four tabs refreshable via a single toolbar refresh button, so that I keep the manual-refresh model from today.
 
 ### Auth, secrets, settings
@@ -207,7 +207,7 @@ Each phase shippable on its own.
 
 **Modules with tests:**
 
-- **TicketKeyExtractor** — pure function. Table-driven tests over branch names: `feature/JWT-123` → `JWT-123`, `bugfix/PROJ-1`, `hotfix/AB-9999`, branches without prefix, branches with multiple keys (first wins), main/master/non-conforming names → nil. Easy, high-value.
+- **TicketKeyExtractor** — pure function. Table-driven tests over branch names: `feature/PROJ-123` → `PROJ-123`, `bugfix/PROJ-1`, `hotfix/AB-9999`, branches without prefix, branches with multiple keys (first wins), main/master/non-conforming names → nil. Easy, high-value.
 
 - **DeploymentsParser** — pure function. Table-driven tests over real workflow run names from current HTML implementation, including `[dev] Deploy v1.21.1-feature-xyz-snapshot`, prod-style names, malformed names, names without env tag.
 
@@ -242,7 +242,7 @@ Each phase shippable on its own.
 - Slack/Linear/etc. notifications when a review completes.
 - Automatic re-review on push (only manual re-review supported).
 - Auto-refresh of the Reviews list (manual only by default; optional toggle for PR list refresh, never for reviews).
-- Multi-org Deployments tab generalization (still hardcoded to `Ala-com`, configurable via Settings later).
+- Multi-org Deployments tab generalization (still hardcoded to `acme`, configurable via Settings later).
 - Anthropic API key management (delegated entirely to `claude` CLI).
 - Linux/Windows support.
 - Anything iOS.
@@ -307,7 +307,7 @@ Five additions, each shippable independently:
 65. As a developer, I do NOT want the Jira block or the `gh pr view` / `gh pr diff` tooling instructions to be editable, so that I cannot accidentally break the Review pipeline.
 66. As a developer, I want the schema directive (`Return JSON conformant to the provided schema...`) auto-appended if missing, so that the runner's JSON parser never breaks because I forgot it.
 67. As a developer, I want a "Reset to default" button in Settings, so that a broken template never permanently breaks Reviews.
-68. As a developer, I want a live preview rendered against stub data (`repo=Ala-com/foo, pr=123, branch=feature/JWT-1, sha=abc1234`, stub Jira ticket), so that I can see the final prompt before saving.
+68. As a developer, I want a live preview rendered against stub data (`repo=acme/foo, pr=123, branch=feature/PROJ-1, sha=abc1234`, stub Jira ticket), so that I can see the final prompt before saving.
 69. As a developer, I want unknown `{{...}}` placeholders flagged in a yellow callout, so that I notice typos like `{{shaa}}` before they ship to Claude as literal text.
 
 ### Pre-Review Summary

@@ -43,12 +43,12 @@ final class GitHubClientMyPRsTests: XCTestCase {
               "id": 42,
               "number": 9,
               "title": "Wire reviewer badges",
-              "html_url": "https://github.com/Ala-com/foo/pull/9",
+              "html_url": "https://github.com/acme/foo/pull/9",
               "user": {
-                "login": "hubert",
+                "login": "octocat",
                 "avatar_url": "https://avatars.githubusercontent.com/u/12345?v=4"
               },
-              "repository_url": "https://api.github.com/repos/Ala-com/foo",
+              "repository_url": "https://api.github.com/repos/acme/foo",
               "draft": true,
               "created_at": "2026-04-30T10:11:12Z"
             }
@@ -78,9 +78,9 @@ final class GitHubClientMyPRsTests: XCTestCase {
         XCTAssertEqual(pr.number, 9)
         XCTAssertEqual(pr.title, "Wire reviewer badges")
         XCTAssertTrue(pr.draft)
-        XCTAssertEqual(pr.user.login, "hubert")
+        XCTAssertEqual(pr.user.login, "octocat")
         XCTAssertEqual(pr.user.avatarURL, URL(string: "https://avatars.githubusercontent.com/u/12345?v=4"))
-        XCTAssertEqual(pr.repoFullName, "Ala-com/foo")
+        XCTAssertEqual(pr.repoFullName, "acme/foo")
     }
 
     func testFetchAuthoredPRsUnauthorizedClearsTokenAndThrows() async {
@@ -225,7 +225,7 @@ final class GitHubClientMyPRsTests: XCTestCase {
             onUnauthorized: {}
         )
         let state = try await api.fetchPRReviewState(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             number: 7,
             currentUser: "viewer"
         )
@@ -379,7 +379,7 @@ final class GitHubClientMyPRsTests: XCTestCase {
             return (response, body.data(using: .utf8)!)
         }
         let api = MyPRsAPI(session: makeSession(), tokenProvider: { "tok" }, onUnauthorized: {})
-        let state = try await api.fetchPRReviewState(repo: "Ala-com/bar", number: 5, currentUser: "viewer")
+        let state = try await api.fetchPRReviewState(repo: "acme/bar", number: 5, currentUser: "viewer")
         let carol = state.reviewers.first(where: { $0.login == "carol" })
         XCTAssertNotNil(carol)
         XCTAssertNil(carol?.avatarURL,
@@ -395,9 +395,9 @@ final class GitHubClientMyPRsTests: XCTestCase {
               "id": 7,
               "number": 3,
               "title": "No avatar here",
-              "html_url": "https://github.com/Ala-com/bar/pull/3",
+              "html_url": "https://github.com/acme/bar/pull/3",
               "user": { "login": "oldbot" },
-              "repository_url": "https://api.github.com/repos/Ala-com/bar",
+              "repository_url": "https://api.github.com/repos/acme/bar",
               "draft": false,
               "created_at": "2025-01-01T00:00:00Z"
             }

@@ -16,7 +16,7 @@ final class OrchestratorPromptParentTests: XCTestCase {
     // MARK: - Helpers
 
     private func makeParent(
-        key: String = "JWT-100",
+        key: String = "PROJ-100",
         summary: String = "Parent: redesign auth flow",
         description: String = "Long parent description with the real spec."
     ) -> JiraTicket {
@@ -33,7 +33,7 @@ final class OrchestratorPromptParentTests: XCTestCase {
     }
 
     private func makeSubtask(
-        key: String = "JWT-200",
+        key: String = "PROJ-200",
         summary: String = "Subtask: wire up the button",
         description: String,
         parent: JiraTicket?
@@ -59,28 +59,28 @@ final class OrchestratorPromptParentTests: XCTestCase {
             parent: parent
         )
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 42,
-            branch: "feature/JWT-200",
+            branch: "feature/PROJ-200",
             sha: "deadbeef",
             jira: subtask
         )
 
         // Header line carries "subtask of <PARENT>".
         XCTAssertTrue(
-            prompt.hasPrefix("Jira: JWT-200 (subtask of JWT-100)\n"),
+            prompt.hasPrefix("Jira: PROJ-200 (subtask of PROJ-100)\n"),
             "prompt should open with the subtask key + parent key"
         )
         // Subtask block.
         XCTAssertTrue(prompt.contains("Subtask title: Subtask: wire up the button"))
         XCTAssertTrue(prompt.contains("Subtask description: Short note on the subtask."))
         // Parent block.
-        XCTAssertTrue(prompt.contains("Parent JWT-100 title: Parent: redesign auth flow"))
+        XCTAssertTrue(prompt.contains("Parent PROJ-100 title: Parent: redesign auth flow"))
         XCTAssertTrue(prompt.contains("Parent description: Long parent description with the real spec."))
         // Subtask block strictly precedes the parent block, which strictly
         // precedes the PR-meta header.
         let subIdx = prompt.range(of: "Subtask title:")!.lowerBound
-        let parIdx = prompt.range(of: "Parent JWT-100 title:")!.lowerBound
+        let parIdx = prompt.range(of: "Parent PROJ-100 title:")!.lowerBound
         let prIdx = prompt.range(of: "You are reviewing PR")!.lowerBound
         XCTAssertLessThan(subIdx, parIdx)
         XCTAssertLessThan(parIdx, prIdx)
@@ -94,9 +94,9 @@ final class OrchestratorPromptParentTests: XCTestCase {
         let parent = makeParent()
         let subtask = makeSubtask(description: "", parent: parent)
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 43,
-            branch: "feature/JWT-200",
+            branch: "feature/PROJ-200",
             sha: "abc",
             jira: subtask
         )
@@ -112,7 +112,7 @@ final class OrchestratorPromptParentTests: XCTestCase {
 
     func testParentNilMatchesSlice10Format() {
         let ticket = JiraTicket(
-            key: "JWT-123",
+            key: "PROJ-123",
             summary: "Allow PEM-encoded keys",
             description: "First paragraph.\n\nSecond paragraph.",
             status: "In Progress",
@@ -122,16 +122,16 @@ final class OrchestratorPromptParentTests: XCTestCase {
             parent: nil
         )
         let prompt = OrchestratorPrompt.build(
-            repo: "Ala-com/foo",
+            repo: "acme/foo",
             prNumber: 42,
-            branch: "feature/JWT-123",
+            branch: "feature/PROJ-123",
             sha: "deadbeef",
             jira: ticket
         )
 
         // Exactly the slice 10 shape — same assertions as
         // OrchestratorJiraInjectionTests.testPromptIncludesFullJiraBlock.
-        XCTAssertTrue(prompt.hasPrefix("Jira: JWT-123\n"))
+        XCTAssertTrue(prompt.hasPrefix("Jira: PROJ-123\n"))
         XCTAssertTrue(prompt.contains("Title: Allow PEM-encoded keys"))
         XCTAssertTrue(prompt.contains("Type: Story  Status: In Progress  Priority: High"))
         XCTAssertTrue(prompt.contains("Description:\nFirst paragraph.\n\nSecond paragraph."))

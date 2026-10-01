@@ -25,13 +25,13 @@ final class PromptInterpolatorTests: XCTestCase {
     func testAllFourPRVariablesAreReplaced() {
         let template = "repo={{repo}} pr={{prNumber}} branch={{branch}} sha={{sha}}"
         let vars: [String: String] = [
-            "repo": "Ala-com/foo",
+            "repo": "acme/foo",
             "prNumber": "42",
-            "branch": "feature/JWT-1",
+            "branch": "feature/PROJ-1",
             "sha": "deadbeef"
         ]
         let result = PromptInterpolator.interpolate(template, vars: vars)
-        XCTAssertEqual(result, "repo=Ala-com/foo pr=42 branch=feature/JWT-1 sha=deadbeef")
+        XCTAssertEqual(result, "repo=acme/foo pr=42 branch=feature/PROJ-1 sha=deadbeef")
     }
 
     func testMultipleOccurrencesOfSameKeyAreAllReplaced() {
@@ -67,9 +67,9 @@ final class PromptInterpolatorTests: XCTestCase {
     func testMixOfKnownAndUnknownVariables() {
         let result = PromptInterpolator.interpolate(
             "{{repo}} {{unknown}}",
-            vars: ["repo": "Ala-com/bar"]
+            vars: ["repo": "acme/bar"]
         )
-        XCTAssertEqual(result, "Ala-com/bar {{unknown}}")
+        XCTAssertEqual(result, "acme/bar {{unknown}}")
     }
 
     // MARK: - interpolate: malformed / unbalanced delimiters

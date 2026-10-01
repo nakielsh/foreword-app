@@ -16,8 +16,8 @@ final class TicketKeyExtractorTests: XCTestCase {
 
     func testExtractsKeyForAllPrefixes() {
         let cases: [(branch: String, expected: String?)] = [
-            ("feature/JWT-123", "JWT-123"),
-            ("bugfix/JWT-456", "JWT-456"),
+            ("feature/PROJ-123", "PROJ-123"),
+            ("bugfix/PROJ-456", "PROJ-456"),
             ("hotfix/AB-9999", "AB-9999"),
             ("chore/X-1", "X-1"),
             ("task/Z-42", "Z-42")
@@ -32,7 +32,7 @@ final class TicketKeyExtractorTests: XCTestCase {
     }
 
     func testReturnsNilForBranchesWithoutPrefix() {
-        for branch in ["main", "master", "JWT-123"] {
+        for branch in ["main", "master", "PROJ-123"] {
             XCTAssertNil(
                 TicketKeyExtractor.extract(branchName: branch),
                 "branch=\(branch)"
@@ -50,8 +50,8 @@ final class TicketKeyExtractorTests: XCTestCase {
 
     func testFirstMatchWinsWhenSuffixPresent() {
         XCTAssertEqual(
-            TicketKeyExtractor.extract(branchName: "feature/JWT-123-something"),
-            "JWT-123"
+            TicketKeyExtractor.extract(branchName: "feature/PROJ-123-something"),
+            "PROJ-123"
         )
     }
 
@@ -62,7 +62,7 @@ final class TicketKeyExtractorTests: XCTestCase {
     func testLowerCaseProjectKeyDoesNotMatch() {
         // Jira keys are uppercase by convention; lowercase keys should not
         // be auto-promoted (we want the user to see the canonical key).
-        XCTAssertNil(TicketKeyExtractor.extract(branchName: "feature/jwt-123"))
+        XCTAssertNil(TicketKeyExtractor.extract(branchName: "feature/proj-123"))
     }
 
     func testReleaseBranchDoesNotMatch() {
@@ -79,6 +79,6 @@ final class TicketKeyExtractorTests: XCTestCase {
     func testKeyAfterSlashOnlyMatchesImmediateSegment() {
         // A nested path under feature/ should not match because the regex
         // is anchored to feature/ followed immediately by the key.
-        XCTAssertNil(TicketKeyExtractor.extract(branchName: "feature/sub/JWT-123"))
+        XCTAssertNil(TicketKeyExtractor.extract(branchName: "feature/sub/PROJ-123"))
     }
 }

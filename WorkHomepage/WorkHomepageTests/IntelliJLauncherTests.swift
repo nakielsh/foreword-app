@@ -60,12 +60,12 @@ final class IntelliJLauncherTests: XCTestCase {
     // MARK: - WorktreePath
 
     func testWorktreePathReturnsExpectedLayout() {
-        let url = WorktreePath.url(for: "Ala-com/work-homepage", prNumber: 42)
+        let url = WorktreePath.url(for: "acme/widgets", prNumber: 42)
         let home = FileManager.default.homeDirectoryForCurrentUser
         let expected = home
             .appending(path: ".work-homepage")
             .appending(path: "worktrees")
-            .appending(path: "Ala-com/work-homepage")
+            .appending(path: "acme/widgets")
             .appending(path: "42")
         assertThat(url.path).isEqualTo(expected.path)
     }

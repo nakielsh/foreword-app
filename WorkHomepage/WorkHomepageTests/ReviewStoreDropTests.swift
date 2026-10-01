@@ -72,22 +72,22 @@ final class ReviewStoreDropTests: XCTestCase {
         // we also exercise the multi-Review-per-PR case.
         insertReview(
             in: context,
-            prKey: "Ala-com/work-homepage#42",
-            repo: "Ala-com/work-homepage",
+            prKey: "acme/widgets#42",
+            repo: "acme/widgets",
             prNumber: 42,
             findingTitles: ["A1-finding-1", "A1-finding-2"]
         )
         insertReview(
             in: context,
-            prKey: "Ala-com/work-homepage#42",
-            repo: "Ala-com/work-homepage",
+            prKey: "acme/widgets#42",
+            repo: "acme/widgets",
             prNumber: 42,
             findingTitles: ["A2-finding-1"]
         )
         insertReview(
             in: context,
-            prKey: "Ala-com/other#7",
-            repo: "Ala-com/other",
+            prKey: "acme/other#7",
+            repo: "acme/other",
             prNumber: 7,
             findingTitles: ["B-finding-1", "B-finding-2"]
         )
@@ -97,13 +97,13 @@ final class ReviewStoreDropTests: XCTestCase {
         XCTAssertEqual(try context.fetch(FetchDescriptor<Finding>()).count, 5)
 
         let store = ReviewStore(context: context)
-        store.dropForPR(prKey: "Ala-com/work-homepage#42")
+        store.dropForPR(prKey: "acme/widgets#42")
 
         let remainingReviews = try context.fetch(FetchDescriptor<Review>())
         let remainingFindings = try context.fetch(FetchDescriptor<Finding>())
 
         XCTAssertEqual(remainingReviews.count, 1, "Only PR #7 review should remain")
-        XCTAssertEqual(remainingReviews.first?.prKey, "Ala-com/other#7")
+        XCTAssertEqual(remainingReviews.first?.prKey, "acme/other#7")
         XCTAssertEqual(remainingFindings.count, 2, "Findings on PR #42 should cascade")
         let titles = remainingFindings.map(\.title).sorted()
         XCTAssertEqual(titles, ["B-finding-1", "B-finding-2"])
@@ -115,13 +115,13 @@ final class ReviewStoreDropTests: XCTestCase {
 
         insertReview(
             in: context,
-            prKey: "Ala-com/repo#1",
-            repo: "Ala-com/repo",
+            prKey: "acme/repo#1",
+            repo: "acme/repo",
             prNumber: 1,
             findingTitles: ["only"]
         )
         let store = ReviewStore(context: context)
-        store.dropForPR(prKey: "Ala-com/missing#999")
+        store.dropForPR(prKey: "acme/missing#999")
 
         XCTAssertEqual(try context.fetch(FetchDescriptor<Review>()).count, 1)
         XCTAssertEqual(try context.fetch(FetchDescriptor<Finding>()).count, 1)
