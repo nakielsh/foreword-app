@@ -81,7 +81,7 @@ No API tokens / keys found in tracked files or in any branch's history (scanned 
 | Bundled fonts (Libre Baskerville, Source Sans 3) are SIL OFL 1.1 | Add `WorkHomepage/WorkHomepage/Resources/Fonts/OFL.txt` + attribution in README |
 | App icon provenance | Confirm it's yours / generated; note in README |
 | `docs/issues/01-26`, `docs/PRD.md` | Fine to publish (good design history) after §1.2 scrub. PRD has internal framing ("my coworkers"), OK |
-| `docs/review-followups.md` | Mentions two failing tests (`MonogramRendererTests`) — fix or mark skipped before CI goes green |
+| `docs/review-followups.md` | Says two `MonogramRendererTests` fail — they pass as of 2026-10-01; update the note |
 | `CLAUDE.md` | Keep (useful for contributors using Claude Code); scrub Barto, Deployments, Artifactory lines |
 | `.gitignore` | Add `Config/Local.xcconfig`, `.agents/`, `skills-lock.json` |
 | `README.md` | Currently describes HTML page first, app second. Rewrite app-first with screenshots, requirements (`gh`, `claude`, optional `idea`, optional Jira), install, privacy/trust model |
@@ -117,6 +117,15 @@ Options:
 ## 3. Tasks
 
 Run `make test` after each task. Commit per task on a branch `oss/prep` off `main`.
+
+Worktree: `.claude/worktrees/oss-prep` (branch `oss/prep`). Unit tests only (UI tests take over the screen):
+
+```sh
+xcodebuild test -project WorkHomepage/WorkHomepage.xcodeproj -scheme WorkHomepage \
+  -destination 'platform=macOS' -only-testing:WorkHomepageTests -derivedDataPath build/DerivedData
+```
+
+**Baseline 2026-10-01: 408 passed, 2 failed (pre-existing).** `OrchestratorJiraInjectionTests.testPromptIncludesFullJiraBlock` (`:41`) and `testNoJiraRendersJiraNullSentinel` (`:109`) still assert `"…, branch <x>."`, but commit `af4ed30` changed the default template to `"…, branch {{branch}}, head SHA {{sha}}."`. Fix the assertions in Task 3 (same lines get the `Ala-com` → `acme` swap). `CoreDevice` / `CoreSimulator is out of date` lines in xcodebuild output are noise.
 
 ### Task 1: Remove Deployments from the macOS app
 
@@ -270,7 +279,7 @@ jobs:
 
 README sections: what it is (screenshot) · requirements (macOS 15+, `gh`, `claude` CLI, optional IntelliJ `idea`, optional Jira Cloud) · install (`make local-install`) · first run · how reviews work + what tools Claude gets · privacy (local-only, never posts to GitHub, Keychain, env allow-list) · HTML dashboard (secondary) · license/fonts.
 
-Fix or skip the two failing `MonogramRendererTests` (`docs/review-followups.md:83`) so CI starts green. Commit.
+CI must start green: confirm the two baseline failures were fixed in Task 3; drop the stale `MonogramRendererTests` note at `docs/review-followups.md:83`. Commit.
 
 ### Task 10: Leak gate + final audit
 
