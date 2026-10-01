@@ -56,7 +56,7 @@ Xcode project at `Foreword/Foreword.xcodeproj`. SwiftUI scenes + SwiftData persi
 `runRealPipeline(input:)`:
 
 1. `WorktreeManager.prepare` — bare clone + worktree at `~/.foreword/repos/<org>/<repo>.git` and `~/.foreword/worktrees/<org>/<repo>/<pr#>`.
-2. `TicketKeyExtractor.extract(branchName:)` → `JiraClient.fetchTicket` (cached in `CachedJiraTicket`).
+2. `TicketKeyExtractor.extract(branchName:projectKeyPrefixes:)` → `JiraClient.fetchTicket` (cached in `CachedJiraTicket`).
 3. `fetchChangedFiles(repo:prNumber:)` shells `gh pr view --json files --jq '.files[].path'` for the prompt allowlist (degrades to no-allowlist on failure).
 4. `OrchestratorPrompt.build` composes: Jira block → user template (interpolated `{{repo}} {{prNumber}} {{branch}} {{sha}}`) → schema directive → allowlist block.
 5. `ClaudeRunner.run` spawns `claude` with `cwd = worktree`, `allowedTools = "Read,Grep,Glob,Skill,Bash(gh:*),Bash(git:*)"`, `disallowedTools = "Bash,Write,Edit,Task,TodoWrite,WebFetch,WebSearch"`. Yields a stream of `ClaudeEvent`.
@@ -99,7 +99,7 @@ Local install and the signing / notarization recipe for distributing your own bu
 
 ## Conventions
 
-- **Static imports only** — no wildcard imports anywhere. See user-global preference.
+- **Static imports only** — no wildcard imports anywhere.
 - **Tests use AssertJ-style helpers** in `ForewordTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`). Prefer over raw `XCTAssertEqual` where a chain reads cleaner.
 - **Models live in `Foreword/Foreword/Models/`**; SwiftData `@Model` classes only there. Decoded API shapes (e.g. `ReviewSchema`, `SchemaFinding`) live in `Services/` next to the code that produces them.
 - **GitHub API calls** go through `GitHubClient` (REST) with topic extensions (`+MyPRs`, `+Reviews`, `+PRBranch`).
