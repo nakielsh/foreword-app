@@ -274,9 +274,9 @@ enum IntelliJLauncher {
     /// IntelliJ's spawned children (gradle daemon, kotlin compiler, etc.)
     /// inherit env from the IntelliJ process, which inherits from us. GUI
     /// macOS apps launch with a minimal launchd env, so vars exported in
-    /// the user's `~/.zshrc` (REPO_USER, JAVA_HOME, custom Artifactory
-    /// creds) are invisible to us by default — and the gradle daemon then
-    /// fails to authenticate. We bridge that gap by sourcing the user's
+    /// the user's `~/.zshrc` (JAVA_HOME, private repository creds) are
+    /// invisible to us by default — and the gradle daemon then fails to
+    /// authenticate. We bridge that gap by sourcing the user's
     /// interactive shell env once via `ShellEnvironment` and merging it
     /// into the spawn env. Process-level overrides (HOME, USER, PATH
     /// fallback) win against whatever the shell exported, so we don't
@@ -287,7 +287,8 @@ enum IntelliJLauncher {
         process.arguments = arguments
         // Pull the captured shell env through the allow-list. Only keys
         // IntelliJ + the gradle daemon actually need (JAVA_HOME, GRADLE_*,
-        // MAVEN_*, REPO_USER, PATH, locale, SSH_AUTH_SOCK, …) flow through.
+        // MAVEN_*, PATH, locale, SSH_AUTH_SOCK, …) plus the user's
+        // configured extras flow through.
         // Drops generic `*_TOKEN`/`*_KEY`/`ANTHROPIC_API_KEY`/AWS creds the
         // user may have exported in `~/.zshrc` — gradle had no business
         // seeing those, but the previous wholesale forward gave them anyway.

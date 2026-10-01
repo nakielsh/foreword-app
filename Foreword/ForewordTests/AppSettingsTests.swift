@@ -75,4 +75,35 @@ final class AppSettingsTests: XCTestCase {
         AppSettings.setProjectKeyPrefixes([], defaults: defaults)
         XCTAssertEqual(AppSettings.projectKeyPrefixes(defaults: defaults), [])
     }
+
+    // MARK: - Extra environment variables
+
+    func testExtraEnvDefaultsToEmpty() {
+        assertThat(AppSettings.extraEnvKeys(defaults: defaults)).isEmpty()
+        assertThat(AppSettings.extraEnvPrefixes(defaults: defaults)).isEmpty()
+    }
+
+    func testExtraEnvRoundTripsAndDropsBlanks() {
+        AppSettings.setExtraEnvKeys(["  REPO_USER ", "", "NPM_TOKEN"], defaults: defaults)
+        AppSettings.setExtraEnvPrefixes(["ARTIFACTORY_", " "], defaults: defaults)
+
+        assertThat(AppSettings.extraEnvKeys(defaults: defaults)).containsExactly(["REPO_USER", "NPM_TOKEN"])
+        assertThat(AppSettings.extraEnvPrefixes(defaults: defaults)).containsExactly(["ARTIFACTORY_"])
+    }
+
+    func testParsesExtraEnvListWithStarMarkingPrefixes() {
+        let parsed = AppSettings.parseExtraEnvList(" REPO_USER, ARTIFACTORY_* ,, NPM_TOKEN,*")
+
+        assertThat(parsed.keys).containsExactly(["REPO_USER", "NPM_TOKEN"])
+        assertThat(parsed.prefixes).containsExactly(["ARTIFACTORY_"])
+    }
+
+    func testFormatsExtraEnvListForTheSettingsField() {
+        let text = AppSettings.formatExtraEnvList(keys: ["REPO_USER"], prefixes: ["ARTIFACTORY_"])
+
+        assertThat(text).isEqualTo("REPO_USER, ARTIFACTORY_*")
+        let parsed = AppSettings.parseExtraEnvList(text)
+        assertThat(parsed.keys).containsExactly(["REPO_USER"])
+        assertThat(parsed.prefixes).containsExactly(["ARTIFACTORY_"])
+    }
 }

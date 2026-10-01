@@ -8,7 +8,7 @@
 //  env, so vars exported in the user's login shell never reach us — and by
 //  extension never reach the child processes we spawn (IntelliJ, gradle
 //  daemon, claude CLI). Without this bridge, projects that need
-//  `REPO_USER`, `JAVA_HOME`, `ANTHROPIC_API_KEY` etc. fail with cryptic
+//  `JAVA_HOME`, private repository credentials etc. fail with cryptic
 //  "missing credentials" errors when launched from the app but work fine
 //  when launched from a terminal.
 //
@@ -49,17 +49,28 @@ enum ShellEnvironment {
     ///
     /// What's allowed: a curated set of variables IntelliJ and gradle
     /// realistically need (HOME, USER, PATH, JAVA_*, GRADLE_*, MAVEN_*,
-    /// REPO_USER, locale and tz keys, SSH_AUTH_SOCK, TMPDIR, LOGNAME). Plus
-    /// LC_* prefix for locale completeness.
+    /// locale and tz keys, SSH_AUTH_SOCK, TMPDIR, LOGNAME), plus whatever
+    /// the user added under Settings → Behavior → "Forward extra environment
+    /// variables" (`AppSettings.extraEnvKeys` / `extraEnvPrefixes`) — the
+    /// place for private repository credentials and similar.
     static func filteredForChildren() -> [String: String] {
-        filter(userInteractiveEnv())
+        filter(
+            userInteractiveEnv(),
+            extraKeys: Set(AppSettings.extraEnvKeys),
+            extraPrefixes: AppSettings.extraEnvPrefixes
+        )
     }
 
     /// The canonical allow-list of env var keys (or prefixes) we forward to
-    /// spawned children. Pure function exposed for testing.
-    static func filter(_ env: [String: String]) -> [String: String] {
+    /// spawned children, widened by the user's extras. Pure function exposed
+    /// for testing.
+    static func filter(
+        _ env: [String: String],
+        extraKeys: Set<String> = [],
+        extraPrefixes: [String] = []
+    ) -> [String: String] {
         var out: [String: String] = [:]
-        for (k, v) in env where isAllowed(k) {
+        for (k, v) in env where isAllowed(k, extraKeys: extraKeys, extraPrefixes: extraPrefixes) {
             out[k] = v
         }
         return out
@@ -68,20 +79,21 @@ enum ShellEnvironment {
     private static let allowedKeys: Set<String> = [
         "HOME", "USER", "LOGNAME", "PATH", "SHELL",
         "LANG", "TZ", "TMPDIR", "TERM",
-        "JAVA_HOME", "REPO_USER", "REPO_PASSWORD",
+        "JAVA_HOME",
         "SSH_AUTH_SOCK", "SSH_AGENT_PID"
     ]
 
     private static let allowedPrefixes: [String] = [
-        "JAVA_", "GRADLE_", "MAVEN_", "LC_", "ARTIFACTORY_"
+        "JAVA_", "GRADLE_", "MAVEN_", "LC_"
     ]
 
-    static func isAllowed(_ key: String) -> Bool {
-        if allowedKeys.contains(key) { return true }
-        for prefix in allowedPrefixes where key.hasPrefix(prefix) {
-            return true
-        }
-        return false
+    static func isAllowed(
+        _ key: String,
+        extraKeys: Set<String> = [],
+        extraPrefixes: [String] = []
+    ) -> Bool {
+        if allowedKeys.contains(key) || extraKeys.contains(key) { return true }
+        return (allowedPrefixes + extraPrefixes).contains { key.hasPrefix($0) }
     }
 
     /// Test seam: forget the cached env so the next call re-runs capture.

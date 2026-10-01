@@ -53,6 +53,8 @@ enum AppSettings {
     static let reviewPromptTemplateKey = ReviewPromptStore.defaultsKey
     static let summaryConcurrencyCapKey = "settings.summaryConcurrencyCap"
     static let reviewTimeoutMinutesKey = "settings.reviewTimeoutMinutes"
+    static let extraEnvKeysKey = "settings.extraEnvKeys"
+    static let extraEnvPrefixesKey = "settings.extraEnvPrefixes"
 
     // MARK: - Limits
 
@@ -161,6 +163,58 @@ enum AppSettings {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         defaults.set(cleaned, forKey: projectKeyPrefixesKey)
+    }
+
+    // MARK: - Extra environment variables
+
+    /// Exact env var names forwarded to spawned children on top of
+    /// `ShellEnvironment`'s built-in allow-list (e.g. a private Maven
+    /// repository's `REPO_USER`). Default empty.
+    static var extraEnvKeys: [String] {
+        get { extraEnvKeys(defaults: .standard) }
+        set { setExtraEnvKeys(newValue, defaults: .standard) }
+    }
+
+    /// Env var name prefixes forwarded the same way (e.g. `ARTIFACTORY_`).
+    static var extraEnvPrefixes: [String] {
+        get { extraEnvPrefixes(defaults: .standard) }
+        set { setExtraEnvPrefixes(newValue, defaults: .standard) }
+    }
+
+    static func extraEnvKeys(defaults: UserDefaults) -> [String] {
+        (defaults.array(forKey: extraEnvKeysKey) as? [String]) ?? []
+    }
+
+    static func setExtraEnvKeys(_ value: [String], defaults: UserDefaults) {
+        defaults.set(cleaned(value), forKey: extraEnvKeysKey)
+    }
+
+    static func extraEnvPrefixes(defaults: UserDefaults) -> [String] {
+        (defaults.array(forKey: extraEnvPrefixesKey) as? [String]) ?? []
+    }
+
+    static func setExtraEnvPrefixes(_ value: [String], defaults: UserDefaults) {
+        defaults.set(cleaned(value), forKey: extraEnvPrefixesKey)
+    }
+
+    /// Parses the Settings field: comma-separated names, where a trailing
+    /// `*` marks a prefix (`REPO_USER, ARTIFACTORY_*`).
+    static func parseExtraEnvList(_ text: String) -> (keys: [String], prefixes: [String]) {
+        let entries = cleaned(text.split(separator: ",").map(String.init))
+        let keys = entries.filter { !$0.hasSuffix("*") }
+        let prefixes = cleaned(entries.filter { $0.hasSuffix("*") }.map { String($0.dropLast()) })
+        return (keys, prefixes)
+    }
+
+    /// Inverse of `parseExtraEnvList`, for populating the Settings field.
+    static func formatExtraEnvList(keys: [String], prefixes: [String]) -> String {
+        (keys + prefixes.map { $0 + "*" }).joined(separator: ", ")
+    }
+
+    private static func cleaned(_ value: [String]) -> [String] {
+        value
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - Appearance

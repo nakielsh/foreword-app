@@ -36,13 +36,13 @@ final class ShellEnvironmentTests: XCTestCase {
     func testParsesUnderscoreAndDigitKeys() {
         let raw = """
         REPO_USER=alice
-        REPO_PASSWORD=secret
+        REPO_TOKEN=secret
         JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home
         _COMP_OPTIONS=foo
         """
         let parsed = ShellEnvironment.parse(raw)
         XCTAssertEqual(parsed["REPO_USER"], "alice")
-        XCTAssertEqual(parsed["REPO_PASSWORD"], "secret")
+        XCTAssertEqual(parsed["REPO_TOKEN"], "secret")
         XCTAssertEqual(parsed["JAVA_HOME"], "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home")
         XCTAssertEqual(parsed["_COMP_OPTIONS"], "foo")
     }
@@ -98,23 +98,39 @@ final class ShellEnvironmentTests: XCTestCase {
         XCTAssertTrue(ShellEnvironment.parse("").isEmpty)
     }
 
-    func testFilterForwardsArtifactoryAndRepoCreds() {
+    func testFiltersEmployerSpecificKeysByDefault() {
         let env = [
+            "JAVA_HOME": "/jdk",
+            "GRADLE_USER_HOME": "/gradle",
             "REPO_USER": "alice",
-            "REPO_PASSWORD": "secret",
-            "ARTIFACTORY_USER": "alice",
-            "ARTIFACTORY_PASSWORD": "secret",
             "ARTIFACTORY_TOKEN": "tok",
             "ANTHROPIC_API_KEY": "should-be-dropped",
             "AWS_SECRET_ACCESS_KEY": "should-be-dropped"
         ]
+
         let filtered = ShellEnvironment.filter(env)
-        XCTAssertEqual(filtered["REPO_USER"], "alice")
-        XCTAssertEqual(filtered["REPO_PASSWORD"], "secret")
-        XCTAssertEqual(filtered["ARTIFACTORY_USER"], "alice")
-        XCTAssertEqual(filtered["ARTIFACTORY_PASSWORD"], "secret")
-        XCTAssertEqual(filtered["ARTIFACTORY_TOKEN"], "tok")
-        XCTAssertNil(filtered["ANTHROPIC_API_KEY"])
-        XCTAssertNil(filtered["AWS_SECRET_ACCESS_KEY"])
+
+        assertThat(filtered["JAVA_HOME"]).isEqualTo("/jdk")
+        assertThat(filtered["GRADLE_USER_HOME"]).isEqualTo("/gradle")
+        assertThat(filtered["REPO_USER"]).isNil()
+        assertThat(filtered["ARTIFACTORY_TOKEN"]).isNil()
+        assertThat(filtered["ANTHROPIC_API_KEY"]).isNil()
+        assertThat(filtered["AWS_SECRET_ACCESS_KEY"]).isNil()
+    }
+
+    func testForwardsUserConfiguredExtraKeysAndPrefixes() {
+        let env = [
+            "REPO_USER": "alice",
+            "ARTIFACTORY_USER": "alice",
+            "ARTIFACTORY_TOKEN": "tok",
+            "ANTHROPIC_API_KEY": "should-be-dropped"
+        ]
+
+        let filtered = ShellEnvironment.filter(env, extraKeys: ["REPO_USER"], extraPrefixes: ["ARTIFACTORY_"])
+
+        assertThat(filtered["REPO_USER"]).isEqualTo("alice")
+        assertThat(filtered["ARTIFACTORY_USER"]).isEqualTo("alice")
+        assertThat(filtered["ARTIFACTORY_TOKEN"]).isEqualTo("tok")
+        assertThat(filtered["ANTHROPIC_API_KEY"]).isNil()
     }
 }

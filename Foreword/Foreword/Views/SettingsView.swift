@@ -29,6 +29,7 @@ struct SettingsView: View {
     // Behavior
     @State private var concurrencyCap: Int = AppSettings.concurrencyCapDefault
     @State private var prefixesText: String = ""
+    @State private var extraEnvText: String = ""
     @State private var reviewTimeoutMinutes: Int = AppSettings.reviewTimeoutMinutesDefault
 
     // Pre-Review Summary (slice 25)
@@ -331,6 +332,17 @@ struct SettingsView: View {
                     .foregroundStyle(Color.textMuted)
                 TextField("PROJ, ABC", text: $prefixesText)
                     .textFieldStyle(.roundedBorder)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Forward extra environment variables (comma-separated, `*` suffix = prefix)")
+                    .font(Font.appBody(size: 12))
+                    .foregroundStyle(Color.textMuted)
+                TextField("REPO_USER, ARTIFACTORY_*", text: $extraEnvText)
+                    .textFieldStyle(.roundedBorder)
+                Text("Passed from your shell to IntelliJ and its build tools on top of the built-in set (PATH, JAVA_*, GRADLE_*, MAVEN_*, locale, SSH agent). Use for private repository credentials. Everything else in your shell stays private.")
+                    .font(Font.appBody(size: 11))
+                    .foregroundStyle(Color.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -964,6 +976,10 @@ struct SettingsView: View {
         // <100ms).
         concurrencyCap = AppSettings.concurrencyCap
         prefixesText = AppSettings.projectKeyPrefixes.joined(separator: ", ")
+        extraEnvText = AppSettings.formatExtraEnvList(
+            keys: AppSettings.extraEnvKeys,
+            prefixes: AppSettings.extraEnvPrefixes
+        )
         reviewPromptText = ReviewPromptStore().current()
         summaryConcurrencyCap = AppSettings.summaryConcurrencyCap
         reviewTimeoutMinutes = AppSettings.reviewTimeoutMinutes
@@ -981,6 +997,9 @@ struct SettingsView: View {
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         AppSettings.projectKeyPrefixes = parts
+        let extraEnv = AppSettings.parseExtraEnvList(extraEnvText)
+        AppSettings.extraEnvKeys = extraEnv.keys
+        AppSettings.extraEnvPrefixes = extraEnv.prefixes
     }
 
     private func reDetectFromGh() async {

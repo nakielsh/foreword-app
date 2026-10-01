@@ -41,7 +41,7 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
 - **Switch to `Logger` with `.private`** for any field that touches API payloads (`PreReviewSummaryRunner`, `JiraClient`). Add a regression test asserting no `Authorization` / token-like substring appears in logs.
 - **First-run token bootstrap consent.** `ForewordApp.swift:107-119` silently runs `gh auth token` and clones the result into the app's keychain. Show this step in `FirstRunWizard` before exfiltrating.
 - **`KeychainStore`: set `kSecUseDataProtectionKeychain: true`** for stronger app-identity isolation. Consider `SecAccessControlCreateWithFlags(.userPresence)` for the GitHub token if UX permits.
-- **Allow-list env var prefixes** forwarded to spawned children in `ShellEnvironment` / `IntelliJLauncher` (currently wholesale-imports `.zshrc` env, including `ANTHROPIC_API_KEY`, AWS creds, etc.). Restrict to `JAVA_HOME`, `REPO_USER`, etc.
+- **Allow-list env var prefixes** forwarded to spawned children in `ShellEnvironment` / `IntelliJLauncher` (currently wholesale-imports `.zshrc` env, including `ANTHROPIC_API_KEY`, AWS creds, etc.). _Done:_ fixed allow-list (`JAVA_*`, `GRADLE_*`, `MAVEN_*`, locale, SSH agent) plus user-configured extras in Settings → Behavior.
 - **`LocalRepoIndex.scan` containment check.** After parsing a GitHub repo from a remote URL, sanity-check that the resolved dir lives under one of the configured roots — closes the "malicious `~/src` subdir spoofs `<owner>/<repo>` mapping" amplification.
 
 ### SwiftUI / view layer
