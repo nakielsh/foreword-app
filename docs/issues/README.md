@@ -12,7 +12,7 @@ No tracker configured — issues live as files here. When a tracker comes online
 | 02 | Reviews tab full parity | AFK | 01 |
 | 03 | My PRs tab parity | AFK | 01 |
 | 04 | Sessions tab parity | AFK | 01 |
-| 05 | Deployments tab parity | AFK | 01 |
+| 05 | Deployments tab parity _(removed in the open-source release)_ | AFK | 01 |
 | 06 | BinaryResolver + first-run wizard | AFK | 01 |
 | 07 | **Tracer bullet — end-to-end review** | **HITL** | 06 |
 | 08 | Findings UI | AFK | 07 |

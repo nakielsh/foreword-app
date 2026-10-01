@@ -9,7 +9,7 @@ Two coexisting apps in one repo:
 1. **`index.html` + `refresh-sessions.*`** — original single-page HTML dashboard. Runs as a local `file://` page, no build step.
 2. **`Foreword/`** — SwiftUI + SwiftData macOS app. The active surface most new work targets. Adds Claude-driven PR reviews, Jira context, IntelliJ launcher, pre-review summaries, settings, and a menu-bar companion on top of what the HTML page does.
 
-Both target the same domain (GitHub PRs, deployments, Claude Code sessions). The macOS app is the strategic direction; the HTML page is kept around because it's still useful and zero-cost to maintain.
+Both target the same domain (GitHub PRs, Claude Code sessions). The macOS app is the strategic direction; the HTML page is kept around because it's still useful and zero-cost to maintain.
 
 For domain vocabulary (Review vs. GitHub review, Pre-Review Summary, Worktree, Jira Ticket / Parent, Review Prompt Template), see `CONTEXT.md`. For architecture decisions, see `docs/adr/`. For slice-by-slice implementation history, see `docs/issues/`.
 
@@ -17,14 +17,13 @@ For domain vocabulary (Review vs. GitHub review, Pre-Review Summary, Worktree, J
 
 **`index.html`** — Entire app: HTML, CSS (in `<style>`), and JS (in `<script>`). Botanical Garden theme (Libre Baskerville + Source Sans 3 fonts, fern green / marigold / terracotta / cream palette).
 
-Four tabs:
+Three tabs:
 
 - **Reviews** — PRs assigned for review (`review-requested:@me`). Filter dropdown ("Hide PRs with >= N approvals"), dismissed-reviews toggle, stats bar, sub-sections for `reviewed-by:@me` (Changes Requested, My Comments, Already Approved), "N new commits since your review" badge.
 - **My PRs** — Authored open PRs. Per-reviewer status badges, unresolved-thread counts (GraphQL), total comment counts.
 - **Claude Code** — Active sessions from `claude-sessions.js` (`window.__claudeSessions`).
-- **Deployments** — Latest deploy per service / environment via GitHub Actions workflow runs.
 
-Data: GitHub REST + GraphQL; token in `localStorage`; filter state + active tab also in `localStorage`. Org / workflow / services configured near `index.html:1764` (`DEPLOY_ORG`, `DEPLOY_WORKFLOW`, `SERVICES`).
+Data: GitHub REST + GraphQL; token in `localStorage`; filter state + active tab also in `localStorage`.
 
 **Refresh pipeline** for the Claude Code tab:
 
@@ -47,7 +46,6 @@ Xcode project at `Foreword/Foreword.xcodeproj`. SwiftUI scenes + SwiftData persi
 
 - `ReviewsTab.swift` — review-requested PRs + a "Review" action that opens the review modal.
 - `MyPRsTab.swift` — authored PRs with reviewer + thread state.
-- `DeploysTab.swift` — workflow-run-derived deploy table.
 - `SessionsTab.swift` — native session reader (no `claude-sessions.js` round-trip; reads `~/.claude/sessions/` directly).
 - `ReviewSheet.swift` — modal showing the live stream, findings list, and Jira/summary panels. Click on a finding → `IntelliJLauncher.openWithFallback`.
 - `SettingsView.swift` — first-run + reconfiguration surface (binary paths, Jira creds, review prompt template editor, concurrency cap, disk usage / per-repo evict).
@@ -97,14 +95,14 @@ xcodebuild test \
   -only-testing:ForewordTests/ReviewStoreFilterTests
 ```
 
-Release / DMG pipeline (signing, notarization, Barto upload) is documented in `docs/release.md`. Phase 1 (`make local-install`) is enough for this laptop; Phase 2 covers distribution.
+Local install and the signing / notarization recipe for distributing your own build are in `docs/release.md`. `make local-install` is enough to run the app on your own Mac.
 
 ## Conventions
 
 - **Static imports only** — no wildcard imports anywhere. See user-global preference.
 - **Tests use AssertJ-style helpers** in `ForewordTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`). Prefer over raw `XCTAssertEqual` where a chain reads cleaner.
 - **Models live in `Foreword/Foreword/Models/`**; SwiftData `@Model` classes only there. Decoded API shapes (e.g. `ReviewSchema`, `SchemaFinding`) live in `Services/` next to the code that produces them.
-- **GitHub API calls** go through `GitHubClient` (REST) with topic extensions (`+MyPRs`, `+Reviews`, `+Workflows`, `+PRBranch`).
+- **GitHub API calls** go through `GitHubClient` (REST) with topic extensions (`+MyPRs`, `+Reviews`, `+PRBranch`).
 - **Untrusted content** (branch names, Jira summaries / descriptions, parent description, anything user-controlled or upstream-controlled) is wrapped via `UntrustedContent.fence(_:label:)` / `.sanitise(_:)` before it reaches the prompt builder. Defence-in-depth on top of `--allowed-tools` / `--disallowed-tools`.
 - **Card rendering in `index.html`** uses DOM creation, not templates. `renderReviewCards(grid, prs)` is shared between the pending-reviews section and the three reviewed-by-me sub-sections.
 - **Theme tokens** (HTML) live in `:root` custom properties; the macOS app exposes the same palette via `Color.appBody` / `Color.bgSurface` etc. in extensions.
@@ -117,4 +115,4 @@ Release / DMG pipeline (signing, notarization, Barto upload) is documented in `d
 - Architecture decisions → `docs/adr/`.
 - Slice-by-slice implementation history → `docs/issues/`.
 - Code-review follow-ups & known TODOs → `docs/review-followups.md`.
-- Release pipeline (DMG, signing, Barto) → `docs/release.md`.
+- Local install, signing & notarization → `docs/release.md`.

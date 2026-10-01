@@ -6,14 +6,13 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
 
 ### Networking layer
 
-- **Consolidate the five `GitHubClient*.swift` files into one HTTP helper.** `performRequest` + `checkResponse` + auth headers + decoder config are duplicated five times. Drift already happened: `dateDecodingStrategy = .iso8601` is set in `+Reviews`, `+Workflows`, and one `+MyPRs` path, but not in the other three. Single helper unblocks every other transport fix.
+- **Consolidate the four `GitHubClient*.swift` files into one HTTP helper.** `performRequest` + `checkResponse` + auth headers + decoder config are duplicated four times. Drift already happened: `dateDecodingStrategy = .iso8601` is set in `+Reviews` and one `+MyPRs` path, but not in the others. Single helper unblocks every other transport fix.
 - **ETag / `If-None-Match` + `URLCache`.** Most GitHub endpoints return ETag; with ETag respected, polling unchanged PRs returns 304 with no rate-limit cost. Multi-day session currently re-downloads tens of MB of identical JSON per hour.
 - **Rate-limit awareness.** Parse `X-RateLimit-Remaining` / `X-RateLimit-Reset`; introduce `GitHubError.rateLimited(resetAt: Date)`; have schedulers honour the reset before re-firing. Distinguish primary vs secondary (`Retry-After`) limits.
 - **Retries with backoff** for transient 5xx + `URLError.networkConnectionLost` / `.timedOut` / `.notConnectedToInternet`. 2 retries, `0.5s, 2s, 5s`. Don't retry 4xx other than 429.
 - **GraphQL 200-with-errors handling** (`+MyPRs.swift:198-203`). Currently throws on any error in `errors[]`, discarding usable `data`. Distinguish "data nil → throw" vs "errors non-empty but data present → log, return data".
 - **Decode error context.** `String(describing: DecodingError)` drops `codingPath`. Pretty-print full path + 1KB body snippet so production decode failures are debuggable.
 - **Pagination.** `per_page=50` for search caps results; `Link: rel="next"` is never followed. Either bump to `per_page=100` and accept the cap, or add a generic `paginate(urlString:)` helper with a 5-page ceiling.
-- **Workflows pagination bug** (`+Workflows.swift:67`). `/actions/workflows` first-page-only lookup misses the deploy workflow when the repo has >30 workflows.
 - **GitHubError.decoding wraps permission errors as decode errors.** `+MyPRs.swift:201-203` throws `decoding("Missing pullRequest…")` when `data.repository = null` — actually a forbidden/notFound. Add typed cases.
 - **Per-PR fetch failure silently zeroes the record** (`+Reviews.swift:88-94, 130-139`). `catch { reviews = [] }` makes "fetch failed" indistinguishable from "no reviews". Surface a per-card error indicator.
 - **Jira fallback: serve-stale-on-malformed-JSON masks upstream incidents** (`JiraClient.fetchUpdated`, lines 171-209). Distinguish transport vs decode errors; only serve stale on transport.
@@ -92,14 +91,12 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
 
 ## Lower priority
 
-- **`WorkflowRun.htmlURL: URL` (non-optional)** — empty-string from API would break the whole `RunsResponse` decode. _Deferred:_ flipping to `URL?` requires editing `Views/DeploysTab.swift` and `Models/Deployment.swift` (off-limits). `// TODO(leftovers):` left on the field.
 - **`BinaryResolver` `kSecCodeSign` validity check** on resolved binaries — punt. Homebrew/PATH trust assumption is now documented in README.
 
 ### Done in this pass
 
 - Per-line buffer cap policy comment added in `WorktreeManager.runProcessSync` cross-referencing `ClaudeRunner.maxLineBufferBytes`.
 - `AvatarLoader` now appends `?s=96` (merging with existing query) before fetch and cache key.
-- `DeploymentsParser` switched to a file-scope `try!` regex that fails fast on programmer error.
 - `JiraConnectionTester` 401/non-2xx now includes a whitespace-collapsed body snippet (≤200 chars).
 - README documents the Homebrew/`/usr/local/bin` trust assumption shared by `BinaryResolver` and `IntelliJLauncher`.
 - `IdeaProjectSync` `gradle.xml` / `misc.xml` rewrite ported from regex/string-replace to `XMLDocument` (public API unchanged).

@@ -1,5 +1,7 @@
 # 05 — Deployments tab parity
 
+> **Removed in the open-source release.** The tab was hard-wired to one organisation's GitHub org, deploy workflow and service list, so it was deleted rather than generalised. Kept here as design history.
+
 ## What to build
 
 Port the Deployments tab to SwiftUI at feature parity with `index.html`.

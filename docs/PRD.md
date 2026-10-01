@@ -1,5 +1,7 @@
 # PRD — Native macOS Dashboard with Claude Code Reviews
 
+> Historical document, written for internal use when the app was still called WorkHomepage. The Deployments tab described below was removed in the open-source release; it was hard-wired to one organisation's workflows.
+
 ## Problem Statement
 
 Today the dashboard is a `file://` HTML page (`index.html`) backed by a Python helper script and a launchd agent. The browser is a dead end for the next round of features I want:
@@ -80,7 +82,7 @@ The app is for me only. Ad-hoc signed, no notarization, no App Store, no App San
 
 35. As a developer, I want the **My PRs** tab to show my open authored PRs with per-reviewer status badges, unresolved thread counts split between "awaiting you" and "awaiting others", and total comment counts — same as today.
 36. As a developer, I want the **Claude Code** tab to show currently-running Claude Code sessions, read on-demand from `~/.claude/sessions/*.json` and `~/.claude/history.jsonl`, with PID liveness validated.
-37. As a developer, I want the **Deployments** tab to show the latest deployment per service per environment for the `acme` org, parsed from the configured workflow's run names.
+37. _(Removed in the open-source release.)_ As a developer, I want the **Deployments** tab to show the latest deployment per service per environment for the `acme` org, parsed from the configured workflow's run names.
 38. As a developer, I want all four tabs refreshable via a single toolbar refresh button, so that I keep the manual-refresh model from today.
 
 ### Auth, secrets, settings
@@ -242,7 +244,7 @@ Each phase shippable on its own.
 - Slack/Linear/etc. notifications when a review completes.
 - Automatic re-review on push (only manual re-review supported).
 - Auto-refresh of the Reviews list (manual only by default; optional toggle for PR list refresh, never for reviews).
-- Multi-org Deployments tab generalization (still hardcoded to `acme`, configurable via Settings later).
+- Multi-org Deployments tab generalization (still hardcoded to `acme`, configurable via Settings later). _The tab was removed in the open-source release instead._
 - Anthropic API key management (delegated entirely to `claude` CLI).
 - Linux/Windows support.
 - Anything iOS.

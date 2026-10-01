@@ -1,75 +1,65 @@
-# Release plan: shipping `Foreword`
+# Building and releasing `Foreword`
 
-Two phases. Phase 1 is enough for installing on your own laptop. Phase 2 covers handing the app to colleagues or uploading to Rippling Barto.
+Two levels. **Local install** is enough to run the app on your own Mac. **Signing & notarizing your own build** covers handing a `.dmg` to anyone else.
 
 ## Context
 
-`Foreword` is a SwiftUI macOS app (Xcode project at `Foreword/Foreword.xcodeproj`). Today it only runs from Xcode — no Release artifact, no signed bundle, no installer.
+`Foreword` is a SwiftUI macOS app (Xcode project at `Foreword/Foreword.xcodeproj`).
 
-Per Apple's distribution guidance (`developer.apple.com`), any app distributed outside the Mac App Store must be signed with a **Developer ID Application** certificate, built with the **Hardened Runtime** enabled, include a **secure timestamp**, and be **notarized** + **stapled**. The current project has `ENABLE_HARDENED_RUNTIME = NO` and no entitlements file, so it cannot be notarized as-is.
+Per Apple's distribution guidance (`developer.apple.com`), any app distributed outside the Mac App Store must be signed with a **Developer ID Application** certificate, built with the **Hardened Runtime** enabled, include a **secure timestamp**, and be **notarized** + **stapled**. The project currently has `ENABLE_HARDENED_RUNTIME = NO` and no entitlements file, so it cannot be notarized as-is.
 
 Sandbox stays **off** — the app shells out to `git`, `gh`, `claude`, `idea`, `/usr/bin/python3` and reads `~/.claude/`, `~/.foreword/` (see `BinaryResolver`, `WorktreeManager.swift:9-10`, `SessionsReader.swift`). Sandboxing would break all of that. Notarization does not require the sandbox; only Hardened Runtime is mandatory.
 
+### Signing identity
+
+Build identity lives in `Foreword/Config/Base.xcconfig` (bundle id prefix, empty team), applied as the project-level base configuration. With no team the app is signed to run locally (ad hoc), which is all a local install needs.
+
+To sign with your own Apple Developer team, copy `Foreword/Config/Local.xcconfig.example` to `Foreword/Config/Local.xcconfig` (gitignored) and set `DEVELOPMENT_TEAM`. Set `BUNDLE_ID_PREFIX` there too if you distribute your own build, so it doesn't share a bundle id (and UserDefaults domain) with upstream builds.
+
 ---
 
-## Phase 1 — this laptop only (no DMG, no signing, no notarization)
+## Local install (no DMG, no notarization)
 
 Goal: run `Foreword.app` from `/Applications` like any other app, no Xcode running.
 
-### Steps
-
 ```sh
-# from repo root
-xcodebuild \
-  -project Foreword/Foreword.xcodeproj \
-  -scheme Foreword \
-  -configuration Release \
-  -derivedDataPath build
-
-cp -R build/Build/Products/Release/Foreword.app /Applications/
+make local-install
 ```
 
-Double-click from Launchpad / Spotlight. No Gatekeeper prompt — locally-built binaries don't get the `com.apple.quarantine` xattr, so Apple's "unidentified developer" block does not fire.
+This builds Release into `build/`, copies `Foreword.app` to `/Applications/`, and resets the macOS IconServices cache (`lsregister -f`, `killall Dock`, `killall Finder`). The cache reset matters when the app icon changes between installs: the Dock has its own refresh pipeline and tends to pick up the new icon, but Stage Manager, Mission Control, and the ⌘-Tab app switcher pull from the cached IconServices store and will show a stale or blank icon until the cache is invalidated.
 
-Use `make local-install` for the convenience flow. It runs the build + copy and then resets the macOS IconServices cache (`lsregister -f`, `killall Dock`, `killall Finder`). The cache reset matters when the app icon changes between installs: the Dock has its own refresh pipeline and tends to pick up the new icon, but Stage Manager, Mission Control, and the ⌘-Tab app switcher pull from the cached IconServices store and will show a stale or blank icon until the cache is invalidated.
+No Gatekeeper prompt — locally built binaries don't get the `com.apple.quarantine` xattr, so Apple's "unidentified developer" block does not fire.
 
-### Why no DMG / signing / notarization
+### Verification
 
-- Hardened Runtime, entitlements, Developer ID cert, `notarytool` — all skipped.
-- Existing `ENABLE_HARDENED_RUNTIME = NO` and missing entitlements are fine for local use.
-- Files copied via `cp` from a local build never carry the quarantine attribute that Gatekeeper checks.
-
-### Phase 1 verification
-
-1. `xcodebuild ... -configuration Release` exits 0.
+1. `make build` exits 0.
 2. `/Applications/Foreword.app` launches by double-click. Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation works.
-3. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword` green.
+3. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword -destination 'platform=macOS' -only-testing:ForewordTests` green.
 
 ---
 
-## Phase 2 — distribute to colleagues / Rippling Barto
+## Signing & notarizing your own build
 
-Required only when handing the `.app` to anyone else. Anything downloaded over a browser, AirDrop, Slack, or pushed via MDM gets the quarantine xattr applied by macOS, and Gatekeeper then refuses to launch unsigned/un-notarized apps. Barto adds its own requirement that managed apps be notarized.
+Required only when handing the `.app` to anyone else. Anything downloaded over a browser, AirDrop or chat, or pushed via MDM, gets the quarantine xattr, and Gatekeeper then refuses to launch unsigned / un-notarized apps.
 
 Outcome:
 
 - `scripts/build-dmg.sh` produces `dist/Foreword-<version>.dmg`, signed + notarized + stapled.
 - Drag-install to `/Applications`. First launch passes Gatekeeper without right-click → Open.
-- `.dmg` uploadable to Rippling Barto.
 
-### Critical files
+None of the files below exist yet; this is the recipe.
 
-#### Modify
+### Project changes
+
 - `Foreword/Foreword.xcodeproj/project.pbxproj`
-  - Set `ENABLE_HARDENED_RUNTIME = YES` (lines 403, 448).
+  - Set `ENABLE_HARDENED_RUNTIME = YES` for the app target.
   - Add `CODE_SIGN_ENTITLEMENTS = Foreword/Foreword.entitlements` to both Debug + Release configs.
-  - Bump `MARKETING_VERSION` (lines 400, 445) and `CURRENT_PROJECT_VERSION` (lines 418, 463) on each release. Consider replacing the hardcoded values with an `xcconfig` (`Config/Version.xcconfig`) sourced by both configs so a single edit updates both.
-  - Confirm `CODE_SIGN_STYLE = Automatic` and `DEVELOPMENT_TEAM = 7Y7HCMY4K5` stay as-is for local archive; the export step below switches signing to manual using `Developer ID Application`.
-- `README.md` — add "Building a release `.dmg`" and "Installing from the `.dmg`" sections.
-- `.gitignore` — add `dist/`, `build/`, `*.dmg`, `*.zip`.
+  - Bump `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` on each release (or move them into `Config/Base.xcconfig`).
+- `.gitignore` — add `dist/`, `*.dmg`, `*.zip`.
 
-#### Create
-- `Foreword/Foreword/Foreword.entitlements` — minimal entitlements file. No sandbox key. Required because Hardened Runtime is on and we spawn signed third-party binaries:
+### New files
+
+- `Foreword/Foreword/Foreword.entitlements` — minimal entitlements file. No sandbox key. Required because Hardened Runtime is on and we spawn third-party binaries:
 
   ```xml
   <?xml version="1.0" encoding="UTF-8"?>
@@ -84,9 +74,9 @@ Outcome:
   </plist>
   ```
 
-  `disable-library-validation` is needed because we `Process`-launch JetBrains `idea`, npm-installed `claude`, and Homebrew `git`/`gh` — they're signed by different teams and Hardened Runtime would otherwise reject loading their dylibs into our process tree's child invocations. (No entitlement is needed for plain `Process` exec of an Apple-signed binary like `/usr/bin/python3`, but the JIT/library entitlements are the standard pattern for tool-shell apps.)
+  `disable-library-validation` is needed because we `Process`-launch JetBrains `idea`, npm-installed `claude`, and Homebrew `git`/`gh` — they're signed by different teams.
 
-- `scripts/ExportOptions.plist`:
+- `scripts/ExportOptions.plist` (team id filled in by the script):
 
   ```xml
   <?xml version="1.0" encoding="UTF-8"?>
@@ -95,25 +85,24 @@ Outcome:
   <plist version="1.0">
   <dict>
     <key>method</key><string>developer-id</string>
-    <key>teamID</key><string>7Y7HCMY4K5</string>
     <key>signingStyle</key><string>automatic</string>
     <key>destination</key><string>export</string>
   </dict>
   </plist>
   ```
 
-- `scripts/build-dmg.sh` — single script that runs the full pipeline. Outline (bash, `set -euo pipefail`):
+- `scripts/build-dmg.sh` — single script that runs the full pipeline:
 
   ```bash
   #!/usr/bin/env bash
   set -euo pipefail
 
+  : "${TEAM_ID:?set TEAM_ID to your Apple Developer Team ID}"
   SCHEME=Foreword
   CONFIG=Release
-  TEAM_ID=7Y7HCMY4K5
   ROOT=$(cd "$(dirname "$0")/.."; pwd)
   DIST="$ROOT/dist"
-  BUILD="$ROOT/build"
+  BUILD="$ROOT/build/release"
   ARCHIVE="$BUILD/$SCHEME.xcarchive"
   EXPORT="$BUILD/Export"
 
@@ -122,11 +111,13 @@ Outcome:
   # 1. Archive (Hardened Runtime on, secure timestamp via Xcode default).
   xcodebuild -project "$ROOT/Foreword/Foreword.xcodeproj" \
     -scheme "$SCHEME" -configuration "$CONFIG" \
-    -archivePath "$ARCHIVE" archive
+    -archivePath "$ARCHIVE" DEVELOPMENT_TEAM="$TEAM_ID" archive
 
   # 2. Export with Developer ID signing.
+  cp "$ROOT/scripts/ExportOptions.plist" "$BUILD/ExportOptions.plist"
+  /usr/libexec/PlistBuddy -c "Add :teamID string $TEAM_ID" "$BUILD/ExportOptions.plist"
   xcodebuild -exportArchive -archivePath "$ARCHIVE" \
-    -exportOptionsPlist "$ROOT/scripts/ExportOptions.plist" \
+    -exportOptionsPlist "$BUILD/ExportOptions.plist" \
     -exportPath "$EXPORT"
 
   APP="$EXPORT/$SCHEME.app"
@@ -145,7 +136,7 @@ Outcome:
     "$DMG" "$APP"
 
   # 5. Sign + notarize + staple the DMG itself.
-  codesign --sign "Developer ID Application: <Team Name> ($TEAM_ID)" --timestamp "$DMG"
+  codesign --sign "Developer ID Application" --timestamp "$DMG"
   xcrun notarytool submit "$DMG" --keychain-profile notarytool-password --wait
   xcrun stapler staple "$DMG"
 
@@ -157,7 +148,7 @@ Outcome:
 ### One-time setup (per developer who builds releases)
 
 1. `brew install create-dmg` — Homebrew formula, the shell-based one (not the JS npm package).
-2. In Apple Developer portal under team `7Y7HCMY4K5`, request a **Developer ID Application** certificate (and matching **Developer ID Installer** if we ever ship `.pkg`). Download + install into login keychain. Confirm:
+2. In the Apple Developer portal, request a **Developer ID Application** certificate for your team. Download + install into the login keychain. Confirm:
 
    ```sh
    security find-identity -v -p codesigning | grep "Developer ID"
@@ -168,40 +159,26 @@ Outcome:
    ```sh
    xcrun notarytool store-credentials notarytool-password \
      --apple-id <appleid> \
-     --team-id 7Y7HCMY4K5 \
+     --team-id <your-team-id> \
      --password <app-specific-pw>
    ```
 
-4. Verify Xcode 26.4.1 + macOS SDK present (already configured per `project.pbxproj`).
+4. Xcode 26.4+ with the macOS 26 SDK (the deployment target is macOS 26.4).
 
-### Rippling Barto upload
+### Verification
 
-Barto is Rippling's internal "App Catalog" / app distribution surface.
-
-1. Open Rippling → App Shop / Software → request a new managed app (confirm exact entry point with IT/Helpdesk).
-2. Upload `dist/Foreword-<version>.dmg`. Barto requires a notarized, stapled artifact (Apple's Gatekeeper requirement on managed Macs).
-3. Set bundle id `com.floc.Foreword` and the marketing version so Barto can detect updates.
-4. For each future release: bump version → `make dmg` → upload new artifact → publish.
-
-If Barto requires `.pkg` instead of `.dmg`, swap step 4 of the script for `productbuild --component "$APP" /Applications "$BUILD/$SCHEME.pkg"`, then sign with `Developer ID Installer` and notarize the `.pkg` the same way. Confirm format with Rippling IT before first submission.
-
-### Phase 2 verification
-
-End-to-end check before publishing:
-
-1. `./scripts/build-dmg.sh` exits 0; `dist/Foreword-<version>.dmg` produced.
+1. `TEAM_ID=<your-team-id> ./scripts/build-dmg.sh` exits 0; `dist/Foreword-<version>.dmg` produced.
 2. `spctl --assess --type open --context context:primary-signature -vv dist/*.dmg` → `accepted, source=Notarized Developer ID`.
-3. `codesign -dv --entitlements :- build/Export/Foreword.app` → shows Hardened Runtime flag (`runtime`), Developer ID team, and the entitlements above.
+3. `codesign -dv --entitlements :- build/release/Export/Foreword.app` → shows the Hardened Runtime flag (`runtime`), your Developer ID team, and the entitlements above.
 4. `xcrun stapler validate dist/*.dmg` → `The validate action worked!`.
-5. On a clean Mac (or another machine where you re-download the DMG, so quarantine is set): mount the DMG, drag `Foreword.app` to `/Applications`, double-click — Gatekeeper opens it without the "unidentified developer" prompt.
+5. On another Mac (or after re-downloading the DMG, so quarantine is set): mount the DMG, drag `Foreword.app` to `/Applications`, double-click — Gatekeeper opens it without the "unidentified developer" prompt.
 6. Smoke test: Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation succeeds (verifies `Process` launches still work under Hardened Runtime + library-validation-disabled).
-7. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword` — all green.
-8. Pilot install on one teammate's Mac via Barto before broad rollout.
 
 ---
 
 ## Out of scope
 
-- CI automation (GitHub Actions runner with signing cert in keychain) — defer; first release is hand-built.
-- Sparkle / auto-update — Barto handles distribution of new versions.
-- Universal binary — macOS 26 deployment target is Apple Silicon only.
+- Signing in CI (GitHub Actions runner with a signing cert in the keychain). CI only builds and runs unit tests unsigned.
+- Sparkle / auto-update.
+- Homebrew cask.
+- Universal binary — the macOS 26 deployment target is Apple Silicon only.

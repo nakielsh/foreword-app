@@ -4,7 +4,7 @@ Domain glossary for Foreword. Terms here are meaningful to me as the user — no
 
 ## Pull Request (PR)
 
-A GitHub pull request. Surfaces in three tabs (Reviews, My PRs, Deployments-adjacent). The same PR object may show up in different tabs with different framing (waiting on me to review vs. authored by me).
+A GitHub pull request. Surfaces in two tabs (Reviews, My PRs). The same PR object may show up in different tabs with different framing (waiting on me to review vs. authored by me).
 
 ## Review
 
@@ -31,9 +31,9 @@ A GitHub user listed in a PR's `requestedReviewers` or `latestReviews`. Distinct
 
 ## Jira Ticket
 
-An Atlassian Cloud issue extracted from a branch name (`feature/PROJ-123` → `PROJ-123`). Optionally has a **Parent Ticket** when the matched issue is a subtask with a thin description. Both ticket and parent are sent to Claude as part of the Review prompt's Jira block.
+An Atlassian Cloud issue extracted from a branch name (`feature/PROJ-123` → `PROJ-123`; for configured project keys also `PROJ-123-fix`, `jane/PROJ-123`). Optionally has a **Parent Ticket** when the matched issue is a subtask with a thin description. Both ticket and parent are sent to Claude as part of the Review prompt's Jira block.
 
-A ticket is "found" if and only if `TicketKeyExtractor.extract(branchName:)` returns a key AND `JiraClient.fetchTicket` succeeds (cached or live). When found, a pill badge `[KEY]` renders on the PR card and links to `<jira.baseURL>/browse/<KEY>`. When not found, no badge.
+A ticket is "found" if and only if `TicketKeyExtractor.extract(branchName:projectKeyPrefixes:)` returns a key AND `JiraClient.fetchTicket` succeeds (cached or live). When found, a pill badge `[KEY]` renders on the PR card and links to `<jira.baseURL>/browse/<KEY>`. When not found, no badge.
 
 ## Worktree
 
