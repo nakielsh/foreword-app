@@ -231,7 +231,7 @@ struct FirstRunWizard: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("4. Project key prefixes", skipBinding: $skipPrefixes)
             if !skipPrefixes {
-                Text("Comma-separated. Empty == accept any [A-Z]+-\\d+.")
+                Text("Comma-separated. `feature/KEY-123` branches always work; listing your keys also finds them in branches like `KEY-123-fix` or `jane/KEY-123`.")
                     .font(Font.appBody(size: 12))
                     .foregroundStyle(Color.textMuted)
                 TextField("PROJ, ABC", text: $prefixesText)

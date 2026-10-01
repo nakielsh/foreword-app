@@ -148,7 +148,9 @@ enum AppSettings {
 
     // MARK: - Project key prefixes
 
-    /// Stored as a `[String]` in UserDefaults. Default empty == "accept any [A-Z]+-\d+".
+    /// Stored as a `[String]` in UserDefaults. `TicketKeyExtractor` always
+    /// accepts `feature/<KEY>-<n>`-style branches; keys listed here are also
+    /// found anywhere else in a branch name. Default empty.
     static var projectKeyPrefixes: [String] {
         get { projectKeyPrefixes(defaults: .standard) }
         set { setProjectKeyPrefixes(newValue, defaults: .standard) }

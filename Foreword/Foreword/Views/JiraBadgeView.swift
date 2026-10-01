@@ -36,7 +36,11 @@ struct JiraBadgeView: View {
     @State private var status: String?
 
     var body: some View {
-        if let resolved = Self.resolve(branchName: branchName, baseURL: JiraConfig.getBaseURL()) {
+        if let resolved = Self.resolve(
+            branchName: branchName,
+            baseURL: JiraConfig.getBaseURL(),
+            projectKeyPrefixes: AppSettings.projectKeyPrefixes
+        ) {
             Button {
                 NSWorkspace.shared.open(resolved.url)
             } label: {
@@ -100,10 +104,14 @@ struct JiraBadgeView: View {
     ///   - no Jira key can be extracted from the branch name,
     ///   - `baseURL` is nil or empty,
     ///   - the resulting URL string is malformed.
-    static func resolve(branchName: String?, baseURL: String?) -> (key: String, url: URL)? {
+    static func resolve(
+        branchName: String?,
+        baseURL: String?,
+        projectKeyPrefixes: [String] = []
+    ) -> (key: String, url: URL)? {
         guard
             let branch = branchName,
-            let key = TicketKeyExtractor.extract(branchName: branch),
+            let key = TicketKeyExtractor.extract(branchName: branch, projectKeyPrefixes: projectKeyPrefixes),
             let raw = baseURL,
             !raw.isEmpty
         else { return nil }

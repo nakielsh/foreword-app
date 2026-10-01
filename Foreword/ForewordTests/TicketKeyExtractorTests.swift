@@ -6,7 +6,8 @@
 //  Covers all five branch prefixes from the PRD (feature/bugfix/hotfix/
 //  chore/task), trunk branches (main, master), dependabot branches, free
 //  feature branches, mid-string keys, and "first match wins" when the
-//  branch name has noise after the key.
+//  branch name has noise after the key. Also covers the fallback that finds
+//  a key anywhere in the branch when its project is a configured prefix.
 //
 
 import XCTest
@@ -80,5 +81,50 @@ final class TicketKeyExtractorTests: XCTestCase {
         // A nested path under feature/ should not match because the regex
         // is anchored to feature/ followed immediately by the key.
         XCTAssertNil(TicketKeyExtractor.extract(branchName: "feature/sub/PROJ-123"))
+    }
+
+    // MARK: - Fallback for configured project keys
+
+    func testPrefixedFormIsUnchangedWhenPrefixesAreConfigured() {
+        assertThat(TicketKeyExtractor.extract(branchName: "feature/PROJ-12-x", projectKeyPrefixes: ["PROJ"]))
+            .isEqualTo("PROJ-12")
+    }
+
+    func testFindsLeadingKeyForConfiguredProject() {
+        assertThat(TicketKeyExtractor.extract(branchName: "PROJ-12-add-thing", projectKeyPrefixes: ["PROJ"]))
+            .isEqualTo("PROJ-12")
+    }
+
+    func testFindsKeyAfterUserSegmentForConfiguredProject() {
+        assertThat(TicketKeyExtractor.extract(branchName: "jane/PROJ-12", projectKeyPrefixes: ["PROJ"]))
+            .isEqualTo("PROJ-12")
+    }
+
+    func testIgnoresKeyLookalikesFromUnconfiguredProjects() {
+        assertThat(TicketKeyExtractor.extract(branchName: "UTF-8-fix", projectKeyPrefixes: ["PROJ"])).isNil()
+    }
+
+    func testSkipsUnconfiguredLookalikeAndFindsLaterConfiguredKey() {
+        assertThat(TicketKeyExtractor.extract(branchName: "UTF-8-fix-PROJ-12", projectKeyPrefixes: ["PROJ"]))
+            .isEqualTo("PROJ-12")
+    }
+
+    func testFallbackNeedsConfiguredPrefixes() {
+        assertThat(TicketKeyExtractor.extract(branchName: "PROJ-12-add-thing")).isNil()
+        assertThat(TicketKeyExtractor.extract(branchName: "jane/PROJ-12", projectKeyPrefixes: [])).isNil()
+    }
+
+    func testFallbackMatchesWholeProjectKeyOnly() {
+        assertThat(TicketKeyExtractor.extract(branchName: "jane/XPROJ-12", projectKeyPrefixes: ["PROJ"])).isNil()
+        assertThat(TicketKeyExtractor.extract(branchName: "jane/proj-12", projectKeyPrefixes: ["PROJ"])).isNil()
+    }
+
+    func testConfiguredPrefixesAreCaseInsensitive() {
+        assertThat(TicketKeyExtractor.extract(branchName: "jane/ABC-7", projectKeyPrefixes: ["proj", "abc"]))
+            .isEqualTo("ABC-7")
+    }
+
+    func testTrunkStaysNilWithPrefixesConfigured() {
+        assertThat(TicketKeyExtractor.extract(branchName: "main", projectKeyPrefixes: ["PROJ"])).isNil()
     }
 }

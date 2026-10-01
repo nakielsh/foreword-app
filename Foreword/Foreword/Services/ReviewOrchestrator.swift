@@ -402,7 +402,10 @@ final class ReviewOrchestrator {
         if input.cancellation.isCancelled { return }
 
         // Step 2: resolve Jira context (slice 10).
-        let jiraKey = TicketKeyExtractor.extract(branchName: input.branch)
+        let jiraKey = TicketKeyExtractor.extract(
+            branchName: input.branch,
+            projectKeyPrefixes: AppSettings.projectKeyPrefixes
+        )
         if let jiraKey {
             review.jiraKey = jiraKey
             try? store.context.save()

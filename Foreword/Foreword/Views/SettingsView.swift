@@ -327,7 +327,7 @@ struct SettingsView: View {
                 .font(Font.appBody(size: 11))
                 .foregroundStyle(Color.textMuted)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Project key prefixes (comma-separated, leave empty to accept any)")
+                Text("Project key prefixes (comma-separated). Also finds keys outside `feature/KEY-1` branches, e.g. `KEY-1-fix`, `jane/KEY-1`.")
                     .font(Font.appBody(size: 12))
                     .foregroundStyle(Color.textMuted)
                 TextField("PROJ, ABC", text: $prefixesText)
