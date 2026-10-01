@@ -21,3 +21,6 @@ Foreword/Config/Local.xcconfig
 # Agent skill installs unrelated to the app
 .agents/
 skills-lock.json
+
+# Python bytecode
+__pycache__/
