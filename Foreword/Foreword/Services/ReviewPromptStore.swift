@@ -35,7 +35,7 @@ final class ReviewPromptStore {
     static let defaultTemplate: String = """
         You are reviewing PR #{{prNumber}} in {{repo}}, branch {{branch}}, head SHA {{sha}}.
 
-        Invoke the `reviewing-pr-final-state` skill via the Skill tool first; follow it for diff scoping, base-branch resolution, and inspection rules.
+        Invoke the `reviewing-pr-final-state` skill via the Skill tool first; follow it for diff scoping, base-branch resolution, and inspection rules. If the skill is unavailable, review the full PR diff against its base branch (`gh pr diff {{prNumber}} --repo {{repo}}`).
 
         Use `gh pr view {{prNumber}} --repo {{repo}}` for PR metadata. The current working directory is the worktree at HEAD.
 

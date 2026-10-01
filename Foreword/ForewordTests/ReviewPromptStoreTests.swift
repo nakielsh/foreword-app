@@ -44,6 +44,12 @@ final class ReviewPromptStoreTests: XCTestCase {
         XCTAssertTrue(template.contains("{{sha}}"),       "default template must contain {{sha}}")
     }
 
+    func testDefaultTemplateFallsBackWhenTheSkillIsMissing() {
+        assertThat(ReviewPromptStore.defaultTemplate).contains("reviewing-pr-final-state")
+        assertThat(ReviewPromptStore.defaultTemplate)
+            .contains("If the skill is unavailable, review the full PR diff against its base branch (`gh pr diff {{prNumber}} --repo {{repo}}`).")
+    }
+
     func testDefaultTemplateContainsSchemaDirective() {
         XCTAssertTrue(
             ReviewPromptStore.defaultTemplate.contains(OrchestratorPrompt.schemaDirective),

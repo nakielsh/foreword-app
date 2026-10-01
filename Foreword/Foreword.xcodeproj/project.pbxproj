@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F8A0C0DE2FB0000400C0FFEE /* skills in Resources */ = {isa = PBXBuildFile; fileRef = F8A0C0DE2FB0000300C0FFEE /* skills */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		F894FF0C2FAF522D00DF32C7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -28,6 +32,7 @@
 		F894FF0B2FAF522D00DF32C7 /* ForewordTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForewordTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F894FF152FAF522D00DF32C7 /* ForewordUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ForewordUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8A0C0DE2FB0000100C0FFEE /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		F8A0C0DE2FB0000300C0FFEE /* skills */ = {isa = PBXFileReference; lastKnownFileType = folder; name = skills; path = ../skills; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -78,6 +83,7 @@
 			children = (
 				F8A0C0DE2FB0000200C0FFEE /* Config */,
 				F894FEFE2FAF522B00DF32C7 /* Foreword */,
+				F8A0C0DE2FB0000300C0FFEE /* skills */,
 				F894FF0E2FAF522D00DF32C7 /* ForewordTests */,
 				F894FF182FAF522D00DF32C7 /* ForewordUITests */,
 				F894FEFD2FAF522B00DF32C7 /* Products */,
@@ -222,6 +228,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F8A0C0DE2FB0000400C0FFEE /* skills in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

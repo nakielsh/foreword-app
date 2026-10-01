@@ -259,6 +259,7 @@ struct SettingsView: View {
             ForEach(Tool.allCases, id: \.self) { tool in
                 toolRow(tool)
             }
+            ReviewSkillRow()
         }
     }
 

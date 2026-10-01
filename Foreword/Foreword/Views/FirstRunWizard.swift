@@ -3,8 +3,8 @@
 //  Foreword
 //
 //  Single-sheet, scrollable, skippable-per-section first-run setup.
-//  Sections: GitHub token, Jira config, Tool paths, Project key prefixes,
-//  Concurrency cap. Each section has its own "Skip" affordance — pressing
+//  Sections: GitHub token, Jira config, Tool paths (plus the bundled review
+//  skill), Project key prefixes, Concurrency cap. Each section has its own "Skip" affordance — pressing
 //  Done writes whatever the user did fill in.
 //
 //  Re-openable from SettingsView via "Re-run first-run wizard".
@@ -187,6 +187,7 @@ struct FirstRunWizard: View {
                 ForEach(Tool.allCases, id: \.self) { tool in
                     toolRow(tool)
                 }
+                ReviewSkillRow()
             }
         }
     }
