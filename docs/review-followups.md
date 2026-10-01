@@ -79,7 +79,7 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
   - `OrchestratorJiraInjectionTests.testLegacyBuildPromptIsEquivalentToNoJira` — asserts two implementations equal each other; passes if both regress identically.
   - `AppearanceTests.testIdentifiable` + `testRawValueRoundTrip` — round-trip a String enum through itself; tests the compiler.
   - `ReviewPromptStoreTests.testKnownVariableKeysContainsExpectedFour` — re-asserts a constant.
-  - `MonogramRendererTests.testNonASCIILoginUsesFirstScalarUppercased` / `testNumericLoginUsesFirstCharacter` — only assert "non-nil and deterministic", not the promised behaviour. Two of these are also currently failing — investigate before deletion.
+  - `MonogramRendererTests.testNonASCIILoginUsesFirstScalarUppercased` / `testNumericLoginUsesFirstCharacter` — only assert "non-nil and deterministic", not the promised behaviour. Both pass; two other MonogramRenderer tests are skipped with `XCTSkipIf` pending renderer fixes (see the FIXMEs).
   - `MenuBarCountsTests.testRefreshReviewsRequestedNotificationNameIsStable` — re-asserts a string constant.
   - `ForewordUITestsLaunchTests.testLaunch` — screenshot without assertion.
   - `AvatarLoaderTests` — tests an `AvatarLoaderSUT` reimplementation, not the real loader. Inject the session into `AvatarLoader.shared` and test the real type.

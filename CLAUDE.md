@@ -59,7 +59,7 @@ Xcode project at `Foreword/Foreword.xcodeproj`. SwiftUI scenes + SwiftData persi
 2. `TicketKeyExtractor.extract(branchName:)` → `JiraClient.fetchTicket` (cached in `CachedJiraTicket`).
 3. `fetchChangedFiles(repo:prNumber:)` shells `gh pr view --json files --jq '.files[].path'` for the prompt allowlist (degrades to no-allowlist on failure).
 4. `OrchestratorPrompt.build` composes: Jira block → user template (interpolated `{{repo}} {{prNumber}} {{branch}} {{sha}}`) → schema directive → allowlist block.
-5. `ClaudeRunner.run` spawns `claude` with `cwd = worktree`, `allowedTools = "Read,Grep,Glob,Bash(gh:*),Bash(git:*)"`, `disallowedTools = "Bash,Write,Edit"`. Yields a stream of `ClaudeEvent`.
+5. `ClaudeRunner.run` spawns `claude` with `cwd = worktree`, `allowedTools = "Read,Grep,Glob,Skill,Bash(gh:*),Bash(git:*)"`, `disallowedTools = "Bash,Write,Edit,Task,TodoWrite,WebFetch,WebSearch"`. Yields a stream of `ClaudeEvent`.
 6. `ReviewStore.markCompleted` parses the final result against `ReviewSchema`, filters findings whose `file` is missing in the worktree (or absolute / empty), persists kept findings, surfaces drop count via `Review.errorMessage`.
 
 Cancellation flows through `CancellationContext` → `CancellationFlag` (lock-backed) → SIGTERM via `ProcessBox`. Concurrency capped per `AppSettings.concurrencyCap` with queue + drain in the orchestrator.
