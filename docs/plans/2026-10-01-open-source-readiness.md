@@ -77,7 +77,7 @@ No API tokens / keys found in tracked files or in any branch's history (scanned 
 
 | Item | Action |
 |---|---|
-| No `LICENSE` | Add (MIT or Apache-2.0 — §2) |
+| No `LICENSE` | Add MIT (D1) |
 | Bundled fonts (Libre Baskerville, Source Sans 3) are SIL OFL 1.1 | Add `WorkHomepage/WorkHomepage/Resources/Fonts/OFL.txt` + attribution in README |
 | App icon provenance | Confirm it's yours / generated; note in README |
 | `docs/issues/01-26`, `docs/PRD.md` | Fine to publish (good design history) after §1.2 scrub. PRD has internal framing ("my coworkers"), OK |
@@ -105,9 +105,9 @@ Options:
 
 | # | Question | Status |
 |---|---|---|
-| D1 | License | **Open** — MIT recommended |
-| D2 | App / repo name | **Open** — new name wanted, candidates TBD (Task 4a) |
-| D3 | Bundle id | **Decided:** `io.github.nakielsh.<NewName>` |
+| D1 | License | **Decided:** MIT |
+| D2 | App / repo name | **Decided:** app `Foreword`, repo `foreword-app` (Task 4a) |
+| D3 | Bundle id | **Decided:** `io.github.nakielsh.Foreword` |
 | D4 | HTML dashboard | Keep at root, Deployments removed |
 | D5 | History | **Decided:** keep history, commit cleanup on top (§1.6 option 3) |
 | D6 | `ala-com` backup | **Decided:** separate local branch for now; not pushed |
@@ -176,9 +176,9 @@ Fix `PathFormatterTests` expected values to match the new input.
 **Step 2:** `TicketKeyExtractorTests` — any test that relied on `JWT` specifically must still pass with `PROJ` (`[A-Z]+-\d+` covers both).
 **Step 3:** `make test` → green. Commit.
 
-### Task 4a: Rename the app to `<NewName>`
+### Task 4a: Rename the app to `Foreword` (repo `foreword-app`)
 
-Blocked on D2. Do it before Task 4 so the bundle id is set once.
+Do it before Task 4 so the bundle id is set once.
 
 **Files / touch points:**
 - Xcode: project dir `WorkHomepage/`, `.xcodeproj`, targets `WorkHomepage` / `WorkHomepageTests` / `WorkHomepageUITests`, scheme, `PRODUCT_NAME`, `WorkHomepageApp.swift` (type + file), every `@testable import WorkHomepage`
@@ -188,7 +188,7 @@ Blocked on D2. Do it before Task 4 so the bundle id is set once.
 
 **Step 1:** Rename project + targets + scheme in Xcode (Project navigator rename → accept "rename related items"), then `make build` and `make test`.
 **Step 2:** Replace string literals above; `git grep -n -i -E "work-?homepage"` → only historical docs (`docs/issues/`, `docs/PRD.md`) and the migration code.
-**Step 3 (test first):** `LegacyDataMigrationTests` — on first launch, if new locations are empty and legacy ones exist: move `Application Support/WorkHomepage/` → `Application Support/<NewName>/`, move `~/.work-homepage/` → `~/.<new-name>/` (skip if worktrees are in use), copy Keychain items from service `com.work-homepage` to the new service. Never overwrite existing new-location data.
+**Step 3 (test first):** `LegacyDataMigrationTests` — on first launch, if new locations are empty and legacy ones exist: move `Application Support/WorkHomepage/` → `Application Support/Foreword/`, move `~/.work-homepage/` → `~/.foreword/` (skip if worktrees are in use), copy Keychain items from service `com.work-homepage` to service `io.github.nakielsh.foreword`. Never overwrite existing new-location data.
 **Step 4:** Implement `LegacyDataMigration.runIfNeeded()` called from the app's `init` before `ModelContainer` is built.
 **Step 5:** `make local-install`, remove old `/Applications/WorkHomepage.app`, confirm reviews, findings, Jira creds and GitHub token survived. Commit.
 
@@ -210,10 +210,10 @@ DEVELOPMENT_TEAM = ABCDE12345
 BUNDLE_ID_PREFIX = com.example
 ```
 
-**Step 1:** In Xcode set `Base.xcconfig` as the base configuration for all targets/configs; in pbxproj set `PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).<NewName>` (and `…Tests`, `…UITests`), delete `DEVELOPMENT_TEAM = 7Y7HCMY4K5;` lines.
+**Step 1:** In Xcode set `Base.xcconfig` as the base configuration for all targets/configs; in pbxproj set `PRODUCT_BUNDLE_IDENTIFIER = $(BUNDLE_ID_PREFIX).Foreword` (and `…Tests`, `…UITests`), delete `DEVELOPMENT_TEAM = 7Y7HCMY4K5;` lines.
 **Step 2:** Create your own `Local.xcconfig` with the real team ID; `make build` signs as before.
 **Step 3:** Fresh clone without `Local.xcconfig` → `make build` succeeds (ad-hoc signing).
-**Step 4:** Migrate your settings once: `defaults export com.floc.WorkHomepage - | defaults import io.github.nakielsh.<NewName> -`.
+**Step 4:** Migrate your settings once: `defaults export com.floc.WorkHomepage - | defaults import io.github.nakielsh.Foreword -`.
 **Step 5:** `git grep -n -E "7Y7HCMY4K5|com\.floc"` → 0. Commit.
 
 ### Task 5: Generalise child-process env allow-list
@@ -304,9 +304,9 @@ History kept (D5), so no orphan/squash. Before flipping visibility:
 git ls-remote --heads origin           # must list only refs/heads/main
 git ls-remote --tags origin            # review every tag
 ./scripts/check-no-org-leaks.sh        # HEAD is clean
-gh repo rename <new-name> --repo nakielsh/work-homepage   # GitHub keeps a redirect from the old name
-gh repo edit nakielsh/<new-name> --visibility public --accept-visibility-change-consequences
-git remote set-url origin https://github.com/nakielsh/<new-name>.git
+gh repo rename foreword-app --repo nakielsh/work-homepage   # GitHub keeps a redirect from the old name
+gh repo edit nakielsh/foreword-app --visibility public --accept-visibility-change-consequences
+git remote set-url origin https://github.com/nakielsh/foreword-app.git
 ```
 
 Never `git push --all` / `--mirror` to this remote: `ala-com`, `backup/pre-rewrite` and `worktree-agent-*` would go public. If `ala-com` needs an off-machine backup later, push it to a **separate private** repo, not to this one.
