@@ -1,0 +1,14 @@
+// Base.xcconfig
+//
+// Build identity shared by every target. Applied as the project-level base
+// configuration, so targets inherit it. Per-developer values (signing team,
+// a different bundle id prefix) go in Local.xcconfig next to this file —
+// copy Local.xcconfig.example. Local.xcconfig is gitignored.
+//
+// With no team set the app is signed to run locally (ad hoc), which is all
+// `make build` / `make local-install` need on your own Mac.
+
+BUNDLE_ID_PREFIX = io.github.nakielsh
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

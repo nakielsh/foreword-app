@@ -1,0 +1,10 @@
+// Local.xcconfig.example
+//
+// Copy to Local.xcconfig (gitignored) to sign with your own Apple Developer
+// team. Find your Team ID at developer.apple.com → Membership details.
+
+DEVELOPMENT_TEAM = ABCDE12345
+
+// Optional: use your own reverse-DNS prefix so your build doesn't share a
+// bundle id (and UserDefaults domain) with upstream builds.
+// BUNDLE_ID_PREFIX = com.example

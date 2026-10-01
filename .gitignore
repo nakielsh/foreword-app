@@ -14,3 +14,10 @@ github-http-cache/
 # Claude Code agent infra (worktrees, local settings)
 .claude/
 .claire/
+
+# Per-developer signing identity (copy Foreword/Config/Local.xcconfig.example)
+Foreword/Config/Local.xcconfig
+
+# Agent skill installs unrelated to the app
+.agents/
+skills-lock.json
