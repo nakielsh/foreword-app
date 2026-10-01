@@ -8,7 +8,7 @@ Two levels. **Local install** is enough to run the app on your own Mac. **Signin
 
 Per Apple's distribution guidance (`developer.apple.com`), any app distributed outside the Mac App Store must be signed with a **Developer ID Application** certificate, built with the **Hardened Runtime** enabled, include a **secure timestamp**, and be **notarized** + **stapled**. The project currently has `ENABLE_HARDENED_RUNTIME = NO` and no entitlements file, so it cannot be notarized as-is.
 
-Sandbox stays **off** — the app shells out to `git`, `gh`, `claude`, `idea`, `/usr/bin/python3` and reads `~/.claude/`, `~/.foreword/` (see `BinaryResolver`, `WorktreeManager.swift:9-10`, `SessionsReader.swift`). Sandboxing would break all of that. Notarization does not require the sandbox; only Hardened Runtime is mandatory.
+Sandbox stays **off** — the app shells out to `git`, `gh`, `claude`, `idea` and reads `~/.claude/`, `~/.foreword/`, and your local clones under the Local Repos search roots (see `BinaryResolver`, `WorktreeManager.swift:9-10`, `LocalRepoIndex`, `SessionsReader.swift`). Sandboxing would break all of that. Notarization does not require the sandbox; only Hardened Runtime is mandatory.
 
 ### Signing identity
 
@@ -33,7 +33,7 @@ No Gatekeeper prompt — locally built binaries don't get the `com.apple.quarant
 ### Verification
 
 1. `make build` exits 0.
-2. `/Applications/Foreword.app` launches by double-click. Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation works.
+2. `/Applications/Foreword.app` launches by double-click. Reviews tab loads PRs, Sessions tab populates from `~/.claude/sessions/`, worktree creation works.
 3. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword -destination 'platform=macOS' -only-testing:ForewordTests` green.
 
 ---
@@ -172,7 +172,7 @@ None of the files below exist yet; this is the recipe.
 3. `codesign -dv --entitlements :- build/release/Export/Foreword.app` → shows the Hardened Runtime flag (`runtime`), your Developer ID team, and the entitlements above.
 4. `xcrun stapler validate dist/*.dmg` → `The validate action worked!`.
 5. On another Mac (or after re-downloading the DMG, so quarantine is set): mount the DMG, drag `Foreword.app` to `/Applications`, double-click — Gatekeeper opens it without the "unidentified developer" prompt.
-6. Smoke test: Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation succeeds (verifies `Process` launches still work under Hardened Runtime + library-validation-disabled).
+6. Smoke test: Reviews tab loads PRs, Sessions tab populates from `~/.claude/sessions/`, worktree creation succeeds (verifies `Process` launches still work under Hardened Runtime + library-validation-disabled).
 
 ---
 

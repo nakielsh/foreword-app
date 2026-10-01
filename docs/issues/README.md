@@ -2,6 +2,8 @@
 
 Vertical slices for the SwiftUI rewrite + Claude review feature. Source: `docs/PRD.md`.
 
+> Historical record of how the macOS app was built, written while it was still called WorkHomepage; names and paths reflect that time. Slice 18's deletions were not carried out: the HTML dashboard and refresh scripts stay in the repo as a legacy dashboard, and README / CLAUDE.md were rewritten around the macOS app instead.
+
 No tracker configured — issues live as files here. When a tracker comes online, post each with the `ready-for-agent` label per the standard `to-issues` flow.
 
 ## Index

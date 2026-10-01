@@ -12,4 +12,4 @@ We store the same hex tokens as the HTML in the asset catalog (one `.colorset` p
 
 ## Consequences
 
-Two tokens (`bg-deep`, `text-primary`) need manual updates when the light palette changes. The rest stay in sync automatically. The Settings appearance toggle (Light / Dark / System, default System) lets the user pin if a specific token looks wrong in either mode without re-derivation.
+Two tokens (`bg-deep`, `text-primary`) need manual updates when the light palette changes. (Update: `bg-card` and `bg-card-hover` later got hand-picked dark tones too, because white HSL-flips to pure black. The full derivation table lives in the header of `Theme.swift`.) The rest stay in sync automatically. The Settings appearance toggle (Light / Dark / System, default System) lets the user pin if a specific token looks wrong in either mode without re-derivation.

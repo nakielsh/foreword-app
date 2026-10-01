@@ -23,7 +23,7 @@ xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword \
   -destination 'platform=macOS' -only-testing:ForewordTests
 ```
 
-The UI tests (`ForewordUITests`) drive the real app and take over the screen; run them on purpose, not by default.
+The UI tests (`ForewordUITests`) drive the real app and take over the screen; run them on purpose, not by default. `make test` runs every target, UI tests included.
 
 - Write the test first when fixing a bug or adding behaviour.
 - Prefer the fluent helpers in `ForewordTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`).

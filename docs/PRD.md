@@ -1,6 +1,8 @@
 # PRD — Native macOS Dashboard with Claude Code Reviews
 
 > Historical document, written for internal use when the app was still called WorkHomepage. The Deployments tab described below was removed in the open-source release; it was hard-wired to one organisation's workflows.
+>
+> Other parts have drifted too. The plan to delete `index.html` and the refresh scripts after the port (see *Repo restructure*) was dropped; they stay in the repo as a legacy dashboard. Paths moved from `~/.work-homepage/` to `~/.foreword/`, the review timeout is configurable (default 30 minutes), and the Pre-Review Summary returns a few sentences of prose rather than three fields. For the current app, read `README.md` and `CLAUDE.md`.
 
 ## Problem Statement
 

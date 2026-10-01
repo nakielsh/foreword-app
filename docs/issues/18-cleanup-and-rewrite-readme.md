@@ -1,5 +1,7 @@
 # 18 — Cleanup: delete HTML + python + launchd, rewrite README + CLAUDE.md
 
+> **Outcome:** the README and CLAUDE.md rewrites happened; the deletions did not. `index.html`, `refresh-sessions.*` and the LaunchAgent template were kept as a legacy dashboard (`claude-sessions.js` is gitignored).
+
 ## What to build
 
 Final-phase cleanup. Remove the legacy browser dashboard and helper scripts now that the SwiftUI app is at parity and shipping new features.
