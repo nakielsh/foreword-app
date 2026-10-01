@@ -24,11 +24,11 @@ final class WorkHomepageUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    // MARK: - Tab bar / sidebar contains the four expected tabs
+    // MARK: - Tab bar / sidebar contains the three expected tabs
 
-    /// All four tabs are present in the sidebar by name. We don't assert
+    /// All three tabs are present in the sidebar by name. We don't assert
     /// pixel order; we only assert membership.
-    func testSidebarContainsFourExpectedTabs() throws {
+    func testSidebarContainsThreeExpectedTabs() throws {
         let app = XCUIApplication()
         app.launch()
 
@@ -48,9 +48,9 @@ final class WorkHomepageUITests: XCTestCase {
         // Each tab must be reachable by accessibility text. We tolerate
         // the production app rendering the labels as buttons or
         // staticTexts depending on the SwiftUI shape.
-        // Per `SidebarView.swift` the four cases are "Reviews", "My PRs",
-        // "Sessions", "Deploys". We don't pin pixel order — only membership.
-        for label in ["Reviews", "My PRs", "Sessions", "Deploys"] {
+        // Per `SidebarView.swift` the three cases are "Reviews", "My PRs",
+        // "Sessions". We don't pin pixel order — only membership.
+        for label in ["Reviews", "My PRs", "Sessions"] {
             let staticText = app.staticTexts[label]
             let button = app.buttons[label]
             XCTAssertTrue(
@@ -58,6 +58,9 @@ final class WorkHomepageUITests: XCTestCase {
                 "tab '\(label)' missing from sidebar"
             )
         }
+        // Deployments was removed for the open-source release.
+        XCTAssertFalse(app.staticTexts["Deploys"].exists, "Deploys tab should be gone")
+        XCTAssertFalse(app.buttons["Deploys"].exists, "Deploys tab should be gone")
     }
 
     // MARK: - Reviews list is reachable

@@ -42,7 +42,7 @@ final class GitHubClientMyPRsTests: XCTestCase {
             {
               "id": 42,
               "number": 9,
-              "title": "Wire deploy badges",
+              "title": "Wire reviewer badges",
               "html_url": "https://github.com/Ala-com/foo/pull/9",
               "user": {
                 "login": "hubert",
@@ -76,7 +76,7 @@ final class GitHubClientMyPRsTests: XCTestCase {
         let pr = prs[0]
         XCTAssertEqual(pr.id, 42)
         XCTAssertEqual(pr.number, 9)
-        XCTAssertEqual(pr.title, "Wire deploy badges")
+        XCTAssertEqual(pr.title, "Wire reviewer badges")
         XCTAssertTrue(pr.draft)
         XCTAssertEqual(pr.user.login, "hubert")
         XCTAssertEqual(pr.user.avatarURL, URL(string: "https://avatars.githubusercontent.com/u/12345?v=4"))

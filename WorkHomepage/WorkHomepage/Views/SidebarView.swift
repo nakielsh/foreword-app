@@ -24,7 +24,6 @@ enum AppTab: String, CaseIterable, Identifiable {
     case reviews = "Reviews"
     case myPRs = "My PRs"
     case sessions = "Sessions"
-    case deploys = "Deploys"
 
     var id: String { rawValue }
 
@@ -33,7 +32,6 @@ enum AppTab: String, CaseIterable, Identifiable {
         case .reviews: return "checkmark.message"
         case .myPRs: return "person.crop.circle.badge"
         case .sessions: return "terminal"
-        case .deploys: return "shippingbox"
         }
     }
 }
@@ -52,7 +50,6 @@ struct SidebarView: View {
     /// on selection change, so any @State inside the tab would reset to zero.
     @State private var reviewsVM = ReviewsViewModel()
     @State private var myPRsVM = MyPRsViewModel()
-    @State private var deploysVM = DeploysViewModel()
 
     var body: some View {
         NavigationSplitView {
@@ -115,8 +112,6 @@ struct SidebarView: View {
             MyPRsTab(vm: myPRsVM, refreshTick: refreshTick)
         case .sessions:
             SessionsTab()
-        case .deploys:
-            DeploysTab(vm: deploysVM, refreshTick: refreshTick)
         }
     }
 }
