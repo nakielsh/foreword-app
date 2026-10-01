@@ -41,6 +41,10 @@ struct ForewordApp: App {
     private let modelContainer: ModelContainer
 
     init() {
+        // Upgrade from the WorkHomepage name: move the store, worktree cache
+        // and Keychain items across before the container opens the store.
+        LegacyDataMigration.runIfNeeded()
+
         // Slice 12: `CachedJiraTicket` joins the schema so the cache shares the
         // same on-disk store as reviews + findings. New `@Model` types must be
         // listed here or `ModelContainer(for:)` won't see them and queries

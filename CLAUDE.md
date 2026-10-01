@@ -73,6 +73,7 @@ Separate from the review pipeline (see `docs/adr/0002-pre-review-summary-separat
 ### Critical paths
 
 - Worktree layout: `~/.foreword/repos/<org>/<repo>.git` (bare) and `~/.foreword/worktrees/<org>/<repo>/<pr#>/` (per-PR). `WorktreePath.url(for:prNumber:)` is the single source of truth.
+- Legacy name: the app used to be `WorkHomepage`. `LegacyDataMigration.runIfNeeded()` (first thing in `ForewordApp.init`) moves `Application Support/WorkHomepage/` and `~/.work-homepage/` to the new locations (repairing git worktree links) and copies Keychain items from service `com.work-homepage`. Never overwrites data already at the new location.
 - Shelled binaries: `git`, `gh`, `claude`, `idea`, `/usr/bin/python3`. All resolved via `BinaryResolver` (no shell PATH inheritance — the app is GUI-launched).
 - Child env: `ShellEnvironment.filteredForChildren()` captures the user's interactive zsh env via `$SHELL -ilc env`, then allow-lists keys for forwarding. Allow-list currently passes `HOME, USER, PATH, SHELL, LANG, TZ, TMPDIR, TERM, JAVA_HOME, REPO_USER, REPO_PASSWORD, SSH_AUTH_SOCK, SSH_AGENT_PID` plus `JAVA_*`, `GRADLE_*`, `MAVEN_*`, `LC_*`, `ARTIFACTORY_*` prefixes. Anything else (e.g. `ANTHROPIC_API_KEY`, AWS creds) is intentionally dropped.
 

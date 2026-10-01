@@ -2,14 +2,16 @@
 //  KeychainStore.swift
 //  Foreword
 //
-//  Thin wrapper around Security.framework. Single service identifier, generic password class.
+//  Thin wrapper around Security.framework. Generic password class; one
+//  service identifier for the app, overridable so tests and the legacy data
+//  migration can address other services.
 //
 
 import Foundation
 import Security
 
 enum KeychainStore {
-    private static let service = "io.github.nakielsh.foreword"
+    static let defaultService = "io.github.nakielsh.foreword"
 
     /// `useDataProtectionKeychain` opts items into the modern data-protection
     /// keychain (per-app, app-identity-scoped) rather than the legacy file
@@ -20,11 +22,11 @@ enum KeychainStore {
     /// have one yet). When the sandbox decision lands and the entitlements
     /// file is added, flip this to `true`.
     ///
-    /// All `SecItem*` calls go through `baseQuery(account:)` so this single
+    /// All `SecItem*` calls go through `baseQuery(account:service:)` so this single
     /// switch consistently affects reads, writes, and deletes.
     private static let useDataProtectionKeychain = false
 
-    private static func baseQuery(account: String) -> [String: Any] {
+    private static func baseQuery(account: String, service: String) -> [String: Any] {
         var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -38,21 +40,21 @@ enum KeychainStore {
 
     /// Store `value` under `key`. Replaces existing value if present. Returns true on success.
     @discardableResult
-    static func set(key: String, value: String) -> Bool {
+    static func set(key: String, value: String, service: String = defaultService) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
 
         // Delete any existing item first so add never collides.
-        SecItemDelete(baseQuery(account: key) as CFDictionary)
+        SecItemDelete(baseQuery(account: key, service: service) as CFDictionary)
 
-        var addQuery = baseQuery(account: key)
+        var addQuery = baseQuery(account: key, service: service)
         addQuery[kSecValueData as String] = data
         addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         return status == errSecSuccess
     }
 
-    static func get(key: String) -> String? {
-        var query = baseQuery(account: key)
+    static func get(key: String, service: String = defaultService) -> String? {
+        var query = baseQuery(account: key, service: service)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -62,8 +64,8 @@ enum KeychainStore {
     }
 
     @discardableResult
-    static func delete(key: String) -> Bool {
-        let status = SecItemDelete(baseQuery(account: key) as CFDictionary)
+    static func delete(key: String, service: String = defaultService) -> Bool {
+        let status = SecItemDelete(baseQuery(account: key, service: service) as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
     }
 }
