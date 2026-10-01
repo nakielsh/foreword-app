@@ -1,32 +1,32 @@
-# Release plan: shipping `WorkHomepage`
+# Release plan: shipping `Foreword`
 
 Two phases. Phase 1 is enough for installing on your own laptop. Phase 2 covers handing the app to colleagues or uploading to Rippling Barto.
 
 ## Context
 
-`WorkHomepage` is a SwiftUI macOS app (Xcode project at `WorkHomepage/WorkHomepage.xcodeproj`). Today it only runs from Xcode — no Release artifact, no signed bundle, no installer.
+`Foreword` is a SwiftUI macOS app (Xcode project at `Foreword/Foreword.xcodeproj`). Today it only runs from Xcode — no Release artifact, no signed bundle, no installer.
 
 Per Apple's distribution guidance (`developer.apple.com`), any app distributed outside the Mac App Store must be signed with a **Developer ID Application** certificate, built with the **Hardened Runtime** enabled, include a **secure timestamp**, and be **notarized** + **stapled**. The current project has `ENABLE_HARDENED_RUNTIME = NO` and no entitlements file, so it cannot be notarized as-is.
 
-Sandbox stays **off** — the app shells out to `git`, `gh`, `claude`, `idea`, `/usr/bin/python3` and reads `~/.claude/`, `~/.work-homepage/` (see `BinaryResolver`, `WorktreeManager.swift:9-10`, `SessionsReader.swift`). Sandboxing would break all of that. Notarization does not require the sandbox; only Hardened Runtime is mandatory.
+Sandbox stays **off** — the app shells out to `git`, `gh`, `claude`, `idea`, `/usr/bin/python3` and reads `~/.claude/`, `~/.foreword/` (see `BinaryResolver`, `WorktreeManager.swift:9-10`, `SessionsReader.swift`). Sandboxing would break all of that. Notarization does not require the sandbox; only Hardened Runtime is mandatory.
 
 ---
 
 ## Phase 1 — this laptop only (no DMG, no signing, no notarization)
 
-Goal: run `WorkHomepage.app` from `/Applications` like any other app, no Xcode running.
+Goal: run `Foreword.app` from `/Applications` like any other app, no Xcode running.
 
 ### Steps
 
 ```sh
 # from repo root
 xcodebuild \
-  -project WorkHomepage/WorkHomepage.xcodeproj \
-  -scheme WorkHomepage \
+  -project Foreword/Foreword.xcodeproj \
+  -scheme Foreword \
   -configuration Release \
   -derivedDataPath build
 
-cp -R build/Build/Products/Release/WorkHomepage.app /Applications/
+cp -R build/Build/Products/Release/Foreword.app /Applications/
 ```
 
 Double-click from Launchpad / Spotlight. No Gatekeeper prompt — locally-built binaries don't get the `com.apple.quarantine` xattr, so Apple's "unidentified developer" block does not fire.
@@ -42,8 +42,8 @@ Use `make local-install` for the convenience flow. It runs the build + copy and 
 ### Phase 1 verification
 
 1. `xcodebuild ... -configuration Release` exits 0.
-2. `/Applications/WorkHomepage.app` launches by double-click. Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation works.
-3. `xcodebuild test -project WorkHomepage/WorkHomepage.xcodeproj -scheme WorkHomepage` green.
+2. `/Applications/Foreword.app` launches by double-click. Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation works.
+3. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword` green.
 
 ---
 
@@ -53,23 +53,23 @@ Required only when handing the `.app` to anyone else. Anything downloaded over a
 
 Outcome:
 
-- `scripts/build-dmg.sh` produces `dist/WorkHomepage-<version>.dmg`, signed + notarized + stapled.
+- `scripts/build-dmg.sh` produces `dist/Foreword-<version>.dmg`, signed + notarized + stapled.
 - Drag-install to `/Applications`. First launch passes Gatekeeper without right-click → Open.
 - `.dmg` uploadable to Rippling Barto.
 
 ### Critical files
 
 #### Modify
-- `WorkHomepage/WorkHomepage.xcodeproj/project.pbxproj`
+- `Foreword/Foreword.xcodeproj/project.pbxproj`
   - Set `ENABLE_HARDENED_RUNTIME = YES` (lines 403, 448).
-  - Add `CODE_SIGN_ENTITLEMENTS = WorkHomepage/WorkHomepage.entitlements` to both Debug + Release configs.
+  - Add `CODE_SIGN_ENTITLEMENTS = Foreword/Foreword.entitlements` to both Debug + Release configs.
   - Bump `MARKETING_VERSION` (lines 400, 445) and `CURRENT_PROJECT_VERSION` (lines 418, 463) on each release. Consider replacing the hardcoded values with an `xcconfig` (`Config/Version.xcconfig`) sourced by both configs so a single edit updates both.
   - Confirm `CODE_SIGN_STYLE = Automatic` and `DEVELOPMENT_TEAM = 7Y7HCMY4K5` stay as-is for local archive; the export step below switches signing to manual using `Developer ID Application`.
 - `README.md` — add "Building a release `.dmg`" and "Installing from the `.dmg`" sections.
 - `.gitignore` — add `dist/`, `build/`, `*.dmg`, `*.zip`.
 
 #### Create
-- `WorkHomepage/WorkHomepage/WorkHomepage.entitlements` — minimal entitlements file. No sandbox key. Required because Hardened Runtime is on and we spawn signed third-party binaries:
+- `Foreword/Foreword/Foreword.entitlements` — minimal entitlements file. No sandbox key. Required because Hardened Runtime is on and we spawn signed third-party binaries:
 
   ```xml
   <?xml version="1.0" encoding="UTF-8"?>
@@ -108,7 +108,7 @@ Outcome:
   #!/usr/bin/env bash
   set -euo pipefail
 
-  SCHEME=WorkHomepage
+  SCHEME=Foreword
   CONFIG=Release
   TEAM_ID=7Y7HCMY4K5
   ROOT=$(cd "$(dirname "$0")/.."; pwd)
@@ -120,7 +120,7 @@ Outcome:
   rm -rf "$BUILD" "$DIST"; mkdir -p "$BUILD" "$DIST"
 
   # 1. Archive (Hardened Runtime on, secure timestamp via Xcode default).
-  xcodebuild -project "$ROOT/WorkHomepage/WorkHomepage.xcodeproj" \
+  xcodebuild -project "$ROOT/Foreword/Foreword.xcodeproj" \
     -scheme "$SCHEME" -configuration "$CONFIG" \
     -archivePath "$ARCHIVE" archive
 
@@ -179,8 +179,8 @@ Outcome:
 Barto is Rippling's internal "App Catalog" / app distribution surface.
 
 1. Open Rippling → App Shop / Software → request a new managed app (confirm exact entry point with IT/Helpdesk).
-2. Upload `dist/WorkHomepage-<version>.dmg`. Barto requires a notarized, stapled artifact (Apple's Gatekeeper requirement on managed Macs).
-3. Set bundle id `com.floc.WorkHomepage` and the marketing version so Barto can detect updates.
+2. Upload `dist/Foreword-<version>.dmg`. Barto requires a notarized, stapled artifact (Apple's Gatekeeper requirement on managed Macs).
+3. Set bundle id `com.floc.Foreword` and the marketing version so Barto can detect updates.
 4. For each future release: bump version → `make dmg` → upload new artifact → publish.
 
 If Barto requires `.pkg` instead of `.dmg`, swap step 4 of the script for `productbuild --component "$APP" /Applications "$BUILD/$SCHEME.pkg"`, then sign with `Developer ID Installer` and notarize the `.pkg` the same way. Confirm format with Rippling IT before first submission.
@@ -189,13 +189,13 @@ If Barto requires `.pkg` instead of `.dmg`, swap step 4 of the script for `produ
 
 End-to-end check before publishing:
 
-1. `./scripts/build-dmg.sh` exits 0; `dist/WorkHomepage-<version>.dmg` produced.
+1. `./scripts/build-dmg.sh` exits 0; `dist/Foreword-<version>.dmg` produced.
 2. `spctl --assess --type open --context context:primary-signature -vv dist/*.dmg` → `accepted, source=Notarized Developer ID`.
-3. `codesign -dv --entitlements :- build/Export/WorkHomepage.app` → shows Hardened Runtime flag (`runtime`), Developer ID team, and the entitlements above.
+3. `codesign -dv --entitlements :- build/Export/Foreword.app` → shows Hardened Runtime flag (`runtime`), Developer ID team, and the entitlements above.
 4. `xcrun stapler validate dist/*.dmg` → `The validate action worked!`.
-5. On a clean Mac (or another machine where you re-download the DMG, so quarantine is set): mount the DMG, drag `WorkHomepage.app` to `/Applications`, double-click — Gatekeeper opens it without the "unidentified developer" prompt.
+5. On a clean Mac (or another machine where you re-download the DMG, so quarantine is set): mount the DMG, drag `Foreword.app` to `/Applications`, double-click — Gatekeeper opens it without the "unidentified developer" prompt.
 6. Smoke test: Reviews tab loads PRs, Claude Code tab populates from `~/.claude/sessions/`, worktree creation succeeds (verifies `Process` launches still work under Hardened Runtime + library-validation-disabled).
-7. `xcodebuild test -project WorkHomepage/WorkHomepage.xcodeproj -scheme WorkHomepage` — all green.
+7. `xcodebuild test -project Foreword/Foreword.xcodeproj -scheme Foreword` — all green.
 8. Pilot install on one teammate's Mac via Barto before broad rollout.
 
 ---

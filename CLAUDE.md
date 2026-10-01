@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Two coexisting apps in one repo:
 
 1. **`index.html` + `refresh-sessions.*`** — original single-page HTML dashboard. Runs as a local `file://` page, no build step.
-2. **`WorkHomepage/`** — SwiftUI + SwiftData macOS app. The active surface most new work targets. Adds Claude-driven PR reviews, Jira context, IntelliJ launcher, pre-review summaries, settings, and a menu-bar companion on top of what the HTML page does.
+2. **`Foreword/`** — SwiftUI + SwiftData macOS app. The active surface most new work targets. Adds Claude-driven PR reviews, Jira context, IntelliJ launcher, pre-review summaries, settings, and a menu-bar companion on top of what the HTML page does.
 
 Both target the same domain (GitHub PRs, deployments, Claude Code sessions). The macOS app is the strategic direction; the HTML page is kept around because it's still useful and zero-cost to maintain.
 
@@ -34,9 +34,9 @@ Data: GitHub REST + GraphQL; token in `localStorage`; filter state + active tab 
 
 ## macOS app
 
-Xcode project at `WorkHomepage/WorkHomepage.xcodeproj`. SwiftUI scenes + SwiftData persistence. Uses synchronized folder groups, so files added under `WorkHomepage/WorkHomepage/`, `WorkHomepageTests/`, `WorkHomepageUITests/` are auto-included.
+Xcode project at `Foreword/Foreword.xcodeproj`. SwiftUI scenes + SwiftData persistence. Uses synchronized folder groups, so files added under `Foreword/Foreword/`, `ForewordTests/`, `ForewordUITests/` are auto-included.
 
-### Scenes (`WorkHomepageApp.swift`)
+### Scenes (`ForewordApp.swift`)
 
 - Main `WindowGroup` mounts `SidebarView` (tab host).
 - `Settings { SettingsView() }` for the standard `⌘,` panel.
@@ -57,7 +57,7 @@ Xcode project at `WorkHomepage/WorkHomepage.xcodeproj`. SwiftUI scenes + SwiftDa
 
 `runRealPipeline(input:)`:
 
-1. `WorktreeManager.prepare` — bare clone + worktree at `~/.work-homepage/repos/<org>/<repo>.git` and `~/.work-homepage/worktrees/<org>/<repo>/<pr#>`.
+1. `WorktreeManager.prepare` — bare clone + worktree at `~/.foreword/repos/<org>/<repo>.git` and `~/.foreword/worktrees/<org>/<repo>/<pr#>`.
 2. `TicketKeyExtractor.extract(branchName:)` → `JiraClient.fetchTicket` (cached in `CachedJiraTicket`).
 3. `fetchChangedFiles(repo:prNumber:)` shells `gh pr view --json files --jq '.files[].path'` for the prompt allowlist (degrades to no-allowlist on failure).
 4. `OrchestratorPrompt.build` composes: Jira block → user template (interpolated `{{repo}} {{prNumber}} {{branch}} {{sha}}`) → schema directive → allowlist block.
@@ -72,7 +72,7 @@ Separate from the review pipeline (see `docs/adr/0002-pre-review-summary-separat
 
 ### Critical paths
 
-- Worktree layout: `~/.work-homepage/repos/<org>/<repo>.git` (bare) and `~/.work-homepage/worktrees/<org>/<repo>/<pr#>/` (per-PR). `WorktreePath.url(for:prNumber:)` is the single source of truth.
+- Worktree layout: `~/.foreword/repos/<org>/<repo>.git` (bare) and `~/.foreword/worktrees/<org>/<repo>/<pr#>/` (per-PR). `WorktreePath.url(for:prNumber:)` is the single source of truth.
 - Shelled binaries: `git`, `gh`, `claude`, `idea`, `/usr/bin/python3`. All resolved via `BinaryResolver` (no shell PATH inheritance — the app is GUI-launched).
 - Child env: `ShellEnvironment.filteredForChildren()` captures the user's interactive zsh env via `$SHELL -ilc env`, then allow-lists keys for forwarding. Allow-list currently passes `HOME, USER, PATH, SHELL, LANG, TZ, TMPDIR, TERM, JAVA_HOME, REPO_USER, REPO_PASSWORD, SSH_AUTH_SOCK, SSH_AGENT_PID` plus `JAVA_*`, `GRADLE_*`, `MAVEN_*`, `LC_*`, `ARTIFACTORY_*` prefixes. Anything else (e.g. `ANTHROPIC_API_KEY`, AWS creds) is intentionally dropped.
 
@@ -90,9 +90,9 @@ make test
 
 # Run a targeted suite.
 xcodebuild test \
-  -project WorkHomepage/WorkHomepage.xcodeproj \
-  -scheme WorkHomepage \
-  -only-testing:WorkHomepageTests/ReviewStoreFilterTests
+  -project Foreword/Foreword.xcodeproj \
+  -scheme Foreword \
+  -only-testing:ForewordTests/ReviewStoreFilterTests
 ```
 
 Release / DMG pipeline (signing, notarization, Barto upload) is documented in `docs/release.md`. Phase 1 (`make local-install`) is enough for this laptop; Phase 2 covers distribution.
@@ -100,8 +100,8 @@ Release / DMG pipeline (signing, notarization, Barto upload) is documented in `d
 ## Conventions
 
 - **Static imports only** — no wildcard imports anywhere. See user-global preference.
-- **Tests use AssertJ-style helpers** in `WorkHomepageTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`). Prefer over raw `XCTAssertEqual` where a chain reads cleaner.
-- **Models live in `WorkHomepage/WorkHomepage/Models/`**; SwiftData `@Model` classes only there. Decoded API shapes (e.g. `ReviewSchema`, `SchemaFinding`) live in `Services/` next to the code that produces them.
+- **Tests use AssertJ-style helpers** in `ForewordTests/Helpers/Assertions.swift` (`assertThat(x).isEqualTo(y)`, `.contains(...)`, `.hasSize(...)`). Prefer over raw `XCTAssertEqual` where a chain reads cleaner.
+- **Models live in `Foreword/Foreword/Models/`**; SwiftData `@Model` classes only there. Decoded API shapes (e.g. `ReviewSchema`, `SchemaFinding`) live in `Services/` next to the code that produces them.
 - **GitHub API calls** go through `GitHubClient` (REST) with topic extensions (`+MyPRs`, `+Reviews`, `+Workflows`, `+PRBranch`).
 - **Untrusted content** (branch names, Jira summaries / descriptions, parent description, anything user-controlled or upstream-controlled) is wrapped via `UntrustedContent.fence(_:label:)` / `.sanitise(_:)` before it reaches the prompt builder. Defence-in-depth on top of `--allowed-tools` / `--disallowed-tools`.
 - **Card rendering in `index.html`** uses DOM creation, not templates. `renderReviewCards(grid, prs)` is shared between the pending-reviews section and the three reviewed-by-me sub-sections.

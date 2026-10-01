@@ -34,12 +34,12 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
 
 ### Security
 
-- **App Sandbox decision.** `ENABLE_APP_SANDBOX = NO`, no entitlements file. Either document the trust model or enable sandbox with file exceptions for `~/.work-homepage` + configured local-repo roots.
+- **App Sandbox decision.** `ENABLE_APP_SANDBOX = NO`, no entitlements file. Either document the trust model or enable sandbox with file exceptions for `~/.foreword` + configured local-repo roots.
 - **Tighten `ClaudeRunner --allowed-tools`** to read-only by default; explicitly deny `Bash`, `Write`, `Edit`. Wrap user-supplied prompt fields (PR title, Jira summary/description, branch name) in untrusted-content fences.
 - **Validate `repo` shape (`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)** at the orchestrator boundary before any worktree/clone op (`WorktreeManager.cloneURL`, `worktreeURL`).
 - **Validate git refs.** `branch` is concatenated into `"origin/" + branch` without checks for control chars, leading `-`, `..`. `worktreeURL` keys on `prNumber: Int` so path traversal is dodged today, but defence-in-depth is cheap.
 - **Switch to `Logger` with `.private`** for any field that touches API payloads (`PreReviewSummaryRunner`, `JiraClient`). Add a regression test asserting no `Authorization` / token-like substring appears in logs.
-- **First-run token bootstrap consent.** `WorkHomepageApp.swift:107-119` silently runs `gh auth token` and clones the result into the app's keychain. Show this step in `FirstRunWizard` before exfiltrating.
+- **First-run token bootstrap consent.** `ForewordApp.swift:107-119` silently runs `gh auth token` and clones the result into the app's keychain. Show this step in `FirstRunWizard` before exfiltrating.
 - **`KeychainStore`: set `kSecUseDataProtectionKeychain: true`** for stronger app-identity isolation. Consider `SecAccessControlCreateWithFlags(.userPresence)` for the GitHub token if UX permits.
 - **Allow-list env var prefixes** forwarded to spawned children in `ShellEnvironment` / `IntelliJLauncher` (currently wholesale-imports `.zshrc` env, including `ANTHROPIC_API_KEY`, AWS creds, etc.). Restrict to `JAVA_HOME`, `REPO_USER`, etc.
 - **`LocalRepoIndex.scan` containment check.** After parsing a GitHub repo from a remote URL, sanity-check that the resolved dir lives under one of the configured roots — closes the "malicious `~/src` subdir spoofs `<owner>/<repo>` mapping" amplification.
@@ -74,15 +74,15 @@ Dump of findings surfaced by the multi-agent deep-dive review (memory/lifecycle,
   - UI smoke test with assertions: tab bar exists with the 4 expected tabs; Reviews list navigable; token prompt appears with empty keychain.
 
 - **Tests to delete or replace:**
-  - `WorkHomepageTests.swift` template stub.
-  - `WorkHomepageUITests.testExample` (`app.launch()` with no assertions).
+  - `ForewordTests.swift` template stub.
+  - `ForewordUITests.testExample` (`app.launch()` with no assertions).
   - `OrchestratorJiraInjectionTests.testRenderJiraBlockExactFormat` + `OrchestratorPromptParentTests.testRenderJiraBlockExactFormatWithParent` — exact-whitespace pin; brittle. Replace with structural assertions.
   - `OrchestratorJiraInjectionTests.testLegacyBuildPromptIsEquivalentToNoJira` — asserts two implementations equal each other; passes if both regress identically.
   - `AppearanceTests.testIdentifiable` + `testRawValueRoundTrip` — round-trip a String enum through itself; tests the compiler.
   - `ReviewPromptStoreTests.testKnownVariableKeysContainsExpectedFour` — re-asserts a constant.
   - `MonogramRendererTests.testNonASCIILoginUsesFirstScalarUppercased` / `testNumericLoginUsesFirstCharacter` — only assert "non-nil and deterministic", not the promised behaviour. Two of these are also currently failing — investigate before deletion.
   - `MenuBarCountsTests.testRefreshReviewsRequestedNotificationNameIsStable` — re-asserts a string constant.
-  - `WorkHomepageUITestsLaunchTests.testLaunch` — screenshot without assertion.
+  - `ForewordUITestsLaunchTests.testLaunch` — screenshot without assertion.
   - `AvatarLoaderTests` — tests an `AvatarLoaderSUT` reimplementation, not the real loader. Inject the session into `AvatarLoader.shared` and test the real type.
 
 - **Cross-cutting:**

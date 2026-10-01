@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>com.work-homepage.refresh-claude-sessions</string>
+	<string>io.github.nakielsh.foreword.refresh-claude-sessions</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>__INSTALL_DIR__/refresh-sessions.sh</string>

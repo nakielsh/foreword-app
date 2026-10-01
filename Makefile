@@ -1,10 +1,10 @@
 .PHONY: build test local-install reset-icon-cache clean-derived-data
 
-XCODEPROJ := WorkHomepage/WorkHomepage.xcodeproj
-SCHEME    := WorkHomepage
+XCODEPROJ := Foreword/Foreword.xcodeproj
+SCHEME    := Foreword
 CONFIG    := Release
 BUILD_DIR := build
-APP_NAME  := WorkHomepage.app
+APP_NAME  := Foreword.app
 SRC_APP   := $(BUILD_DIR)/Build/Products/$(CONFIG)/$(APP_NAME)
 DEST_APP  := /Applications/$(APP_NAME)
 
@@ -38,20 +38,20 @@ reset-icon-cache:
 
 # Wipe per-workspace Xcode DerivedData folders for this project. Each git
 # worktree (and each Claude agent worktree) creates a fresh
-# ~/Library/Developer/Xcode/DerivedData/WorkHomepage-<hash> directory
-# containing a Debug WorkHomepage.app bundle, which Spotlight / Launchpad /
-# Raycast then surface as a separate "WorkHomepage" entry. Running this
-# leaves the canonical /Applications/WorkHomepage.app alone and forces Xcode
+# ~/Library/Developer/Xcode/DerivedData/Foreword-<hash> directory
+# containing a Debug Foreword.app bundle, which Spotlight / Launchpad /
+# Raycast then surface as a separate "Foreword" entry. Running this
+# leaves the canonical /Applications/Foreword.app alone and forces Xcode
 # / xcodebuild to rebuild any worktree on next invocation. lsregister kicks
 # Launch Services so the stale entries disappear from app pickers without a
 # logout.
 clean-derived-data:
-	@count=$$(/bin/ls -1d ~/Library/Developer/Xcode/DerivedData/WorkHomepage-* 2>/dev/null | wc -l | tr -d ' '); \
+	@count=$$(/bin/ls -1d ~/Library/Developer/Xcode/DerivedData/Foreword-* 2>/dev/null | wc -l | tr -d ' '); \
 	  if [ "$$count" -eq 0 ]; then \
-	    echo "No WorkHomepage-* DerivedData folders found."; \
+	    echo "No Foreword-* DerivedData folders found."; \
 	  else \
-	    echo "Removing $$count WorkHomepage-* DerivedData folder(s)…"; \
-	    rm -rf ~/Library/Developer/Xcode/DerivedData/WorkHomepage-*; \
+	    echo "Removing $$count Foreword-* DerivedData folder(s)…"; \
+	    rm -rf ~/Library/Developer/Xcode/DerivedData/Foreword-*; \
 	    /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister \
 	      -kill -r -domain local -domain system -domain user || true; \
 	    killall Dock || true; \

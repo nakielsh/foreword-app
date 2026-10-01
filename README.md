@@ -1,4 +1,4 @@
-# work-homepage
+# Foreword
 
 A single-page developer dashboard. Open `index.html` directly in a browser — no build step, no server, no dependencies. It pulls live data from GitHub and shows three tabs: **Reviews** (PRs assigned to you), **My PRs** (PRs you authored, with reviewer status and unresolved thread counts), and **Claude Code** (active Claude Code sessions on your machine).
 
@@ -41,9 +41,9 @@ Then reload the page (the dashboard has an auto-reload button in the Claude Code
 ```bash
 # From inside the project directory:
 sed "s|__INSTALL_DIR__|$PWD|g" refresh-claude-sessions.plist.template \
-  > ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
+  > ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
 
-launchctl load ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
+launchctl load ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
 ```
 
 The agent runs immediately on load and every 120 seconds thereafter. Logs go to `/tmp/refresh-claude-sessions.log`.
@@ -51,8 +51,8 @@ The agent runs immediately on load and every 120 seconds thereafter. Logs go to 
 To stop and remove:
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
-rm ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
+launchctl unload ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
+rm ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
 ```
 
 ## Data & privacy
@@ -62,6 +62,6 @@ rm ~/Library/LaunchAgents/com.work-homepage.refresh-claude-sessions.plist
 
 ## macOS app: Homebrew/PATH trust assumptions
 
-The companion macOS app (under `WorkHomepage/`) shells out to a small set of binaries — `git`, `claude`, IntelliJ's `idea` launcher — resolved via `BinaryResolver`. Resolution searches the standard system locations plus `/usr/local/bin` and `/opt/homebrew/bin`, and the `IntelliJLauncher` PATH propagated to git's child processes also includes `/usr/local/bin`. Both directories are writable by the local user on Intel Macs running a default Homebrew install, which means anything that can write into `/usr/local/bin` can substitute the binary the app launches. The app trusts whichever `git` / `claude` / `idea` is first on that PATH.
+The companion macOS app (under `Foreword/`) shells out to a small set of binaries — `git`, `claude`, IntelliJ's `idea` launcher — resolved via `BinaryResolver`. Resolution searches the standard system locations plus `/usr/local/bin` and `/opt/homebrew/bin`, and the `IntelliJLauncher` PATH propagated to git's child processes also includes `/usr/local/bin`. Both directories are writable by the local user on Intel Macs running a default Homebrew install, which means anything that can write into `/usr/local/bin` can substitute the binary the app launches. The app trusts whichever `git` / `claude` / `idea` is first on that PATH.
 
 In practice this is the same trust model as your terminal, where `~/.zshrc` already prepends Homebrew to PATH. If you don't trust everything writable to `/usr/local/bin`, lock those binaries to fixed paths (e.g. `/usr/bin/git`, `/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea`) before running the macOS app. A future hardening pass may add `kSecCodeSign` validity checks on resolved binaries; that's not in place today.

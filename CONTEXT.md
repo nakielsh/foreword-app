@@ -1,6 +1,6 @@
 # Context
 
-Domain glossary for WorkHomepage. Terms here are meaningful to me as the user — not implementation details. See `docs/PRD.md` for the broader product story and `docs/adr/` for decisions.
+Domain glossary for Foreword. Terms here are meaningful to me as the user — not implementation details. See `docs/PRD.md` for the broader product story and `docs/adr/` for decisions.
 
 ## Pull Request (PR)
 
@@ -37,7 +37,7 @@ A ticket is "found" if and only if `TicketKeyExtractor.extract(branchName:)` ret
 
 ## Worktree
 
-An isolated git working directory at `~/.work-homepage/worktrees/<org>/<repo>/<pr#>/`, backed by a bare clone at `~/.work-homepage/repos/<org>/<repo>.git`. One worktree per PR. Created lazily on first Review, refreshed on re-review, evicted when the PR closes/merges or manually.
+An isolated git working directory at `~/.foreword/worktrees/<org>/<repo>/<pr#>/`, backed by a bare clone at `~/.foreword/repos/<org>/<repo>.git`. One worktree per PR. Created lazily on first Review, refreshed on re-review, evicted when the PR closes/merges or manually.
 
 ## Theme
 
