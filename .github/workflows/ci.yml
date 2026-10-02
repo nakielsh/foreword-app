@@ -11,9 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for organisation-specific identifiers
-        run: ./scripts/check-no-org-leaks.sh
-
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:

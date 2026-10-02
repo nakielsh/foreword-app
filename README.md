@@ -75,22 +75,12 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerab
 
 ## The legacy HTML dashboard
 
-The repo also contains the dashboard Foreword grew out of: `index.html`, a single file you open in a browser. It has Reviews, My PRs and Claude Code tabs, no build step and no server, and none of the review features. You don't need it to run the app. It stays in the repo because it still works and costs nothing to keep; new features go into the app only.
+The repo also contains the dashboard Foreword grew out of: `index.html`, a single file you open in a browser. It has Reviews and My PRs tabs, no build step and no server, and none of the review features. You don't need it to run the app. It stays in the repo because it still works and costs nothing to keep; new features go into the app only.
 
 ```sh
 open index.html
 gh auth token | pbcopy   # paste into the token prompt; stored in the page's localStorage
 ```
-
-The Claude Code tab reads `claude-sessions.js`, written by `refresh-sessions.py` (needs `/usr/bin/python3`). Run `./refresh-sessions.sh` by hand, or refresh every two minutes with launchd:
-
-```sh
-sed "s|__INSTALL_DIR__|$PWD|g" refresh-claude-sessions.plist.template \
-  > ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
-launchctl load ~/Library/LaunchAgents/io.github.nakielsh.foreword.refresh-claude-sessions.plist
-```
-
-Logs go to `/tmp/refresh-claude-sessions.log`. To stop, `launchctl unload` the same plist and delete it. `claude-sessions.js` is generated from `~/.claude/sessions/` and `~/.claude/history.jsonl` and never leaves your machine.
 
 ## Development
 

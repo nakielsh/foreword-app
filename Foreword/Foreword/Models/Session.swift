@@ -3,7 +3,6 @@
 //  Foreword
 //
 //  Slice 04: Codable shape for an active Claude Code session.
-//  Mirrors what `refresh-sessions.py` writes to `claude-sessions.js`.
 //
 
 import Foundation
