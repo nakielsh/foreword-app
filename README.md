@@ -1,15 +1,55 @@
 # Foreword
 
-A macOS app for the pull requests waiting on you. It lists the PRs you've been asked to review and the ones you opened, and runs a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) review of a PR in an isolated git worktree, with the linked Jira ticket as context. Findings stay on your machine; click one to jump to the file and line in IntelliJ.
+[![CI](https://github.com/nakielsh/foreword-app/actions/workflows/ci.yml/badge.svg)](https://github.com/nakielsh/foreword-app/actions/workflows/ci.yml)
+![macOS 26.4+](https://img.shields.io/badge/macOS-26.4%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-What's in the window:
+A macOS app for the pull requests waiting on you. Foreword lists every PR you review in one place, tells you which ones moved since you last looked, and runs a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) review of any of them with one click: in its own git worktree, with the linked Jira ticket as context. Click a finding and IntelliJ opens at that line.
 
-- **Reviews**: PRs where your review is requested, plus the ones you already reviewed (changes requested, commented, approved) with "N new commits since your review".
-- **My PRs**: PRs you authored, with each reviewer's state and unresolved thread counts.
-- **Sessions**: Claude Code sessions currently running on your machine.
-- A **Review** action on any PR that opens the review in its own window, a **Summarize** action for a short pre-review summary, Jira badges, and a menu-bar item with counts.
+Findings stay on your machine. Foreword never posts to GitHub; the review is for you to read before you write your own.
 
-Foreword never posts anything to GitHub. Reviews are for you to read before you write your own.
+<p align="center">
+  <img src="docs/images/foreword-review-run.gif" width="800" alt="A cursor clicks Review on a PR card. A Review window opens, Claude's output streams in with Skill, Read, Grep and Glob tool calls, and the review finishes with the verdict Request changes, a summary, a Jira alignment note, a warning that one finding pointing at a non-existent file was filtered, and findings grouped as Major, Minor and Nit">
+</p>
+
+<sub>All captures use demo data: the PRs, people and Jira tickets are invented and the Claude output is a canned replay. The views, the findings filter and the IntelliJ launcher are the app's own code.</sub>
+
+## Why
+
+GitHub's "review requested" list forgets a PR as soon as you review it. It comes back only if the author re-requests you, and authors pushing fixes often don't. Every morning started with the same three questions: which PRs need me, did I already comment, and has the diff moved since? Checking a PR out to review it clobbered my own working tree, and Jira, the diff and the IDE sat in three separate windows.
+
+Foreword answers the three questions in one view and turns the rest into one button.
+
+## Features
+
+### Every PR you review, in one list
+
+<p align="center">
+  <img src="docs/images/foreword-reviews-tab.png" width="700" alt="The Reviews tab with invented PRs. Two PRs await review at the top, each with a Jira badge and a blue Review button. Below them, sections for Changes Requested (3 new commits since your review), My Comments (no changes since your review) and Already Approved (1 new commit since your review)">
+</p>
+
+- **Reviews**: PRs where your review is requested, then the ones you already reviewed, grouped as *Changes Requested*, *My Comments* and *Already Approved*, each flagged with "N new commits since your review". Hide PRs that already have enough approvals.
+- **My PRs**: PRs you opened, with each reviewer's state, unresolved threads waiting on you, and comment counts.
+- **Sessions**: Claude Code sessions running on your machine right now.
+- **Jira badges** with the ticket key and status on PRs whose branch names a ticket, and a **menu-bar item** with counts.
+
+### One-click review
+
+**Review** checks the PR out into its own worktree, pulls in the Jira ticket, and runs `claude` with read-only tools against exactly the files the PR changes. Output streams into a separate window. When it finishes you get a verdict, a summary, a note on how well the PR covers the ticket, and findings grouped by severity that you can mark resolved or dismissed. Reviewing again after new commits keeps the earlier runs under **History**.
+
+**Summarize** is the cheap version: two to four sentences on what the PR changes, why, and what deserves a careful look, cached until someone pushes.
+
+### From finding to line
+
+<p align="center">
+  <img src="docs/images/foreword-finding-to-intellij.gif" width="800" alt="A cursor clicks the Minor finding Use AssertJ instead of JUnit assertions, which points at RefundValidatorTest.kt line 22. The view cuts to IntelliJ IDEA with the PR's worktree open as its own project, the caret on line 22">
+</p>
+
+Clicking a finding opens the PR's worktree in IntelliJ as its own project, at the file and line, so it never lands in the window of your main checkout. If the worktree came from your local clone, Foreword also copies your `.idea/` project model (modules, SDK, run configurations) so IntelliJ doesn't re-import from Gradle. Without IntelliJ, the file opens in its default app.
+
+### Reviews that know your team's rules
+
+`git worktree add` checks out tracked files only, so a `CLAUDE.md` you keep untracked in your clone would never reach the review. Foreword copies it into each worktree it creates from your clone, unless the PR's branch tracks its own. Put your team's conventions there (written by hand, or mined from past review comments) and every review loads them.
 
 ## Requirements
 
@@ -17,7 +57,7 @@ Foreword never posts anything to GitHub. Reviews are for you to read before you 
 - [`gh`](https://cli.github.com/), signed in (`gh auth login`).
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`), signed in. Reviews run on your own Claude account.
 - `git`.
-- Optional: IntelliJ IDEA with the `idea` command-line launcher, for jump-to-line. Without it, clicking a finding opens the file in its default app.
+- Optional: IntelliJ IDEA with the `idea` command-line launcher, for jump-to-line.
 - Optional: Jira Cloud (Atlassian-hosted) with an API token, for ticket context. Jira Server / Data Center isn't supported.
 
 ## Install
@@ -44,21 +84,23 @@ A setup sheet walks through five steps. Each can be skipped and changed later in
 
 The default review prompt asks Claude to use the `reviewing-pr-final-state` skill. It scopes the review to what GitHub's *Files changed* tab shows: the right base branch, a three-dot diff, no reading of intermediate commits. Foreword ships a copy and installs it into `~/.claude/skills/` when you click **Install** in the setup sheet or Settings. An existing copy is never overwritten, so you can edit yours freely. The source lives in [`skills/`](skills/).
 
+The prompt itself is a template you can edit in Settings, with a live preview.
+
 ## How a review works
 
-1. **Worktree.** Foreword checks the PR head out into `~/.foreword/worktrees/<org>/<repo>/<pr>/`. If you already have a clone under one of your local repo roots (Settings → Local Repos, default `~/src`), the worktree is created from it; otherwise from a bare clone in `~/.foreword/repos/`.
+1. **Worktree.** Foreword checks the PR head out into `~/.foreword/worktrees/<org>/<repo>/<pr>/`, pinned to the commit you clicked on. If you already have a clone under one of your local repo roots (Settings → Local Repos, default `~/src`), the worktree is created from it; otherwise from a bare clone in `~/.foreword/repos/`. Your own checkout and branch are never touched.
 2. **Jira ticket.** The key comes from the branch name: `feature/PROJ-123`, `bugfix/PROJ-123` and similar always work. Branches like `PROJ-123-fix` or `jane/PROJ-123` work for the project keys you listed in step 4. If the ticket is a thin subtask, its parent is fetched too.
-3. **Prompt.** The ticket, then your review prompt template (editable in Settings), then the list of files the PR changes. Branch names and Jira text are fenced as untrusted content.
+3. **Prompt.** The ticket, then your review prompt template, then the list of files the PR changes. Branch names and Jira text are fenced as untrusted content.
 4. **Claude.** `claude` runs inside the worktree with read-only tools: `Read`, `Grep`, `Glob`, `Skill`, and `gh` / `git` commands. `Bash`, `Write`, `Edit`, web access and sub-agents are explicitly denied. A run is stopped after 30 minutes by default (Settings → Behavior → Review timeout).
-5. **Findings.** The JSON result is checked against a schema. Findings that point at files that don't exist in the worktree are dropped. The rest are stored locally, grouped by severity, and can be marked resolved or dismissed.
+5. **Findings.** The JSON result is checked against a schema. Findings that point at files that don't exist in the worktree are dropped, and the window tells you which. The rest are stored locally.
 
-Up to three reviews run at once (Settings → Behavior → Concurrency cap); the rest queue and can be cancelled. Reviewing again after new commits creates a new review; earlier ones stay under **History** in the review window.
+Up to three reviews run at once (Settings → Behavior → Concurrency cap); the rest queue and can be cancelled.
 
 When a PR you ran a review on drops out of your Reviews lists (usually because it was closed or merged), the next refresh deletes its worktree, its saved reviews and findings, and its pre-review summaries. The repo's clone is kept. Disk usage and per-repo eviction are in Settings → Storage.
 
 ### Pre-review summary
 
-**Summarize** on a PR card asks Claude for two to four sentences on what the PR changes, why, and what deserves a careful look. It's a separate, cheaper pass: no worktree, only `gh` commands, no file access and none of your MCP servers. The result is cached per head commit, so asking again is free until someone pushes. Summaries run on their own pool (five at once by default) and never start a review.
+**Summarize** is a separate, cheaper pass: no worktree, only `gh` commands, no file access and none of your MCP servers. The result is cached per head commit, so asking again is free until someone pushes. Summaries run on their own pool (five at once by default) and never start a review.
 
 ## Privacy and trust
 
@@ -75,7 +117,7 @@ See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerab
 
 ## The legacy HTML dashboard
 
-The repo also contains the dashboard Foreword grew out of: `index.html`, a single file you open in a browser. It has Reviews and My PRs tabs, no build step and no server, and none of the review features. You don't need it to run the app. It stays in the repo because it still works and costs nothing to keep; new features go into the app only.
+The repo also contains the page Foreword grew out of: `index.html`, a single file with Reviews and My PRs tabs, no build step, no server and none of the review features. You don't need it to run the app; it stays because it still works and costs nothing to keep.
 
 ```sh
 open index.html
