@@ -37,20 +37,6 @@ The UI tests (`ForewordUITests`) drive the real app and take over the screen; ru
 - Review behaviour belongs in the bundled skill (`skills/reviewing-pr-final-state/`), not hard-coded into the prompt builder.
 - `CLAUDE.md` describes the architecture for people (and agents) working in the code; update it when you move things around.
 
-## App icon
-
-The icon set in `Foreword/Foreword/Assets.xcassets/AppIcon.appiconset/` is generated. To change it, start from square full-bleed artwork (2048px works well) and run:
-
-```sh
-scripts/make-app-icon.py path/to/artwork.png   # needs: pip install pillow numpy
-```
-
-It masks the artwork to the macOS icon shape, places it on the 1024px grid with the system drop shadow, and writes every size.
-
 ## Before you open a PR
 
-```sh
-./scripts/check-no-org-leaks.sh
-```
-
-CI runs the same check plus the unit tests.
+Run the unit tests above. CI runs the same suite on every pull request.

@@ -1,6 +1,6 @@
 # 18 — Cleanup: delete HTML + python + launchd, rewrite README + CLAUDE.md
 
-> **Outcome:** the README and CLAUDE.md rewrites happened; the deletions did not. `index.html`, `refresh-sessions.*` and the LaunchAgent template were kept as a legacy dashboard (`claude-sessions.js` is gitignored).
+> **Outcome:** the README and CLAUDE.md rewrites happened. `refresh-sessions.*` and the LaunchAgent template were deleted later; `index.html` stays as a legacy dashboard with only the Reviews and My PRs tabs.
 
 ## What to build
 

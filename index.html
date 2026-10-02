@@ -671,113 +671,6 @@
       padding: 0.15rem 0.6rem;
     }
 
-    /* ============ CLAUDE CODE TAB ============ */
-    .session-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius);
-      padding: 1.25rem 1.4rem;
-      border-left: 3px solid var(--accent-purple);
-      transition: background 0.2s, border-color 0.2s, transform 0.15s;
-      position: relative;
-      opacity: 0;
-      animation: cardIn 0.35s ease-out forwards;
-    }
-
-    .session-card { box-shadow: 0 1px 3px rgba(74,124,89,0.06); }
-    .session-card:hover { background: var(--bg-card-hover); border-color: var(--border-medium); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(74,124,89,0.1); }
-    .session-card.vscode { border-left-color: var(--accent-blue); }
-
-    .session-card-top {
-      display: flex; align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .entrypoint-badge {
-      font-size: 0.7rem; font-weight: 600;
-      text-transform: uppercase; letter-spacing: 0.05em;
-      border-radius: 100px; padding: 0.15rem 0.6rem;
-      display: flex; align-items: center; gap: 0.35rem;
-    }
-
-    .entrypoint-badge.cli {
-      color: var(--accent-purple); background: rgba(107,143,94,0.1);
-    }
-
-    .entrypoint-badge.vscode {
-      color: var(--accent-blue); background: rgba(74,124,89,0.1);
-    }
-
-    .entrypoint-badge svg { width: 12px; height: 12px; }
-
-    .session-duration {
-      font-size: 0.72rem; color: var(--text-muted);
-      display: flex; align-items: center; gap: 0.3rem;
-    }
-
-    .session-name {
-      font-size: 0.92rem; font-weight: 500;
-      color: var(--text-primary);
-      margin-bottom: 0.35rem;
-    }
-
-    .session-cwd {
-      font-size: 0.8rem; color: var(--accent-blue);
-      font-family: var(--font-mono);
-      margin-bottom: 0.65rem;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-
-    .session-cwd .dim { color: var(--text-muted); }
-
-    .session-context {
-      font-size: 0.82rem; color: var(--text-secondary);
-      line-height: 1.45;
-      display: -webkit-box; -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical; overflow: hidden;
-      padding: 0.55rem 0.75rem;
-      background: var(--bg-surface);
-      border-radius: var(--radius-sm);
-      border-left: 2px solid var(--border-medium);
-      font-style: italic;
-    }
-
-    .session-meta {
-      display: flex; align-items: center; gap: 1rem;
-      margin-top: 0.65rem;
-      font-size: 0.75rem; color: var(--text-muted);
-    }
-
-    .session-meta .meta-tag {
-      display: flex; align-items: center; gap: 0.3rem;
-    }
-
-    .session-meta .meta-tag code {
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      background: var(--bg-surface);
-      padding: 0.1rem 0.4rem;
-      border-radius: 3px;
-    }
-
-    .sessions-hint {
-      max-width: var(--max-w); margin: 0 auto;
-      padding: 0 var(--px) 1rem;
-      font-size: 0.78rem; color: var(--text-muted);
-      display: flex; align-items: center; gap: 0.5rem;
-    }
-
-    .sessions-hint code {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      color: var(--accent-blue);
-      background: rgba(74,124,89,0.08);
-      padding: 0.15rem 0.5rem;
-      border-radius: 4px;
-    }
-
     /* ============ RESPONSIVE ============ */
     @media (max-width: 768px) {
       :root { --px: 1.25rem; }
@@ -827,10 +720,6 @@
       <button class="tab" data-tab="my-prs" onclick="switchTab('my-prs')">
         My PRs
         <span class="tab-count" id="tab-count-my-prs">-</span>
-      </button>
-      <button class="tab" data-tab="claude" onclick="switchTab('claude')">
-        Claude Code
-        <span class="tab-count" id="tab-count-claude">-</span>
       </button>
     </nav>
 
@@ -918,30 +807,15 @@
       </div>
     </div>
 
-    <!-- ===== CLAUDE CODE TAB ===== -->
-    <div class="tab-content" id="tab-claude">
-      <div class="stats-bar" id="claude-stats"></div>
-      <div class="sessions-hint" id="claude-hint">
-        Run <code>python3 refresh-sessions.py</code> to update session data
-      </div>
-      <div class="card-grid" id="claude-grid"></div>
-      <div class="empty-state" id="claude-empty">
-        <div class="empty-icon">&#9679;</div>
-        <h2>No sessions found</h2>
-        <p>Run <code style="font-family:var(--font-mono);color:var(--accent-blue)">python3 refresh-sessions.py</code> in the dashboard directory to detect active sessions.</p>
-      </div>
-    </div>
-
   </div>
 
-  <script id="sessions-script-tag" src="claude-sessions.js" onerror="window.__claudeSessions=[]"></script>
   <script>
     const API = 'https://api.github.com';
     const GQL = `${API}/graphql`;
 
     /* ============ STATE ============ */
     let currentUser = null;
-    const TABS = ['reviews', 'my-prs', 'claude'];
+    const TABS = ['reviews', 'my-prs'];
     let activeTab = localStorage.getItem('gh_dashboard_tab');
     // Stored tab may name a tab that no longer exists.
     if (!TABS.includes(activeTab)) activeTab = 'reviews';
@@ -1112,10 +986,9 @@
       loadTab(tab);
     }
 
-    async function refreshCurrentTab() {
+    function refreshCurrentTab() {
       if (activeTab === 'reviews') { reviewsLoaded = false; }
       else if (activeTab === 'my-prs') { myPRsLoaded = false; }
-      else if (activeTab === 'claude') { claudeLoaded = false; await reloadSessionsScript(); }
       loadTab(activeTab);
     }
 
@@ -1126,9 +999,6 @@
       } else if (tab === 'my-prs') {
         if (!myPRsLoaded) loadMyPRs();
         else renderMyPRs();
-      } else if (tab === 'claude') {
-        if (!claudeLoaded) loadClaudeSessions();
-        else renderClaudeSessions();
       }
     }
 
@@ -1618,102 +1488,6 @@
           </div>`;
 
         card.addEventListener('click', e => { if (e.target.tagName !== 'A') window.open(pr.html_url, '_blank', 'noopener'); });
-        grid.appendChild(card);
-      });
-    }
-
-    /* ============ CLAUDE CODE TAB ============ */
-    let claudeLoaded = false;
-
-    function loadClaudeSessions() {
-      claudeLoaded = true;
-      renderClaudeSessions();
-    }
-
-    function durationSince(epochMs) {
-      const diffMs = Date.now() - epochMs;
-      const mins = Math.floor(diffMs / 60000);
-      const hours = Math.floor(mins / 60);
-      const days = Math.floor(hours / 24);
-      if (days > 0) return `${days}d ${hours % 24}h`;
-      if (hours > 0) return `${hours}h ${mins % 60}m`;
-      return `${mins}m`;
-    }
-
-    function formatCwd(cwd) {
-      const home = cwd.replace(/^\/Users\/[^/]+/, '~');
-      const parts = home.split('/');
-      if (parts.length <= 2) return `<span>${escapeHtml(home)}</span>`;
-      const last = parts.pop();
-      return `<span class="dim">${escapeHtml(parts.join('/'))}/</span>${escapeHtml(last)}`;
-    }
-
-    function reloadSessionsScript() {
-      return new Promise(resolve => {
-        const old = document.getElementById('sessions-script-tag');
-        if (old) old.remove();
-        const s = document.createElement('script');
-        s.id = 'sessions-script-tag';
-        s.src = 'claude-sessions.js?' + Date.now();
-        s.onload = () => resolve(true);
-        s.onerror = () => { window.__claudeSessions = []; resolve(false); };
-        document.head.appendChild(s);
-      });
-    }
-
-    function renderClaudeSessions() {
-      const sessions = window.__claudeSessions || [];
-      const grid = document.getElementById('claude-grid');
-      const empty = document.getElementById('claude-empty');
-      const statsEl = document.getElementById('claude-stats');
-      grid.innerHTML = '';
-
-      const cliCount = sessions.filter(s => s.entrypoint === 'cli').length;
-      const vscodeCount = sessions.filter(s => s.entrypoint !== 'cli').length;
-
-      document.getElementById('tab-count-claude').textContent = sessions.length;
-
-      statsEl.innerHTML = `
-        <div class="stat-chip"><span class="dot purple"></span> <strong>${cliCount}</strong> CLI</div>
-        ${vscodeCount ? `<div class="stat-chip"><span class="dot" style="background:var(--accent-blue)"></span> <strong>${vscodeCount}</strong> VS Code</div>` : ''}
-        <div class="stat-chip"><strong>${sessions.length}</strong> total</div>
-      `;
-
-      if (!sessions.length) { empty.style.display = 'block'; return; }
-      empty.style.display = 'none';
-
-      sessions.forEach((s, i) => {
-        const card = document.createElement('div');
-        const isVscode = s.entrypoint !== 'cli';
-        card.className = `session-card${isVscode ? ' vscode' : ''}`;
-        card.style.animationDelay = `${i * 0.04}s`;
-
-        const entrypointIcon = isVscode
-          ? `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"/></svg>`
-          : `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m6.75 7.5 3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z"/></svg>`;
-
-        const contextHtml = s.name
-          ? `<div class="session-name">${escapeHtml(s.name)}</div>`
-          : s.lastPrompt
-            ? `<div class="session-context">${escapeHtml(s.lastPrompt)}</div>`
-            : '';
-
-        card.innerHTML = `
-          <div class="session-card-top">
-            <span class="entrypoint-badge ${isVscode ? 'vscode' : 'cli'}">
-              ${entrypointIcon}
-              ${isVscode ? 'VS Code' : 'Terminal'}
-            </span>
-            <span class="session-duration">running ${durationSince(s.startedAt)}</span>
-          </div>
-          <div class="session-cwd">${formatCwd(s.cwd)}</div>
-          ${contextHtml}
-          <div class="session-meta">
-            <span class="meta-tag">PID <code>${s.pid}</code></span>
-            <span class="meta-tag">Started ${new Date(s.startedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
-        `;
-
         grid.appendChild(card);
       });
     }

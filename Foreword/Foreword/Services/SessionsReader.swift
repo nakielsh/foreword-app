@@ -2,8 +2,6 @@
 //  SessionsReader.swift
 //  Foreword
 //
-//  Slice 04: native replacement for `refresh-sessions.py`.
-//
 //  Reads `~/.claude/sessions/*.json`, drops sessions whose PID is no longer
 //  alive, joins each with the most recent user prompt for that session in
 //  `~/.claude/history.jsonl`, sorts newest-first, and returns the result.
@@ -35,7 +33,7 @@ enum SessionsReader {
         currentSessions(sessionsDir: defaultSessionsDir, historyFile: defaultHistoryFile)
     }
 
-    /// Test-friendly variant. Mirrors `refresh-sessions.py`:
+    /// Test-friendly variant:
     ///   - Missing/unreadable directory or history file → silently empty/no-op.
     ///   - Dead PIDs (errno ESRCH) are filtered out; EPERM is treated as alive
     ///     (a process owned by another user, but the PID is still in use).
@@ -131,7 +129,6 @@ enum SessionsReader {
     }
 
     /// Truncate to 200 Unicode characters; append "..." when truncated.
-    /// Matches Python's `s[:200] + "..."` in `refresh-sessions.py`.
     static func truncatePrompt(_ s: String) -> String {
         if s.count > 200 {
             let head = s.prefix(200)
